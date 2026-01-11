@@ -1,0 +1,16 @@
+[package]
+name = "mp4-bmff"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+repository = "https://github.com/Kato-emb/mp4-bmff-rs"
+
+[features]
+default = ["std"]
+
+alloc = []
+std = ["alloc"]
+
+[dependencies]
+
+[dev-dependencies]

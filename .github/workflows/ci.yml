@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  # 任意: 依存が増えた時に「自然劣化」を早期に拾う
+  # schedule:
+  #   - cron: "0 3 * * 1" # 毎週月曜 03:00 UTC
+
+# CI用途なら基本これで足りる（最小権限）
+permissions:
+  contents: read
+
+# PRの連続pushで古い実行をキャンセルして無駄を減らす
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Tests (std) + Check (no_std)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # stable は 3OS
+          - os: ubuntu-latest
+            toolchain: stable
+            allow_failure: false
+          - os: windows-latest
+            toolchain: stable
+            allow_failure: false
+          - os: macos-latest
+            toolchain: stable
+            allow_failure: false
+          # beta/nightly は linux のみ（コスパ重視）
+          - os: ubuntu-latest
+            toolchain: beta
+            allow_failure: true
+          - os: ubuntu-latest
+            toolchain: nightly
+            allow_failure: true
+
+    continue-on-error: ${{ matrix.allow_failure }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6  # v6系が現行（例: v6.0.2 / 2026-01-09） :contentReference[oaicite:4]{index=4}
+
+      # toolchain を input で渡す場合は @master が推奨される流儀
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      # Rust向けのキャッシュ（toolchain設定後に置くのが前提）
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      # std（default features）でテスト
+      - name: cargo test (default = std)
+        run: cargo test --all-targets
+
+      # --all-targets は doctest を含まないので、別途回す
+      - name: cargo test (doctests)
+        if: runner.os == 'Linux' && matrix.toolchain == 'stable'
+        run: cargo test --doc
+
+      # no_std 検証は「test」ではなく「check」に寄せる（テストコードのstd依存で落としがちだから）
+      - name: cargo check (no default features = no_std path)
+        run: cargo check --no-default-features
+
+      # 今は default と同値だが、feature追加時にサイレント破壊を防ぐ
+      - name: cargo check (--all-features)
+        if: runner.os == 'Linux' && matrix.toolchain == 'stable'
+        run: cargo check --all-features
+
+  no_std_targets:
+    name: no_std target builds
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain + targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf, wasm32-unknown-unknown
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      # no_std ターゲットでのコンパイル確認（checkで十分）
+      - name: cargo check (thumbv7em-none-eabihf, no_std)
+        run: cargo check --no-default-features --target thumbv7em-none-eabihf
+
+      - name: cargo check (wasm32-unknown-unknown, no_std)
+        run: cargo check --no-default-features --target wasm32-unknown-unknown
+
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          # no_std向けのclippyもやるならターゲットを入れる
+          targets: thumbv7em-none-eabihf
+
+      - uses: Swatinem/rust-cache@v2
+
+      # std(default) 側：tests等も含めて lint
+      - name: cargo clippy (std / all targets)
+        run: cargo clippy --all-targets -- -D warnings
+
+      # no_std 側：--all-targets は避ける（tests が std 前提だと壊れる）
+      - name: cargo clippy (no_std / lib only)
+        run: cargo clippy --no-default-features --lib -- -D warnings
+
+      # 任意: no_stdターゲットでcfg差分も拾う（私は入れる派）
+      - name: cargo clippy (no_std target = thumbv7em-none-eabihf)
+        run: cargo clippy --no-default-features --lib --target thumbv7em-none-eabihf -- -D warnings
+
+  doc:
+    name: docs
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # std(default) のドキュメント
+      - name: cargo doc (std)
+        run: cargo doc --no-deps
+
+      # no_std 側でも doc が通るか確認したい場合
+      - name: cargo doc (no_std)
+        run: cargo doc --no-deps --no-default-features
+
+  msrv:
+    name: MSRV (Rust 1.87.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install MSRV toolchain
+        uses: dtolnay/rust-toolchain@1.87.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      # contributorsが普通に叩くサーフェスをMSRVで保証
+      - name: cargo test (std)
+        run: cargo test --all-targets
+
+      # 追加: doctest は --all-targets に含まれないため別途
+      - name: cargo test (doctests)
+        run: cargo test --doc
+
+      - name: cargo check (no_std)
+        run: cargo check --no-default-features
