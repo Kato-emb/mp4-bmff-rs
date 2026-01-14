@@ -8,3 +8,5 @@ pub mod error;
 pub mod boxsize;
 pub mod boxtype;
 pub mod header;
+pub mod iter;
+pub mod view;
