@@ -47,6 +47,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("    {:?}", brand);
                 }
             }
+            Some("free") => {
+                let free = FreeBoxRef::parse(view.payload)?;
+                println!("  Free Space Data Length: {}", free.data.len());
+            }
+            Some("mdat") => {
+                let mdat = MdatBoxRef::parse(view.payload)?;
+                println!("  Media Data Length: {}", mdat.data.len());
+            }
             Some(typ) => {
                 println!("  (No parser available for this box type '{}')", typ);
             }
