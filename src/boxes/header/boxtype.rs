@@ -142,6 +142,19 @@ mod typecode {
 
     /// `type` field value used by UUID boxes.
     pub const UUID: FourCC = FourCC::new(*b"uuid");
+
+    /// `type` field value used by File Type boxes.
+    pub const FTYP: FourCC = FourCC::new(*b"ftyp");
+    /// `type` field value used by Free boxes.
+    pub const FREE: FourCC = FourCC::new(*b"free");
+    /// `type` field value used by Media Data boxes.
+    pub const MDAT: FourCC = FourCC::new(*b"mdat");
+    /// `type` field value used by Movie boxes.
+    pub const MOOV: FourCC = FourCC::new(*b"moov");
+    /// `type` field value used by Movie Header boxes.
+    pub const MVHD: FourCC = FourCC::new(*b"mvhd");
+    /// `type` field value used by Track boxes.
+    pub const TRAK: FourCC = FourCC::new(*b"trak");
 }
 
 #[cfg(test)]

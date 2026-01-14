@@ -43,6 +43,27 @@ pub enum ErrorKind {
         /// The invalid box type encountered.
         got: FourCC,
     },
+    /// Invalid box version.
+    InvalidBoxVersion {
+        /// A description of the invalid version.
+        reason: &'static str,
+        /// The invalid version encountered.
+        got: u8,
+    },
+    /// Invalid box flags.
+    InvalidBoxFlags {
+        /// A description of the invalid flags.
+        reason: &'static str,
+        /// The invalid flags encountered.
+        got: u32,
+    },
+    /// Invalid box field.
+    InvalidBoxField {
+        /// The name of the invalid field.
+        field: &'static str,
+        /// A description of the reason why the field is invalid.
+        reason: &'static str,
+    },
     /// Some other kind of error.
     Other {
         /// A description of the error.
@@ -70,7 +91,16 @@ impl fmt::Display for ErrorKind {
             ErrorKind::InvalidBoxType { reason, got } => {
                 write!(f, "invalid box type: {reason} (got {got})")
             }
-            ErrorKind::Other { description } => write!(f, "{description}"),
+            ErrorKind::InvalidBoxVersion { reason, got } => {
+                write!(f, "invalid box version: {reason} (got {got})")
+            }
+            ErrorKind::InvalidBoxFlags { reason, got } => {
+                write!(f, "invalid box flags: {reason} (got {got})")
+            }
+            ErrorKind::InvalidBoxField { field, reason } => {
+                write!(f, "invalid box field '{field}': {reason}")
+            }
+            ErrorKind::Other { description } => write!(f, "error: {description}"),
         }
     }
 }

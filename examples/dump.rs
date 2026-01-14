@@ -52,13 +52,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Some("moov") => {
                 let moov = MoovBoxRef::parse(view.payload)?;
 
-                for child in moov.children() {
-                    let child = child?;
-                    println!(
-                        "  Child Box: {:?}, Size: {}",
-                        child.header.boxtype(),
-                        child.header.boxsize()
-                    );
+                for trak in moov.traks() {
+                    let trak = trak?;
+                    println!("    Track Box:");
+                    for trak_child in trak.children() {
+                        let trak_child = trak_child?;
+                        println!(
+                            "      Track Child Box: {:?}, Size: {}",
+                            trak_child.header.boxtype(),
+                            trak_child.header.boxsize()
+                        );
+                    }
                 }
             }
             Some("free") => {

@@ -12,17 +12,25 @@ mod ftyp;
 mod mdat;
 mod moov;
 mod mvhd;
+mod tkhd;
+mod trak;
 
-pub use mvhd::MvhdBox;
+pub use mvhd::{
+    MvhdBox, //
+    MvhdFlags,
+};
 
 pub use free::FreeBoxRef;
 pub use ftyp::FtypBoxRef;
 pub use mdat::MdatBoxRef;
 pub use moov::MoovBoxRef;
+pub use trak::TrakBoxRef;
 
 #[cfg(feature = "alloc")]
 mod owned {
     pub use super::ftyp::FtypBox;
+    pub use super::moov::MoovBox;
+    pub use super::trak::TrakBox;
 }
 
 #[cfg(feature = "alloc")]

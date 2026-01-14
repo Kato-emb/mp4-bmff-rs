@@ -13,6 +13,11 @@ use crate::boxes::header::*;
 /// A reference to a Movie Header Box (`mvhd`).
 #[derive(Debug, Clone)]
 pub struct MvhdBox {
+    /// The version of the box.
+    pub version: u8,
+    /// The flags of the box.
+    pub flags: FullBoxFlags<MvhdBox>,
+
     /// The creation time.
     pub creation_time: QuickTimeDateTime,
     /// The modification time.
@@ -34,6 +39,8 @@ pub struct MvhdBox {
 impl Default for MvhdBox {
     fn default() -> Self {
         MvhdBox {
+            version: 0,
+            flags: FullBoxFlags::empty(),
             creation_time: QuickTimeDateTime::default(),
             modification_time: QuickTimeDateTime::default(),
             timescale: 0,
@@ -53,102 +60,74 @@ impl MvhdBox {
     const RESERVED_SIZE: usize = mem::size_of::<u16>() + 2 * mem::size_of::<u32>(); // reserved
     const PRE_DEFINED_SIZE: usize = 6 * mem::size_of::<u32>(); // pre_defined
 
-    /// Returns the version of the `mvhd` box based on its fields.
-    pub fn version(&self) -> u8 {
-        if self.duration > u32::MAX as u64
-            || self.creation_time.to_quicktime_seconds() > u32::MAX as u64
-            || self.modification_time.to_quicktime_seconds() > u32::MAX as u64
-        {
-            1
-        } else {
-            0
-        }
-    }
-
-    /// Returns the flags of the `mvhd` box.
-    pub fn flags(&self) -> FullBoxFlags<MvhdBox> {
-        FullBoxFlags::empty()
-    }
-
     /// Parses an `MvhdBox` from the given payload.
     pub fn parse(payload: &[u8]) -> Result<MvhdBox> {
+        let at = |e: ErrorKind, cur: &ReadCursor| Error::new(e).at(cur.position() as u64);
         let mut cursor = ReadCursor::new(payload);
 
         let full_box_header = FullBoxHeader::<MvhdBox>::parse(&mut cursor)?;
 
-        let (creation_time, modification_time, timescale, duration) =
-            if full_box_header.version() == 1 {
-                let creation_time = cursor
-                    .read_u64_be()
-                    .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
-                let modification_time = cursor
-                    .read_u64_be()
-                    .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
-                let timescale = cursor
-                    .read_u32_be()
-                    .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
-                let duration = cursor
-                    .read_u64_be()
-                    .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
+        let (creation_time, modification_time, timescale, duration) = match full_box_header
+            .version()
+        {
+            1 => {
+                let creation_time = cursor.read_u64_be().map_err(|e| at(e.into(), &cursor))?;
+                let modification_time = cursor.read_u64_be().map_err(|e| at(e.into(), &cursor))?;
+                let timescale = cursor.read_u32_be().map_err(|e| at(e.into(), &cursor))?;
+                let duration = cursor.read_u64_be().map_err(|e| at(e.into(), &cursor))?;
                 (
                     QuickTimeDateTime::from_quicktime_seconds(creation_time),
                     QuickTimeDateTime::from_quicktime_seconds(modification_time),
                     timescale,
                     duration,
                 )
-            } else {
-                let creation_time = cursor
-                    .read_u32_be()
-                    .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?
-                    as u64;
-                let modification_time = cursor
-                    .read_u32_be()
-                    .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?
-                    as u64;
-                let timescale = cursor
-                    .read_u32_be()
-                    .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
-                let duration = cursor
-                    .read_u32_be()
-                    .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?
-                    as u64;
+            }
+            0 => {
+                let creation_time = cursor.read_u32_be().map_err(|e| at(e.into(), &cursor))? as u64;
+                let modification_time =
+                    cursor.read_u32_be().map_err(|e| at(e.into(), &cursor))? as u64;
+                let timescale = cursor.read_u32_be().map_err(|e| at(e.into(), &cursor))?;
+                let duration = cursor.read_u32_be().map_err(|e| at(e.into(), &cursor))? as u64;
                 (
                     QuickTimeDateTime::from_quicktime_seconds(creation_time),
                     QuickTimeDateTime::from_quicktime_seconds(modification_time),
                     timescale,
                     duration,
                 )
-            };
+            }
+            other => {
+                return Err(Error::new(ErrorKind::InvalidBoxVersion {
+                    reason: "0 or 1 in this specification",
+                    got: other,
+                }));
+            }
+        };
 
-        let rate = cursor
-            .read_i32_be()
-            .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
+        let rate = cursor.read_i32_be().map_err(|e| at(e.into(), &cursor))?;
         let rate = I16F16::from_raw(rate);
-        let volume = cursor
-            .read_u16_be()
-            .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
+        let volume = cursor.read_u16_be().map_err(|e| at(e.into(), &cursor))?;
         let volume = U8F8::from_raw(volume);
 
         cursor
-            .skip(MvhdBox::RESERVED_SIZE)
-            .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
+            .advance(MvhdBox::RESERVED_SIZE)
+            .map_err(|e| at(e.into(), &cursor))?;
 
         let mut matrix = [0i32; 9];
         for m in &mut matrix {
-            *m = cursor
-                .read_i32_be()
-                .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
+            *m = cursor.read_i32_be().map_err(|e| at(e.into(), &cursor))?;
         }
         let matrix = Matrix::from_raw(matrix);
 
         cursor
-            .skip(MvhdBox::PRE_DEFINED_SIZE)
+            .advance(MvhdBox::PRE_DEFINED_SIZE)
             .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
         let next_track_id = cursor
             .read_u32_be()
             .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
 
         Ok(MvhdBox {
+            version: full_box_header.version(),
+            flags: full_box_header.flags().clone(),
             creation_time,
             modification_time,
             timescale,
@@ -162,8 +141,8 @@ impl MvhdBox {
 
     /// Writes the `MvhdBox` to the given `WriteCursor`.
     pub fn write(&self, cur: &mut WriteCursor) -> Result<()> {
-        let version = self.version();
-        let full_box_header = FullBoxHeader::new(version, self.flags());
+        let version = self.version;
+        let full_box_header = FullBoxHeader::new(version, self.flags.clone());
         full_box_header.write(cur)?;
 
         if version == 1 {
@@ -207,6 +186,9 @@ impl MvhdBox {
         Ok(())
     }
 }
+
+/// The flags for the Movie Header Box (`mvhd`).
+pub type MvhdFlags = FullBoxFlags<MvhdBox>;
 
 #[cfg(test)]
 mod tests {
@@ -312,7 +294,7 @@ mod tests {
         assert_eq!(mvhd.volume.to_raw(), 0x0100);
         assert_eq!(mvhd.matrix, Matrix::identity());
         assert_eq!(mvhd.next_track_id, 2);
-        assert_eq!(mvhd.version(), 0);
+        assert_eq!(mvhd.version, 0);
     }
 
     #[test]
@@ -334,12 +316,14 @@ mod tests {
         assert_eq!(mvhd.volume.to_raw(), 0x0080);
         assert_eq!(mvhd.matrix, Matrix::identity());
         assert_eq!(mvhd.next_track_id, 5);
-        assert_eq!(mvhd.version(), 1);
+        assert_eq!(mvhd.version, 1);
     }
 
     #[test]
     fn write_roundtrip_v0() {
         let original = MvhdBox {
+            version: 0,
+            flags: FullBoxFlags::empty(),
             creation_time: QuickTimeDateTime::from_quicktime_seconds(1000),
             modification_time: QuickTimeDateTime::from_quicktime_seconds(2000),
             timescale: 1000,
@@ -350,7 +334,7 @@ mod tests {
             next_track_id: 3,
         };
 
-        assert_eq!(original.version(), 0);
+        assert_eq!(original.version, 0);
 
         // Write
         let mut buf = vec![0u8; 108]; // v0 size
@@ -373,6 +357,8 @@ mod tests {
     #[test]
     fn write_roundtrip_v1() {
         let original = MvhdBox {
+            version: 1,
+            flags: FullBoxFlags::empty(),
             creation_time: QuickTimeDateTime::from_quicktime_seconds(0x100000000),
             modification_time: QuickTimeDateTime::from_quicktime_seconds(0x100000001),
             timescale: 90000,
@@ -383,7 +369,7 @@ mod tests {
             next_track_id: 10,
         };
 
-        assert_eq!(original.version(), 1);
+        assert_eq!(original.version, 1);
 
         // Write
         let mut buf = vec![0u8; 120]; // v1 size
@@ -408,21 +394,21 @@ mod tests {
         // duration > u32::MAX -> version 1
         let mut mvhd = MvhdBox::default();
         mvhd.duration = u32::MAX as u64 + 1;
-        assert_eq!(mvhd.version(), 1);
+        assert_eq!(mvhd.version, 1);
 
         // creation_time > u32::MAX -> version 1
         let mut mvhd = MvhdBox::default();
         mvhd.creation_time = QuickTimeDateTime::from_quicktime_seconds(u32::MAX as u64 + 1);
-        assert_eq!(mvhd.version(), 1);
+        assert_eq!(mvhd.version, 1);
 
         // modification_time > u32::MAX -> version 1
         let mut mvhd = MvhdBox::default();
         mvhd.modification_time = QuickTimeDateTime::from_quicktime_seconds(u32::MAX as u64 + 1);
-        assert_eq!(mvhd.version(), 1);
+        assert_eq!(mvhd.version, 1);
 
         // All within u32 range -> version 0
         let mvhd = MvhdBox::default();
-        assert_eq!(mvhd.version(), 0);
+        assert_eq!(mvhd.version, 0);
     }
 
     #[test]
