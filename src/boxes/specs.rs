@@ -7,9 +7,13 @@
 //! - A zero-copy reference type (`*BoxRef`) for efficient parsing without allocation
 //! - An owned type (`*Box`) for modification and serialization (requires `alloc` feature)
 
+mod free;
 mod ftyp;
+mod mdat;
 
+pub use free::FreeBoxRef;
 pub use ftyp::FtypBoxRef;
+pub use mdat::MdatBoxRef;
 
 #[cfg(feature = "alloc")]
 mod owned {

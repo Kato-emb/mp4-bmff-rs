@@ -72,9 +72,9 @@ pub use owned::FtypBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use super::*;
     use crate::lib::Vec;
 
+    use super::*;
     use crate::cursor::WriteCursor;
 
     /// An owned File Type Box (`ftyp`).
