@@ -64,7 +64,7 @@ impl Error {
     }
 
     /// Sets the offset where the error occurred.
-    pub fn with_offset(mut self, offset: u64) -> Self {
+    pub fn at(mut self, offset: u64) -> Self {
         self.offset = Some(offset);
         self
     }

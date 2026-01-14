@@ -22,22 +22,22 @@ impl<'a> BoxView<'a> {
 
         let payload_size = match header.payload_size() {
             Some(size) => {
-                if cur.len() < size as usize {
+                if cur.remaining() < size as usize {
                     return Err(Error::new(ErrorKind::MismatchedBoxSize {
                         expected: size,
-                        found: cur.len() as u64,
+                        found: cur.remaining() as u64,
                     })
-                    .with_offset(cur.position() as u64));
+                    .at(cur.position() as u64));
                 }
 
                 size as usize
             }
-            None => cur.len(),
+            None => cur.remaining(),
         };
 
         let payload = cur
             .take(payload_size)
-            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
 
         Ok(Self { header, payload })
     }
@@ -46,10 +46,10 @@ impl<'a> BoxView<'a> {
     pub fn write(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         self.header
             .write(cur)
-            .map_err(|e| e.with_offset(cur.position() as u64))?;
+            .map_err(|e| e.at(cur.position() as u64))?;
 
         cur.write_slice(self.payload)
-            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
 
         Ok(())
     }

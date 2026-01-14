@@ -70,23 +70,30 @@ impl<'a> ReadCursor<'a> {
         }
     }
 
-    /// Returns the number of bytes remaining to be read.
+    /// Returns the total length of the inner byte slice.
     #[inline]
     #[track_caller]
     pub const fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Returns the number of bytes remaining to be read.
+    #[inline]
+    #[track_caller]
+    pub const fn remaining(&self) -> usize {
         self.inner.len() - self.pos
     }
 
     /// Returns `true` if there are no bytes left to read.
     #[inline]
     pub const fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.remaining() == 0
     }
 
     /// Returns a slice of the remaining unread bytes.
     #[inline]
     #[track_caller]
-    pub fn remaining(&self) -> &[u8] {
+    pub fn remaining_slice(&self) -> &'a [u8] {
         let idx = cmp::min(self.pos, self.inner.len());
         &self.inner[idx..]
     }
@@ -111,7 +118,7 @@ impl<'a> ReadCursor<'a> {
         let end = start.checked_add(n).ok_or(Error::Overflow)?;
         let bytes = self.inner.get(start..end).ok_or(Error::UnexpectedEof {
             expected: n,
-            remaining: self.len(),
+            remaining: self.remaining(),
         })?;
 
         self.pos = end;
@@ -182,25 +189,24 @@ impl<'a> WriteCursor<'a> {
         }
     }
 
-    /// Returns the number of bytes remaining to be written.
+    /// Returns the total length of the inner byte slice.
     #[inline]
     #[track_caller]
     pub const fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Returns the number of bytes remaining to be written.
+    #[inline]
+    #[track_caller]
+    pub const fn remaining(&self) -> usize {
         self.inner.len() - self.pos
     }
 
     /// Returns `true` if there are no bytes left to write.
     #[inline]
     pub const fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Returns a mutable slice of the remaining unwritten bytes.
-    #[inline]
-    #[track_caller]
-    pub fn remaining(&mut self) -> &mut [u8] {
-        let idx = cmp::min(self.pos, self.inner.len());
-        &mut self.inner[idx..]
+        self.remaining() == 0
     }
 
     /// Returns the entire inner byte slice.
@@ -230,7 +236,7 @@ impl<'a> WriteCursor<'a> {
         if end > self.inner.len() {
             return Err(Error::BufferTooSmall {
                 expected: n,
-                remaining: self.len(),
+                remaining: self.remaining(),
             });
         }
 

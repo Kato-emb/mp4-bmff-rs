@@ -62,21 +62,21 @@ impl BoxHeader {
 
     /// Parses a `BoxHeader` from the given `ReadCursor`.
     pub fn parse(cur: &mut ReadCursor<'_>) -> Result<Self> {
-        if cur.len() < Self::BASE_SIZE as usize {
+        if cur.remaining() < Self::BASE_SIZE as usize {
             return Err(Error::new(ErrorKind::NotEnoughBytes {
                 expected: Self::BASE_SIZE as usize,
-                remaining: cur.len(),
+                remaining: cur.remaining(),
             })
-            .with_offset(cur.position() as u64));
+            .at(cur.position() as u64));
         }
 
         // Read size (4 bytes)
         let size = cur
             .read_u32_be()
-            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
         let type_bytes = cur
             .read_array::<4>()
-            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
         let boxtype = FourCC::from(type_bytes);
 
         let boxsize = match size {
@@ -85,24 +85,24 @@ impl BoxHeader {
                 // Read largesize (8 bytes)
                 let largesize = cur
                     .read_u64_be()
-                    .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+                    .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
                 BoxSize::from_u64(largesize)
-                    .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?
+                    .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?
             }
             _ => BoxSize::from_u32(size)
-                .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?,
+                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?,
         };
 
         let boxtype = if boxtype == boxtype::UUID {
             // Read usertype (16 bytes)
             let usertype_bytes = cur
                 .read_array::<16>()
-                .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
             let usertype = boxtype::UserType::new(usertype_bytes);
             BoxType::from_uuid(usertype)
         } else {
             BoxType::from_fourcc(boxtype)
-                .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?
+                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?
         };
 
         Ok(BoxHeader {
@@ -116,27 +116,27 @@ impl BoxHeader {
         if self.size.is_eof() {
             // Write size field for EOF (4 bytes)
             cur.write_u32_be(BoxSize::MARKER_EOF)
-                .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
             // Write type field (4 bytes)
             cur.write_array(self.boxtype().type_field().as_bytes())
-                .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
         } else if self.size.is_extended() {
             // Write size field (4 bytes)
             cur.write_u32_be(BoxSize::MARKER_EXTENDED_SIZE)
-                .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
             // Write type field (4 bytes)
             cur.write_array(self.boxtype().type_field().as_bytes())
-                .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
             // Write largesize field (8 bytes)
             cur.write_u64_be(self.boxsize().value().expect("extended size has value"))
-                .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
         } else {
             // Write size field (4 bytes) - compact size
             cur.write_u32_be(self.boxsize().value().expect("compact size has value") as u32)
-                .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
             // Write type field (4 bytes)
             cur.write_array(self.boxtype().type_field().as_bytes())
-                .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
         }
 
         // Write usertype if UUID type (16 bytes)
@@ -147,7 +147,7 @@ impl BoxHeader {
                     .expect("BoxType UserType")
                     .as_bytes(),
             )
-            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
         }
 
         Ok(())
@@ -194,23 +194,23 @@ impl<B> FullBoxHeader<B> {
 
     /// Parses a `FullBoxHeader` from the given `ReadCursor`.
     pub fn parse(cur: &mut ReadCursor<'_>) -> Result<Self> {
-        if cur.len() < 4 {
+        if cur.remaining() < 4 {
             return Err(Error::new(ErrorKind::NotEnoughBytes {
                 expected: 4,
-                remaining: cur.len(),
+                remaining: cur.remaining(),
             })
-            .with_offset(cur.position() as u64));
+            .at(cur.position() as u64));
         }
 
         // Read version (1 byte)
         let version = cur
             .read_u8()
-            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
 
         // Read flags (3 bytes)
         let flags_bytes = cur
             .read_array::<3>()
-            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
         let flags_value = ((flags_bytes[0] as u32) << 16)
             | ((flags_bytes[1] as u32) << 8)
             | (flags_bytes[2] as u32);
@@ -222,7 +222,7 @@ impl<B> FullBoxHeader<B> {
     /// Writes the `FullBoxHeader` to the given `WriteCursor`.
     pub fn write(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         cur.write_u8(self.version)
-            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
 
         let flags = self.flags.get() & 0x00FF_FFFF;
         let flags_bytes = [
@@ -232,7 +232,7 @@ impl<B> FullBoxHeader<B> {
         ];
 
         cur.write_array(&flags_bytes)
-            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
         Ok(())
     }
 }
