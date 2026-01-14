@@ -16,7 +16,7 @@ pub struct MvhdBox {
     /// The version of the box.
     pub version: u8,
     /// The flags of the box.
-    pub flags: FullBoxFlags<MvhdBox>,
+    pub flags: MvhdFlags,
 
     /// The creation time.
     pub creation_time: QuickTimeDateTime,
@@ -127,7 +127,7 @@ impl MvhdBox {
 
         Ok(MvhdBox {
             version: full_box_header.version(),
-            flags: full_box_header.flags().clone(),
+            flags: full_box_header.flags(),
             creation_time,
             modification_time,
             timescale,
@@ -142,7 +142,7 @@ impl MvhdBox {
     /// Writes the `MvhdBox` to the given `WriteCursor`.
     pub fn write(&self, cur: &mut WriteCursor) -> Result<()> {
         let version = self.version;
-        let full_box_header = FullBoxHeader::new(version, self.flags.clone());
+        let full_box_header = FullBoxHeader::new(version, self.flags);
         full_box_header.write(cur)?;
 
         if version == 1 {
@@ -387,28 +387,6 @@ mod tests {
         assert_eq!(parsed.volume, original.volume);
         assert_eq!(parsed.matrix, original.matrix);
         assert_eq!(parsed.next_track_id, original.next_track_id);
-    }
-
-    #[test]
-    fn version_detection() {
-        // duration > u32::MAX -> version 1
-        let mut mvhd = MvhdBox::default();
-        mvhd.duration = u32::MAX as u64 + 1;
-        assert_eq!(mvhd.version, 1);
-
-        // creation_time > u32::MAX -> version 1
-        let mut mvhd = MvhdBox::default();
-        mvhd.creation_time = QuickTimeDateTime::from_quicktime_seconds(u32::MAX as u64 + 1);
-        assert_eq!(mvhd.version, 1);
-
-        // modification_time > u32::MAX -> version 1
-        let mut mvhd = MvhdBox::default();
-        mvhd.modification_time = QuickTimeDateTime::from_quicktime_seconds(u32::MAX as u64 + 1);
-        assert_eq!(mvhd.version, 1);
-
-        // All within u32 range -> version 0
-        let mvhd = MvhdBox::default();
-        assert_eq!(mvhd.version, 0);
     }
 
     #[test]

@@ -42,7 +42,7 @@ use core::marker;
 use core::ops;
 
 /// Represents the flags of a full box in BMFF.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash)]
 pub struct FullBoxFlags<T> {
     pub(crate) mask: u32,
     _marker: marker::PhantomData<T>,
@@ -113,6 +113,17 @@ impl<T> fmt::Display for FullBoxFlags<T> {
         write!(f, "{:#08X}", self.mask)
     }
 }
+
+impl<T> Clone for FullBoxFlags<T> {
+    fn clone(&self) -> Self {
+        Self {
+            mask: self.mask,
+            _marker: marker::PhantomData,
+        }
+    }
+}
+
+impl<T> Copy for FullBoxFlags<T> {}
 
 impl<T> ops::BitOr for FullBoxFlags<T> {
     type Output = FullBoxFlags<T>;

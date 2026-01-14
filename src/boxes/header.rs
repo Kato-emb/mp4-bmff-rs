@@ -188,8 +188,8 @@ impl<B> FullBoxHeader<B> {
     }
 
     /// Returns the flags of the FullBox.
-    pub fn flags(&self) -> &FullBoxFlags<B> {
-        &self.flags
+    pub fn flags(&self) -> FullBoxFlags<B> {
+        self.flags
     }
 
     /// Parses a `FullBoxHeader` from the given `ReadCursor`.
