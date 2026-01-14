@@ -169,7 +169,7 @@ where
 
     /// Return the underlying raw storage value.
     #[inline]
-    pub const fn raw(self) -> Storage {
+    pub const fn to_raw(self) -> Storage {
         self.raw
     }
 
@@ -468,8 +468,8 @@ mod tests {
     fn min_and_max_match_storage_bounds() {
         let min = I8F8::min_value();
         let max = I8F8::max_value();
-        assert_eq!(min.raw(), i16::MIN);
-        assert_eq!(max.raw(), i16::MAX);
+        assert_eq!(min.to_raw(), i16::MIN);
+        assert_eq!(max.to_raw(), i16::MAX);
     }
 
     #[test]

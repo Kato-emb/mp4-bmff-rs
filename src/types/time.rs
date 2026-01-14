@@ -24,7 +24,7 @@ impl QuickTimeDateTime {
 
     /// Raw seconds since the QuickTime epoch.
     #[inline]
-    pub const fn quicktime_seconds(self) -> u64 {
+    pub const fn to_quicktime_seconds(self) -> u64 {
         self.0
     }
 
@@ -59,9 +59,18 @@ impl fmt::Debug for QuickTimeDateTime {
     }
 }
 
+impl fmt::Display for QuickTimeDateTime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.to_unix_seconds() {
+            Some(unix) => write!(f, "{} s since Unix epoch (UTC)", unix),
+            None => write!(f, "<before Unix epoch>"),
+        }
+    }
+}
+
 impl From<QuickTimeDateTime> for u64 {
     fn from(value: QuickTimeDateTime) -> Self {
-        value.quicktime_seconds()
+        value.to_quicktime_seconds()
     }
 }
 

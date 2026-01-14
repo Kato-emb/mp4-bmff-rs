@@ -56,9 +56,9 @@ impl Matrix {
     #[inline]
     pub fn to_raw(&self) -> [i32; 9] {
         [
-            self.a.raw(), self.b.raw(), self.u.raw(),
-            self.c.raw(), self.d.raw(), self.v.raw(),
-            self.x.raw(), self.y.raw(), self.w.raw(),
+            self.a.to_raw(), self.b.to_raw(), self.u.to_raw(),
+            self.c.to_raw(), self.d.to_raw(), self.v.to_raw(),
+            self.x.to_raw(), self.y.to_raw(), self.w.to_raw(),
         ]
     }
 }
@@ -82,9 +82,9 @@ mod tests {
     #[test]
     fn identity_defaults() {
         let m = Matrix::default();
-        assert_eq!(m.a.raw(), I16F16::from_f32(1.0).raw());
-        assert_eq!(m.d.raw(), I16F16::from_f32(1.0).raw());
-        assert_eq!(m.w.raw(), I2F30::from_f32(1.0).raw());
+        assert_eq!(m.a.to_raw(), I16F16::from_f32(1.0).to_raw());
+        assert_eq!(m.d.to_raw(), I16F16::from_f32(1.0).to_raw());
+        assert_eq!(m.w.to_raw(), I2F30::from_f32(1.0).to_raw());
     }
 
     #[test]
