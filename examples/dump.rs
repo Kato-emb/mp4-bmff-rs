@@ -28,6 +28,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("Parsing boxes in the input file...");
     let mut box_iter = BoxIter::new(&data);
 
+    let start = std::time::Instant::now();
+
     while let Some(view) = box_iter.next() {
         let view = view?;
         println!(
@@ -47,6 +49,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("    {:?}", brand);
                 }
             }
+            Some("moov") => {
+                let moov = MoovBoxRef::parse(view.payload)?;
+
+                for child in moov.children() {
+                    let child = child?;
+                    println!(
+                        "  Child Box: {:?}, Size: {}",
+                        child.header.boxtype(),
+                        child.header.boxsize()
+                    );
+                }
+            }
             Some("free") => {
                 let free = FreeBoxRef::parse(view.payload)?;
                 println!("  Free Space Data Length: {}", free.data.len());
@@ -63,6 +77,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+
+    let duration = start.elapsed();
+    println!("Finished parsing boxes in {:.2?}", duration);
 
     Ok(())
 }
