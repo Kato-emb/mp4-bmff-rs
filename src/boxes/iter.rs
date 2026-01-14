@@ -63,6 +63,7 @@ mod tests {
 
     #[test]
     fn iterate_multiple_boxes() {
+        #[rustfmt::skip]
         let data = [
             // First box: size=12, type="ftyp"
             0x00, 0x00, 0x00, 0x0C,
@@ -99,6 +100,7 @@ mod tests {
     #[test]
     fn iterate_with_eof_box() {
         // EOF box (size=0) consumes all remaining data
+        #[rustfmt::skip]
         let data = [
             // First box: size=12, type="ftyp"
             0x00, 0x00, 0x00, 0x0C,
@@ -127,6 +129,7 @@ mod tests {
 
     #[test]
     fn iterate_with_extended_size() {
+        #[rustfmt::skip]
         let mut data = vec![
             // First box: size=12, type="ftyp"
             0x00, 0x00, 0x00, 0x0C,
@@ -157,6 +160,7 @@ mod tests {
 
     #[test]
     fn iterate_error_on_truncated_box() {
+        #[rustfmt::skip]
         let data = [
             // First box: valid
             0x00, 0x00, 0x00, 0x0C,
@@ -180,6 +184,7 @@ mod tests {
 
     #[test]
     fn iterate_error_on_insufficient_payload() {
+        #[rustfmt::skip]
         let data = [
             // Box with size=20, but only 10 bytes total
             0x00, 0x00, 0x00, 0x14, // size: 20
@@ -195,11 +200,16 @@ mod tests {
 
     #[test]
     fn iterate_collect_types() {
+        #[rustfmt::skip]
         let data = [
-            0x00, 0x00, 0x00, 0x08, b'f', b't', b'y', b'p',
-            0x00, 0x00, 0x00, 0x08, b'm', b'o', b'o', b'v',
-            0x00, 0x00, 0x00, 0x08, b't', b'r', b'a', b'k',
-            0x00, 0x00, 0x00, 0x08, b'm', b'd', b'a', b't',
+            0x00, 0x00, 0x00, 0x08,
+            b'f', b't', b'y', b'p',
+            0x00, 0x00, 0x00, 0x08,
+            b'm', b'o', b'o', b'v',
+            0x00, 0x00, 0x00, 0x08,
+            b't', b'r', b'a', b'k',
+            0x00, 0x00, 0x00, 0x08,
+            b'm', b'd', b'a', b't',
         ];
 
         let types: Vec<_> = BoxIter::new(&data)
