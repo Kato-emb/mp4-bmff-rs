@@ -9,13 +9,45 @@ use crate::types::{
     Uuid,
 };
 
+/// Errors that can occur when creating or manipulating `BoxType` values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BoxTypeError {
+    /// UUID BoxType cannot be created from a FourCC code.
+    UuidFourCCNotAllowed,
+}
+
+impl fmt::Display for BoxTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BoxTypeError::UuidFourCCNotAllowed => {
+                write!(f, "Cannot create UUID BoxType from FourCC code 'uuid'")
+            }
+        }
+    }
+}
+
+impl error::Error for BoxTypeError {}
+
+impl From<BoxTypeError> for ErrorKind {
+    fn from(value: BoxTypeError) -> Self {
+        match value {
+            BoxTypeError::UuidFourCCNotAllowed => Self::InvalidBoxType {
+                reason: "Cannot create UUID BoxType from FourCC code 'uuid'",
+                got: typecode::UUID,
+            },
+        }
+    }
+}
+
+/// User extensions use an extended type
+pub type UserType = Uuid;
+
 /// Type-safe representation of BMFF `boxtype` values.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum BoxType {
-    /// Regular box identified solely by a four-character code.
-    FourCC(FourCC),
-    /// Extended `uuid` box that carries a 16-byte user type.
-    Uuid(Uuid),
+pub struct BoxType {
+    boxtype: FourCC,
+    usertype: Option<UserType>,
 }
 
 impl BoxType {
@@ -27,37 +59,37 @@ impl BoxType {
         if fourcc == typecode::UUID {
             Err(BoxTypeError::UuidFourCCNotAllowed)
         } else {
-            Ok(Self::FourCC(fourcc))
+            Ok(Self {
+                boxtype: fourcc,
+                usertype: None,
+            })
         }
     }
 
     /// Creates a UUID-based `BoxType`.
     pub fn from_uuid(user_type: Uuid) -> Self {
-        Self::Uuid(user_type)
+        Self {
+            boxtype: typecode::UUID,
+            usertype: Some(user_type),
+        }
     }
 
     #[inline]
     /// Returns the 4-byte `type` field stored in the box header.
     pub fn type_field(&self) -> FourCC {
-        match self {
-            BoxType::FourCC(fourcc_code) => *fourcc_code,
-            BoxType::Uuid(_) => typecode::UUID,
-        }
+        self.boxtype
     }
 
     #[inline]
     /// Returns `true` when this `BoxType` stores a UUID extension.
     pub fn is_uuid(&self) -> bool {
-        matches!(self, BoxType::Uuid(_))
+        self.boxtype == typecode::UUID
     }
 
     #[inline]
     /// Returns the UUID extension if the type is `uuid`.
     pub fn user_type(&self) -> Option<Uuid> {
-        match self {
-            BoxType::Uuid(uuid) => Some(*uuid),
-            _ => None,
-        }
+        self.usertype
     }
 }
 
@@ -97,34 +129,6 @@ impl TryFrom<FourCC> for BoxType {
 impl From<Uuid> for BoxType {
     fn from(value: Uuid) -> Self {
         Self::from_uuid(value)
-    }
-}
-
-/// Errors that can occur when creating or manipulating `BoxType` values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum BoxTypeError {
-    /// UUID BoxType cannot be created from a FourCC code.
-    UuidFourCCNotAllowed,
-}
-
-impl fmt::Display for BoxTypeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BoxTypeError::UuidFourCCNotAllowed => {
-                write!(f, "Cannot create UUID BoxType from FourCC code 'uuid'")
-            }
-        }
-    }
-}
-
-impl error::Error for BoxTypeError {}
-
-impl From<BoxTypeError> for ErrorKind {
-    fn from(value: BoxTypeError) -> Self {
-        match value {
-            BoxTypeError::UuidFourCCNotAllowed => Self::InvalidBoxType,
-        }
     }
 }
 

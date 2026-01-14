@@ -9,4 +9,5 @@
 extern crate alloc;
 
 pub mod boxes;
+pub mod cursor;
 pub mod types;

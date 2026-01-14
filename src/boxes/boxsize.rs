@@ -1,80 +1,167 @@
-//! This module defines the `BoxSize` enum, which represents the size of a BMFF box,
-//! including support for 32-bit sizes, 64-bit sizes, and sizes that extend to
-//! the end of the file.
+//! This module defines the `BoxSize` type, which represents the size of a BMFF box,
+//! including support for 32-bit sizes, 64-bit extended sizes, and sizes that extend
+//! to the end of the file.
 
 use core::error;
 use core::fmt;
 
 use super::error::ErrorKind;
 
-/// This module defines the `BoxSize` enum, which represents the size of a BMFF box,
-/// including support for 32-bit sizes, 64-bit sizes, and sizes that extend to
-/// the end of the file.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum BoxSize {
-    /// 32-bit box size.
-    Size32(u32),
-    /// 64-bit box size.
-    Size64(u64),
-    /// Box extends to the end of the file.
+/// Kinds of errors that can occur while processing box sizes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoxSizeError {
+    /// The specified size is too small to be valid.
+    SizeTooSmall {
+        /// The minimum expected size.
+        expected: u64,
+        /// The invalid size encountered.
+        found: u64,
+    },
+    /// The specified size indicates an extended size, but no extended size was provided.
+    ExtendedSizeMarker,
+}
+
+impl fmt::Display for BoxSizeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BoxSizeError::SizeTooSmall { expected, found } => write!(
+                f,
+                "Box size is too small to be valid: expected at least {}, found {}",
+                expected, found
+            ),
+            BoxSizeError::ExtendedSizeMarker => {
+                write!(f, "Box size indicates extended size, but none was provided")
+            }
+        }
+    }
+}
+
+impl error::Error for BoxSizeError {}
+
+impl From<BoxSizeError> for ErrorKind {
+    fn from(value: BoxSizeError) -> Self {
+        match value {
+            BoxSizeError::SizeTooSmall { expected: _, found } => Self::InvalidBoxSize {
+                reason: "Box size is too small to be valid",
+                got: found,
+            },
+            BoxSizeError::ExtendedSizeMarker => Self::InvalidBoxSize {
+                reason: "Box size indicates extended size, but none was provided",
+                got: BoxSize::MARKER_EXTENDED_SIZE as u64,
+            },
+        }
+    }
+}
+
+/// Internal representation of box size variants.
+/// Private to enforce validation through constructors.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum BoxSizeInner {
+    /// 32-bit compact size (8 <= size <= u32::MAX, size != 1)
+    Compact(u32),
+    /// 64-bit extended size (size >= 16)
+    Extended(u64),
+    /// Box extends to end of file (size field = 0)
     ToEnd,
 }
+
+/// Type-safe representation of BMFF `boxsize` values.
+///
+/// This type preserves the original encoding format (compact vs extended)
+/// to ensure accurate round-trip serialization.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BoxSize(BoxSizeInner);
 
 impl BoxSize {
     /// The minimum size of a box with a 32-bit size field.
     const SIZE_32_MIN: u32 = 8;
     /// The minimum size of a box with a 64-bit size field.
     const SIZE_64_MIN: u64 = 16;
-    /// Size field for 64-bit extended size.
-    const MARKER_EXTENDED_SIZE: u32 = 1;
-    /// Size field for "to end of file".
-    const MARKER_EOF: u32 = 0;
+    /// Size field marker for 64-bit extended size.
+    pub const MARKER_EXTENDED_SIZE: u32 = 1;
+    /// Size field marker for "to end of file".
+    pub const MARKER_EOF: u32 = 0;
 
-    /// Returns the size as a u64, or None if the size extends to the end of the file.
-    pub const fn as_u64(&self) -> Option<u64> {
-        match self {
-            BoxSize::Size32(s) => Some(*s as u64),
-            BoxSize::Size64(s) => Some(*s),
-            BoxSize::ToEnd => None,
+    /// Creates a `BoxSize` that extends to the end of the file.
+    #[inline]
+    pub const fn eof() -> Self {
+        Self(BoxSizeInner::ToEnd)
+    }
+
+    /// Returns `true` if the box size extends to the end of the file.
+    #[inline]
+    pub const fn is_eof(&self) -> bool {
+        matches!(self.0, BoxSizeInner::ToEnd)
+    }
+
+    /// Returns `true` if the box size uses a 64-bit extended size field.
+    #[inline]
+    pub const fn is_extended(&self) -> bool {
+        matches!(self.0, BoxSizeInner::Extended(_))
+    }
+
+    /// Returns the size value, or `None` if the box extends to the end of the file.
+    #[inline]
+    pub const fn value(&self) -> Option<u64> {
+        match self.0 {
+            BoxSizeInner::Compact(v) => Some(v as u64),
+            BoxSizeInner::Extended(v) => Some(v),
+            BoxSizeInner::ToEnd => None,
         }
     }
 
     /// Creates a `BoxSize` from a 32-bit size field.
+    ///
+    /// This corresponds to reading the initial 4-byte size field from a box header.
+    /// - `size = 0`: Box extends to end of file
+    /// - `size = 1`: Returns error (extended size marker, use `from_u64` with largesize)
+    /// - `size >= 8`: Valid compact size
+    /// - `size < 8`: Returns error (too small)
     pub fn from_u32(size: u32) -> Result<Self, BoxSizeError> {
         match size {
-            Self::MARKER_EOF => Ok(BoxSize::ToEnd),
+            Self::MARKER_EOF => Ok(Self::eof()),
             Self::MARKER_EXTENDED_SIZE => Err(BoxSizeError::ExtendedSizeMarker),
-            s if s < Self::SIZE_32_MIN => Err(BoxSizeError::SizeTooSmall),
-            s => Ok(BoxSize::Size32(s)),
+            s if s < Self::SIZE_32_MIN => Err(BoxSizeError::SizeTooSmall {
+                expected: Self::SIZE_32_MIN as u64,
+                found: s as u64,
+            }),
+            s => Ok(Self(BoxSizeInner::Compact(s))),
         }
     }
 
-    /// Creates a `BoxSize` from a 64-bit size field.
+    /// Creates a `BoxSize` from a 64-bit largesize field.
+    ///
+    /// This corresponds to reading the 8-byte largesize field when the initial
+    /// size field is 1.
+    /// - `size >= 16`: Valid extended size
+    /// - `size < 16`: Returns error (too small for extended header)
     pub fn from_u64(size: u64) -> Result<Self, BoxSizeError> {
         match size {
-            s if s < Self::SIZE_64_MIN => Err(BoxSizeError::SizeTooSmall),
-            s if s > u32::MAX as u64 => Ok(BoxSize::Size64(s)),
-            s => Ok(BoxSize::Size32(s as u32)),
+            s if s < Self::SIZE_64_MIN => Err(BoxSizeError::SizeTooSmall {
+                expected: Self::SIZE_64_MIN,
+                found: s,
+            }),
+            s => Ok(Self(BoxSizeInner::Extended(s))),
         }
     }
 }
 
 impl fmt::Debug for BoxSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BoxSize::Size32(s) => write!(f, "BoxSize::Size32({})", s),
-            BoxSize::Size64(s) => write!(f, "BoxSize::Size64({})", s),
-            BoxSize::ToEnd => write!(f, "BoxSize::ToEnd"),
+        match self.0 {
+            BoxSizeInner::Compact(v) => write!(f, "BoxSize::Compact({})", v),
+            BoxSizeInner::Extended(v) => write!(f, "BoxSize::Extended({})", v),
+            BoxSizeInner::ToEnd => write!(f, "BoxSize::ToEnd"),
         }
     }
 }
 
 impl fmt::Display for BoxSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BoxSize::Size32(s) => write!(f, "{}", s),
-            BoxSize::Size64(s) => write!(f, "{}", s),
-            BoxSize::ToEnd => write!(f, "to end of file"),
+        match self.0 {
+            BoxSizeInner::Compact(v) => write!(f, "{}", v),
+            BoxSizeInner::Extended(v) => write!(f, "{}", v),
+            BoxSizeInner::ToEnd => write!(f, "ToEnd"),
         }
     }
 }
@@ -95,76 +182,73 @@ impl TryFrom<u64> for BoxSize {
     }
 }
 
-/// Kinds of errors that can occur while processing box sizes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BoxSizeError {
-    /// The specified size is too small to be valid.
-    SizeTooSmall,
-    /// The specified size causes an overflow.
-    SizeOverflow,
-    /// The specified size indicates an extended size, but no extended size was provided.
-    ExtendedSizeMarker,
-}
-
-impl fmt::Display for BoxSizeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BoxSizeError::SizeTooSmall => write!(f, "Box size is too small to be valid"),
-            BoxSizeError::SizeOverflow => write!(f, "Box size causes an overflow"),
-            BoxSizeError::ExtendedSizeMarker => {
-                write!(f, "Box size indicates extended size, but none was provided")
-            }
-        }
-    }
-}
-
-impl error::Error for BoxSizeError {}
-
-impl From<BoxSizeError> for ErrorKind {
-    fn from(value: BoxSizeError) -> Self {
-        match value {
-            BoxSizeError::SizeTooSmall => Self::InvalidBoxSize,
-            BoxSizeError::SizeOverflow => Self::InvalidBoxSize,
-            BoxSizeError::ExtendedSizeMarker => Self::InvalidBoxSize,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_box_size_from_u32() {
-        assert_eq!(BoxSize::from_u32(0).unwrap(), BoxSize::ToEnd);
+        // EOF marker
+        let eof = BoxSize::from_u32(0).unwrap();
+        assert!(eof.is_eof());
+        assert!(!eof.is_extended());
+        assert_eq!(eof.value(), None);
+
+        // Extended size marker should error
         assert_eq!(
             BoxSize::from_u32(BoxSize::MARKER_EXTENDED_SIZE).unwrap_err(),
             BoxSizeError::ExtendedSizeMarker
         );
+
+        // Too small
         assert_eq!(
             BoxSize::from_u32(4).unwrap_err(),
-            BoxSizeError::SizeTooSmall
+            BoxSizeError::SizeTooSmall {
+                expected: 8,
+                found: 4
+            }
         );
-        assert_eq!(BoxSize::from_u32(20).unwrap(), BoxSize::Size32(20));
+
+        // Valid compact size
+        let compact = BoxSize::from_u32(20).unwrap();
+        assert!(!compact.is_eof());
+        assert!(!compact.is_extended());
+        assert_eq!(compact.value(), Some(20));
     }
 
     #[test]
     fn test_box_size_from_u64() {
+        // Too small for extended size
         assert_eq!(
             BoxSize::from_u64(8).unwrap_err(),
-            BoxSizeError::SizeTooSmall
+            BoxSizeError::SizeTooSmall {
+                expected: 16,
+                found: 8
+            }
         );
-        assert_eq!(BoxSize::from_u64(20).unwrap(), BoxSize::Size32(20));
-        assert_eq!(
-            BoxSize::from_u64(u32::MAX as u64 + 1).unwrap(),
-            BoxSize::Size64(u32::MAX as u64 + 1)
-        );
+
+        // Valid extended size
+        let extended = BoxSize::from_u64(20).unwrap();
+        assert!(!extended.is_eof());
+        assert!(extended.is_extended());
+        assert_eq!(extended.value(), Some(20));
+
+        // Large extended size
+        let large = BoxSize::from_u64(u32::MAX as u64 + 1).unwrap();
+        assert!(large.is_extended());
+        assert_eq!(large.value(), Some(u32::MAX as u64 + 1));
     }
 
     #[test]
-    fn test_box_size_as_u64() {
-        assert_eq!(BoxSize::Size32(20).as_u64(), Some(20));
-        assert_eq!(BoxSize::Size64(1_000_000_000).as_u64(), Some(1_000_000_000));
-        assert_eq!(BoxSize::ToEnd.as_u64(), None);
+    fn test_box_size_equality() {
+        // Compact and Extended with same value are NOT equal (different encoding)
+        let compact = BoxSize::from_u32(20).unwrap();
+        let extended = BoxSize::from_u64(20).unwrap();
+        assert_ne!(compact, extended);
+
+        // Same encoding with same value are equal
+        let compact1 = BoxSize::from_u32(100).unwrap();
+        let compact2 = BoxSize::from_u32(100).unwrap();
+        assert_eq!(compact1, compact2);
     }
 }
