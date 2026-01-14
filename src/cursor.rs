@@ -304,6 +304,14 @@ impl<'a> WriteCursor<'a> {
         Ok(())
     }
 
+    /// Writes a big-endian 16-bit signed integer to the cursor.
+    #[inline]
+    #[track_caller]
+    pub fn write_i16_be(&mut self, value: i16) -> Result<()> {
+        self.write_array(&value.to_be_bytes())?;
+        Ok(())
+    }
+
     /// Writes a big-endian 32-bit unsigned integer to the cursor.
     #[inline]
     #[track_caller]

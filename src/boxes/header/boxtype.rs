@@ -155,6 +155,8 @@ mod typecode {
     pub const MVHD: FourCC = FourCC::new(*b"mvhd");
     /// `type` field value used by Track boxes.
     pub const TRAK: FourCC = FourCC::new(*b"trak");
+    /// `type` field value used by Track Header boxes.
+    pub const TKHD: FourCC = FourCC::new(*b"tkhd");
 }
 
 #[cfg(test)]

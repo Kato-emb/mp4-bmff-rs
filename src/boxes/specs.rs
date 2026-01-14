@@ -19,6 +19,10 @@ pub use mvhd::{
     MvhdBox, //
     MvhdFlags,
 };
+pub use tkhd::{
+    TkhdBox, //
+    TkhdFlags,
+};
 
 pub use free::FreeBoxRef;
 pub use ftyp::FtypBoxRef;
