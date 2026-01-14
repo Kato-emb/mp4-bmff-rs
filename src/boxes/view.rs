@@ -58,8 +58,8 @@ impl<'a> BoxView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::boxes::boxsize::BoxSize;
-    use crate::boxes::boxtype::BoxType;
+    use crate::boxes::header::BoxSize;
+    use crate::boxes::header::BoxType;
     use crate::types::FourCC;
     use crate::types::Uuid;
 
@@ -70,8 +70,7 @@ mod tests {
             0x00, 0x00, 0x00, 0x14, // size: 20
             b'f', b't', b'y', b'p', // type: ftyp
             b'i', b's', b'o', b'm', // payload: "isom" + 8 bytes
-            0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
 
         let mut cur = ReadCursor::new(&data);
@@ -132,8 +131,8 @@ mod tests {
     #[test]
     fn parse_uuid_box() {
         let uuid_bytes: [u8; 16] = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-            0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+            0x0F, 0x10,
         ];
         let mut data = vec![
             0x00, 0x00, 0x00, 0x20, // size: 32
@@ -170,7 +169,10 @@ mod tests {
         let err = result.unwrap_err();
         assert!(matches!(
             err.kind(),
-            ErrorKind::MismatchedBoxSize { expected: 12, found: 2 }
+            ErrorKind::MismatchedBoxSize {
+                expected: 12,
+                found: 2
+            }
         ));
     }
 
@@ -179,14 +181,10 @@ mod tests {
         // Two consecutive boxes
         let data = [
             // First box: size=12, type="ftyp", payload=4 bytes
-            0x00, 0x00, 0x00, 0x0C,
-            b'f', b't', b'y', b'p',
-            0x01, 0x02, 0x03, 0x04,
+            0x00, 0x00, 0x00, 0x0C, b'f', b't', b'y', b'p', 0x01, 0x02, 0x03, 0x04,
             // Second box: size=16, type="moov", payload=8 bytes
-            0x00, 0x00, 0x00, 0x10,
-            b'm', b'o', b'o', b'v',
-            0x05, 0x06, 0x07, 0x08,
-            0x09, 0x0A, 0x0B, 0x0C,
+            0x00, 0x00, 0x00, 0x10, b'm', b'o', b'o', b'v', 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
+            0x0B, 0x0C,
         ];
 
         let mut cur = ReadCursor::new(&data);
@@ -197,7 +195,10 @@ mod tests {
 
         let view2 = BoxView::parse(&mut cur).unwrap();
         assert_eq!(view2.header.boxtype().type_field(), FourCC::from(*b"moov"));
-        assert_eq!(view2.payload, &[0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C]);
+        assert_eq!(
+            view2.payload,
+            &[0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C]
+        );
 
         assert!(cur.is_empty());
     }
@@ -225,10 +226,7 @@ mod tests {
     #[test]
     fn write_roundtrip_uuid() {
         let uuid = Uuid::new([0x99; 16]);
-        let header = BoxHeader::new(
-            BoxSize::from_u32(32).unwrap(),
-            BoxType::from_uuid(uuid),
-        );
+        let header = BoxHeader::new(BoxSize::from_u32(32).unwrap(), BoxType::from_uuid(uuid));
         let payload = b"payload!";
         let original = BoxView { header, payload };
 

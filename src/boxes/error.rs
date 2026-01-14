@@ -1,6 +1,6 @@
 //! This module defines error types and result types for BMFF box operations.
 
-use super::boxtype::BoxType;
+use super::header::BoxType;
 
 /// Result type for BMFF box operations.
 pub type Result<T> = core::result::Result<T, Error>;

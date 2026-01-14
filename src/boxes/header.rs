@@ -6,10 +6,15 @@ use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 use crate::types::FourCC;
 
-use super::boxsize::BoxSize;
-use super::boxtype;
-use super::boxtype::BoxType;
 use super::error::*;
+
+pub mod boxsize;
+pub mod boxtype;
+pub mod fullbox;
+
+pub use boxsize::BoxSize;
+pub use boxtype::BoxType;
+pub use fullbox::FullBoxFlags;
 
 /// Represents the header of a BMFF box, including its size and type.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -164,6 +169,74 @@ impl fmt::Display for BoxHeader {
     }
 }
 
+/// Represents the header of a FullBox, including version and flags.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct FullBoxHeader<B> {
+    version: u8,
+    flags: FullBoxFlags<B>,
+}
+
+impl<B> FullBoxHeader<B> {
+    /// Creates a new `FullBoxHeader` with the given version and flags.
+    pub const fn new(version: u8, flags: FullBoxFlags<B>) -> Self {
+        Self { version, flags }
+    }
+
+    /// Returns the version of the FullBox.
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
+    /// Returns the flags of the FullBox.
+    pub fn flags(&self) -> &FullBoxFlags<B> {
+        &self.flags
+    }
+
+    /// Parses a `FullBoxHeader` from the given `ReadCursor`.
+    pub fn parse(cur: &mut ReadCursor<'_>) -> Result<Self> {
+        if cur.len() < 4 {
+            return Err(Error::new(ErrorKind::NotEnoughBytes {
+                expected: 4,
+                remaining: cur.len(),
+            })
+            .with_offset(cur.position() as u64));
+        }
+
+        // Read version (1 byte)
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+
+        // Read flags (3 bytes)
+        let flags_bytes = cur
+            .read_array::<3>()
+            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+        let flags_value = ((flags_bytes[0] as u32) << 16)
+            | ((flags_bytes[1] as u32) << 8)
+            | (flags_bytes[2] as u32);
+        let flags = FullBoxFlags::new(flags_value);
+
+        Ok(Self { version, flags })
+    }
+
+    /// Writes the `FullBoxHeader` to the given `WriteCursor`.
+    pub fn write(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        cur.write_u8(self.version)
+            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+
+        let flags = self.flags.get() & 0x00FF_FFFF;
+        let flags_bytes = [
+            ((flags >> 16) & 0xFF) as u8,
+            ((flags >> 8) & 0xFF) as u8,
+            (flags & 0xFF) as u8,
+        ];
+
+        cur.write_array(&flags_bytes)
+            .map_err(|e| Error::new(e.into()).with_offset(cur.position() as u64))?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,8 +274,7 @@ mod tests {
             0x00, 0x00, 0x00, 0x14, // size: 20
             b'f', b't', b'y', b'p', // type: ftyp
             0x00, 0x00, 0x00, 0x00, // payload (12 bytes)
-            0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
 
         let mut cur = ReadCursor::new(&data);
@@ -263,8 +335,8 @@ mod tests {
     fn parse_uuid_box() {
         // size=32 + type="uuid" + usertype (16 bytes)
         let uuid_bytes: [u8; 16] = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-            0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+            0x0F, 0x10,
         ];
         let mut data = vec![
             0x00, 0x00, 0x00, 0x20, // size: 32
@@ -314,7 +386,10 @@ mod tests {
         let err = result.unwrap_err();
         assert!(matches!(
             err.kind(),
-            ErrorKind::NotEnoughBytes { expected: 8, remaining: 4 }
+            ErrorKind::NotEnoughBytes {
+                expected: 8,
+                remaining: 4
+            }
         ));
     }
 
@@ -355,10 +430,7 @@ mod tests {
     #[test]
     fn write_roundtrip_uuid() {
         let uuid = Uuid::new([0xAB; 16]);
-        let original = BoxHeader::new(
-            BoxSize::from_u32(100).unwrap(),
-            BoxType::from_uuid(uuid),
-        );
+        let original = BoxHeader::new(BoxSize::from_u32(100).unwrap(), BoxType::from_uuid(uuid));
 
         let mut buf = [0u8; 24];
         let mut write_cur = WriteCursor::new(&mut buf);
@@ -368,5 +440,54 @@ mod tests {
         let parsed = BoxHeader::parse(&mut read_cur).unwrap();
 
         assert_eq!(original, parsed);
+    }
+
+    // FullBoxHeader tests
+
+    #[derive(Clone, Copy, Debug)]
+    struct TestFullBox;
+
+    #[test]
+    fn fullbox_header_parse() {
+        // version=1, flags=0x000102
+        let data = [0x01, 0x00, 0x01, 0x02];
+        let mut cur = ReadCursor::new(&data);
+
+        let header: FullBoxHeader<TestFullBox> = FullBoxHeader::parse(&mut cur).unwrap();
+        assert_eq!(header.version(), 1);
+        assert_eq!(header.flags().get(), 0x000102);
+        assert_eq!(cur.position(), 4);
+    }
+
+    #[test]
+    fn fullbox_header_write_roundtrip() {
+        let original: FullBoxHeader<TestFullBox> =
+            FullBoxHeader::new(2, FullBoxFlags::new(0x123456));
+
+        let mut buf = [0u8; 4];
+        let mut write_cur = WriteCursor::new(&mut buf);
+        original.write(&mut write_cur).unwrap();
+
+        let mut read_cur = ReadCursor::new(&buf);
+        let parsed: FullBoxHeader<TestFullBox> = FullBoxHeader::parse(&mut read_cur).unwrap();
+
+        assert_eq!(parsed.version(), original.version());
+        assert_eq!(parsed.flags().get(), original.flags().get());
+    }
+
+    #[test]
+    fn fullbox_header_insufficient_data() {
+        let data = [0x01, 0x00, 0x01]; // 3 bytes, need 4
+        let mut cur = ReadCursor::new(&data);
+
+        let result: Result<FullBoxHeader<TestFullBox>> = FullBoxHeader::parse(&mut cur);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            ErrorKind::NotEnoughBytes {
+                expected: 4,
+                remaining: 3
+            }
+        ));
     }
 }

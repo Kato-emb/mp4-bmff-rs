@@ -5,7 +5,7 @@
 use core::error;
 use core::fmt;
 
-use super::error::ErrorKind;
+use crate::boxes::error::ErrorKind;
 
 /// Kinds of errors that can occur while processing box sizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
