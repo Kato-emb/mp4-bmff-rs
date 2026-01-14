@@ -74,19 +74,16 @@ impl BoxType {
         }
     }
 
-    #[inline]
     /// Returns the 4-byte `type` field stored in the box header.
     pub fn type_field(&self) -> FourCC {
         self.boxtype
     }
 
-    #[inline]
     /// Returns `true` when this `BoxType` stores a UUID extension.
     pub fn is_uuid(&self) -> bool {
         self.boxtype == typecode::UUID
     }
 
-    #[inline]
     /// Returns the UUID extension if the type is `uuid`.
     pub fn user_type(&self) -> Option<Uuid> {
         self.usertype
@@ -96,7 +93,7 @@ impl BoxType {
 impl fmt::Debug for BoxType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut ds = f.debug_struct("BoxType");
-        ds.field("boxtype", &self.type_field());
+        ds.field("boxtype", &self.boxtype);
 
         if let Some(uuid) = self.user_type() {
             ds.field("usertype", &uuid);
@@ -108,13 +105,19 @@ impl fmt::Debug for BoxType {
 
 impl fmt::Display for BoxType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.type_field())?;
+        write!(f, "{}", self.boxtype)?;
 
         if let Some(uuid) = self.user_type() {
             write!(f, "({})", uuid)?;
         }
 
         Ok(())
+    }
+}
+
+impl AsRef<FourCC> for BoxType {
+    fn as_ref(&self) -> &FourCC {
+        &self.boxtype
     }
 }
 
