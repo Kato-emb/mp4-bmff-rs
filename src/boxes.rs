@@ -30,11 +30,12 @@
 //! }
 //! ```
 
-pub mod error;
+// =============================================================================
+// Core Layer - no_std, no_alloc compatible
+// =============================================================================
 
+pub mod error;
 pub mod header;
-pub mod iter;
-pub mod view;
 
 // Re-exports for convenience
 pub use error::{
@@ -43,5 +44,19 @@ pub use error::{
     Result,
 };
 pub use header::BoxHeader;
+
+// =============================================================================
+// Framing Layer - no_std, no_alloc compatible
+// =============================================================================
+
+pub mod iter;
+pub mod view;
+
 pub use iter::BoxIter;
 pub use view::BoxView;
+
+// =============================================================================
+// Box type Layer -  alloc feature
+// =============================================================================
+
+pub mod specs;

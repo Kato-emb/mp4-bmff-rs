@@ -52,6 +52,14 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+mod lib {
+    #[cfg(all(feature = "alloc", not(feature = "std")))]
+    pub use alloc::vec::Vec;
+
+    #[cfg(feature = "std")]
+    pub use std::vec::Vec;
+}
+
 // =============================================================================
 // Core Layer - no_std, no_alloc compatible
 // =============================================================================
@@ -59,10 +67,3 @@ extern crate alloc;
 pub mod boxes;
 pub mod cursor;
 pub mod types;
-
-// =============================================================================
-// Typed Layer - requires alloc feature
-// =============================================================================
-
-// #[cfg(feature = "alloc")]
-// pub mod typed;
