@@ -44,7 +44,7 @@ impl<'a> FtypBoxRef<'a> {
 
         // The remaining bytes are compatible_brands
         let remaining = cursor.remaining();
-        if remaining % 4 != 0 {
+        if !remaining.is_multiple_of(4) {
             return Err(Error::new(ErrorKind::InvalidBoxSize {
                 reason: "Compatible brands length is not a multiple of 4",
                 got: remaining as u64,

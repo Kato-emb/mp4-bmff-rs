@@ -67,6 +67,12 @@ impl<T> FullBoxFlags<T> {
         }
     }
 
+    /// Creates a `FullBoxFlags` from the given raw bits, truncating to 24 bits.
+    #[inline]
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        FullBoxFlags::new(bits)
+    }
+
     /// Returns the raw flags value.
     #[inline]
     pub const fn get(&self) -> u32 {
@@ -81,6 +87,12 @@ impl<T> FullBoxFlags<T> {
         }
 
         (self.mask & (1u32 << i)) != 0
+    }
+
+    /// Checks if no flags are set.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.mask == 0
     }
 
     /// Checks if all flags in `other` are set in `self`.

@@ -125,11 +125,11 @@ impl<'a> ReadCursor<'a> {
         Ok(bytes)
     }
 
-    /// Skips `n` bytes in the cursor.
+    /// Advances the cursor by `len` bytes.
     #[inline]
     #[track_caller]
-    pub fn skip(&mut self, n: usize) -> Result<()> {
-        self.take(n).map(|_| ())
+    pub fn advance(&mut self, len: usize) -> Result<()> {
+        self.take(len).map(|_| ())
     }
 
     /// Reads an array of `N` bytes from the cursor.
@@ -154,6 +154,14 @@ impl<'a> ReadCursor<'a> {
     pub fn read_u16_be(&mut self) -> Result<u16> {
         let bytes = self.read_array::<2>()?;
         Ok(u16::from_be_bytes(bytes))
+    }
+
+    /// Reads a big-endian 16-bit signed integer from the cursor.
+    #[inline]
+    #[track_caller]
+    pub fn read_i16_be(&mut self) -> Result<i16> {
+        let bytes = self.read_array::<2>()?;
+        Ok(i16::from_be_bytes(bytes))
     }
 
     /// Reads a big-endian 32-bit unsigned integer from the cursor.

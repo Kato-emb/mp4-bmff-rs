@@ -44,6 +44,7 @@ pub use error::{
     Result,
 };
 pub use header::BoxHeader;
+pub use header::FullBoxHeader;
 
 // =============================================================================
 // Framing Layer - no_std, no_alloc compatible
