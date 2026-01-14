@@ -164,6 +164,14 @@ impl<'a> ReadCursor<'a> {
         Ok(u32::from_be_bytes(bytes))
     }
 
+    /// Reads a big-endian 32-bit signed integer from the cursor.
+    #[inline]
+    #[track_caller]
+    pub fn read_i32_be(&mut self) -> Result<i32> {
+        let bytes = self.read_array::<4>()?;
+        Ok(i32::from_be_bytes(bytes))
+    }
+
     /// Reads a big-endian 64-bit unsigned integer from the cursor.
     #[inline]
     #[track_caller]
@@ -292,6 +300,14 @@ impl<'a> WriteCursor<'a> {
     #[inline]
     #[track_caller]
     pub fn write_u32_be(&mut self, value: u32) -> Result<()> {
+        self.write_array(&value.to_be_bytes())?;
+        Ok(())
+    }
+
+    /// Writes a big-endian 32-bit signed integer to the cursor.
+    #[inline]
+    #[track_caller]
+    pub fn write_i32_be(&mut self, value: i32) -> Result<()> {
         self.write_array(&value.to_be_bytes())?;
         Ok(())
     }

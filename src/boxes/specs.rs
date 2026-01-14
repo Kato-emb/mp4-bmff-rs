@@ -10,10 +10,15 @@
 mod free;
 mod ftyp;
 mod mdat;
+mod moov;
+mod mvhd;
+
+pub use mvhd::MvhdBox;
 
 pub use free::FreeBoxRef;
 pub use ftyp::FtypBoxRef;
 pub use mdat::MdatBoxRef;
+pub use moov::MoovBoxRef;
 
 #[cfg(feature = "alloc")]
 mod owned {
