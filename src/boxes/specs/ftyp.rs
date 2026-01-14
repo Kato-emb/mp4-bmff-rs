@@ -43,15 +43,15 @@ impl<'a> FtypBoxRef<'a> {
             .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
 
         // The remaining bytes are compatible_brands
-        let compatible_brands = cursor.remaining_slice();
-
-        if compatible_brands.len() % 4 != 0 {
+        let remaining = cursor.remaining();
+        if remaining % 4 != 0 {
             return Err(Error::new(ErrorKind::InvalidBoxSize {
                 reason: "Compatible brands length is not a multiple of 4",
-                got: compatible_brands.len() as u64,
+                got: remaining as u64,
             })
             .at(cursor.position() as u64));
         }
+        let compatible_brands = cursor.remaining_slice();
 
         Ok(FtypBoxRef {
             major_brand,
