@@ -1,5 +1,10 @@
 //! This module defines error types and result types for BMFF box operations.
 
+use core::error;
+use core::fmt;
+
+use crate::types::FourCC;
+
 use super::header::BoxType;
 
 /// Result type for BMFF box operations.
@@ -43,6 +48,31 @@ pub enum ErrorKind {
         /// A description of the error.
         description: &'static str,
     },
+}
+
+impl fmt::Display for ErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ErrorKind::Overflow => write!(f, "integer overflow"),
+            ErrorKind::NotEnoughBytes {
+                expected,
+                remaining,
+            } => write!(
+                f,
+                "not enough bytes: expected {expected}, but only {remaining} remaining"
+            ),
+            ErrorKind::MismatchedBoxSize { expected, found } => {
+                write!(f, "mismatched box size: expected {expected}, found {found}")
+            }
+            ErrorKind::InvalidBoxSize { reason, got } => {
+                write!(f, "invalid box size: {reason} (got {got})")
+            }
+            ErrorKind::InvalidBoxType { reason, got } => {
+                write!(f, "invalid box type: {reason} (got {got})")
+            }
+            ErrorKind::Other { description } => write!(f, "{description}"),
+        }
+    }
 }
 
 /// Represents an error that occurred while processing a BMFF box.
@@ -91,6 +121,24 @@ impl Error {
     }
 }
 
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.kind)?;
+
+        if let Some(box_type) = &self.box_type {
+            write!(f, " in box '{box_type}'")?;
+        }
+
+        if let Some(offset) = self.offset {
+            write!(f, " at offset {offset}")?;
+        }
+
+        Ok(())
+    }
+}
+
+impl error::Error for Error {}
+
 impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Self {
         Self {
@@ -101,7 +149,7 @@ impl From<ErrorKind> for Error {
     }
 }
 
-use crate::{cursor::Error as CursorError, types::FourCC};
+use crate::cursor::Error as CursorError;
 
 impl From<CursorError> for ErrorKind {
     fn from(value: CursorError) -> Self {
