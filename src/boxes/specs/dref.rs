@@ -236,7 +236,9 @@ pub type UrnFlags = FullBoxFlags<UrnSpec>;
 
 #[cfg(feature = "alloc")]
 pub use owned::{
-    UrlBox, //
+    DrefBox, //
+    DrefEntry,
+    UrlBox,
     UrnBox,
 };
 
@@ -248,6 +250,59 @@ mod owned {
 
     use super::*;
     use crate::cursor::WriteCursor;
+
+    /// An owned entry in the Data Reference Box (`dref`).
+    #[derive(Debug, Clone)]
+    pub enum DrefEntry {
+        /// A Data Entry URL Box (`url `).
+        Url(UrlBox),
+        /// A Data Entry URN Box (`urn `).
+        Urn(UrnBox),
+    }
+
+    /// An owned Data Reference Box (`dref`).
+    #[derive(Debug, Clone)]
+    pub struct DrefBox {
+        /// The version of the box.
+        pub version: u8,
+        /// The flags of the box.
+        pub flags: DrefFlags,
+        /// The entries in the Data Reference Box.
+        pub entries: Vec<DrefEntry>,
+    }
+
+    impl DrefBox {
+        /// Creates a `DrefBox` from a `DrefBoxRef`.
+        pub fn from_ref(dref_ref: &DrefBoxRef) -> Self {
+            let entries = dref_ref
+                .entries()
+                .filter_map(|entry_res| match entry_res {
+                    Ok(entry_ref) => match entry_ref {
+                        DrefEntryRef::Url(url_ref) => Some(DrefEntry::Url(url_ref.to_owned())),
+                        DrefEntryRef::Urn(urn_ref) => Some(DrefEntry::Urn(urn_ref.to_owned())),
+                    },
+                    Err(_) => None, // Skip entries that failed to parse
+                })
+                .collect();
+
+            DrefBox {
+                version: dref_ref.version,
+                flags: dref_ref.flags,
+                entries,
+            }
+        }
+
+        /// Parses a `DrefBox` from the given payload.
+        pub fn parse(payload: &[u8]) -> Result<Self> {
+            let dref_ref = DrefBoxRef::parse(payload)?;
+            Ok(Self::from_ref(&dref_ref))
+        }
+
+        /// Writes the `DrefBox` to the given `WriteCursor`.
+        pub fn write(&self, _cur: &mut WriteCursor<'_>) -> Result<()> {
+            todo!("Implement DrefBox::write");
+        }
+    }
 
     /// An owned Data Entry URL Box (`url `).
     #[derive(Debug, Clone)]

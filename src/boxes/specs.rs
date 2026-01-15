@@ -28,7 +28,7 @@
 //! |    |    |    |    |hmhd|    | | |hint media header, overall information (hint track only)
 //! |    |    |    |    |nmhd|    | | |Null media header, overall information (some tracks only)
 //! |    |    |    |    |dinf|    |*|#|data information box, container
-//! |    |    |    |    |    |dref|*| |data reference box, declares source(s) of media data in track
+//! |    |    |    |    |    |dref|*|○|data reference box, declares source(s) of media data in track
 //! |    |    |    |    |stbl|    |*| |sample table box, container for the time/space map
 //! |    |    |    |    |    |stsd|*| |sample descriptions (codec types, initialization etc.)
 //! |    |    |    |    |    |stts|*| |(decoding) time-to-sample
@@ -127,6 +127,7 @@
 //! |    |    |    |    |    |    | | |
 //! ```
 
+mod dinf;
 mod dref;
 mod free;
 mod ftyp;
@@ -147,13 +148,18 @@ pub use tkhd::{
     TkhdSpec,
 };
 
+pub use dinf::DinfBoxRef;
 pub use dref::{
-    DrefBoxRef,
+    DrefBoxRef, //
     DrefEntryRef,
+};
+pub use dref::{
     UrlBoxRef, //
     UrlFlags,
     UrlSpec,
-    UrnBoxRef,
+};
+pub use dref::{
+    UrnBoxRef, //
     UrnFlags,
     UrnSpec,
 };
@@ -165,8 +171,11 @@ pub use trak::TrakBoxRef;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    pub use super::dinf::DinfBox;
     pub use super::dref::{
-        UrlBox, //
+        DrefBox, //
+        DrefEntry,
+        UrlBox,
         UrnBox,
     };
     pub use super::ftyp::FtypBox;
