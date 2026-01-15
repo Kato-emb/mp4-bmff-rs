@@ -65,7 +65,7 @@ impl MvhdBox {
         let at = |e: ErrorKind, cur: &ReadCursor| Error::new(e).at(cur.position() as u64);
         let mut cursor = ReadCursor::new(payload);
 
-        let full_box_header = FullBoxHeader::<MvhdBox>::parse(&mut cursor)?;
+        let full_box_header = FullBoxHeader::<MvhdSpec>::parse(&mut cursor)?;
 
         let (creation_time, modification_time, timescale, duration) = match full_box_header
             .version()
@@ -187,8 +187,11 @@ impl MvhdBox {
     }
 }
 
+/// The specification for the Movie Header Box (`mvhd`).
+pub struct MvhdSpec;
+
 /// The flags for the Movie Header Box (`mvhd`).
-pub type MvhdFlags = FullBoxFlags<MvhdBox>;
+pub type MvhdFlags = FullBoxFlags<MvhdSpec>;
 
 #[cfg(test)]
 mod tests {

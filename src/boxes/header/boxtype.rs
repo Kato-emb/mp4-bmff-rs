@@ -157,6 +157,12 @@ mod typecode {
     pub const TRAK: FourCC = FourCC::new(*b"trak");
     /// `type` field value used by Track Header boxes.
     pub const TKHD: FourCC = FourCC::new(*b"tkhd");
+    /// `type` field value used by Data Reference boxes.
+    pub const DREF: FourCC = FourCC::new(*b"dref");
+    /// `type` field value used by URL boxes.
+    pub const URL_: FourCC = FourCC::new(*b"url ");
+    /// `type` field value used by URN boxes.
+    pub const URN_: FourCC = FourCC::new(*b"urn ");
 }
 
 #[cfg(test)]

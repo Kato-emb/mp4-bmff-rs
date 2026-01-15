@@ -54,10 +54,16 @@ extern crate alloc;
 
 mod lib {
     #[cfg(all(feature = "alloc", not(feature = "std")))]
-    pub use alloc::vec::Vec;
+    pub use alloc::{
+        string::String, //
+        vec::Vec,
+    };
 
     #[cfg(feature = "std")]
-    pub use std::vec::Vec;
+    pub use std::{
+        string::String, //
+        vec::Vec,
+    };
 }
 
 // =============================================================================

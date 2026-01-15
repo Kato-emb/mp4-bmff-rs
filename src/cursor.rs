@@ -125,6 +125,25 @@ impl<'a> ReadCursor<'a> {
         Ok(bytes)
     }
 
+    /// Takes bytes from the cursor until the specified byte is found. The returned slice does not include the delimiter byte.
+    #[inline]
+    #[track_caller]
+    pub fn take_until(&mut self, byte: u8) -> Result<&'a [u8]> {
+        let start = self.pos;
+        let rem = self.remaining_slice();
+
+        let Some(i) = rem.iter().position(|&b| b == byte) else {
+            return Err(Error::UnexpectedEof {
+                expected: 1,
+                remaining: self.remaining(),
+            });
+        };
+
+        let end = start + i;
+        self.pos = end + 1; // consume delimiter
+        Ok(&self.inner[start..end])
+    }
+
     /// Advances the cursor by `len` bytes.
     #[inline]
     #[track_caller]

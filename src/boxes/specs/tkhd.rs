@@ -14,6 +14,7 @@ pub struct TkhdBox {
     pub version: u8,
     /// Box flags.
     pub flags: TkhdFlags,
+
     /// Creation time of the track.
     pub creation_time: QuickTimeDateTime,
     /// Modification time of the track.
@@ -47,10 +48,10 @@ impl Default for TkhdBox {
             duration: 1,
             layer: 0,
             alternate_group: 0,
-            volume: U8F8::from_f32(1.0),
+            volume: U8F8::from_raw(0x0100), // full volume
             matrix: Matrix::identity(),
-            width: U16F16::from_f32(0.0),
-            height: U16F16::from_f32(0.0),
+            width: U16F16::from_raw(0x00000000),
+            height: U16F16::from_raw(0x00000000),
         }
     }
 }
@@ -65,7 +66,7 @@ impl TkhdBox {
         let at = |e: ErrorKind, cur: &ReadCursor| Error::new(e).at(cur.position() as u64);
         let mut cur = ReadCursor::new(payload);
 
-        let full_box_header = FullBoxHeader::<TkhdBox>::parse(&mut cur)?;
+        let full_box_header = FullBoxHeader::<TkhdSpec>::parse(&mut cur)?;
 
         let (creation_time, modification_time, track_id, duration) = match full_box_header.version()
         {
@@ -210,8 +211,11 @@ impl TkhdBox {
     }
 }
 
+/// Specification type for Track Header Box (`tkhd`).
+pub struct TkhdSpec;
+
 /// Flags for the Track Header Box (`tkhd`).
-pub type TkhdFlags = FullBoxFlags<TkhdBox>;
+pub type TkhdFlags = FullBoxFlags<TkhdSpec>;
 
 impl TkhdFlags {
     /// Track is enabled.
@@ -290,7 +294,10 @@ mod tests {
 
         assert_eq!(tkhd.version, 0);
         assert_eq!(tkhd.flags.get(), flags.get());
-        assert_eq!(tkhd.creation_time.to_quicktime_seconds(), creation_time as u64);
+        assert_eq!(
+            tkhd.creation_time.to_quicktime_seconds(),
+            creation_time as u64
+        );
         assert_eq!(
             tkhd.modification_time.to_quicktime_seconds(),
             modification_time as u64
