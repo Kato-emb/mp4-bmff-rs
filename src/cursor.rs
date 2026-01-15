@@ -110,6 +110,12 @@ impl<'a> ReadCursor<'a> {
         self.pos
     }
 
+    /// Sets the current position of the cursor.
+    #[inline]
+    pub const fn set_position(&mut self, pos: usize) {
+        self.pos = pos;
+    }
+
     /// Advances the cursor by `n` bytes and returns a slice of the taken bytes.
     #[inline]
     #[track_caller]
@@ -260,6 +266,12 @@ impl<'a> WriteCursor<'a> {
     #[inline]
     pub const fn position(&self) -> usize {
         self.pos
+    }
+
+    /// Sets the current position of the cursor.
+    #[inline]
+    pub const fn set_position(&mut self, pos: usize) {
+        self.pos = pos;
     }
 
     /// Advances the cursor by `n` bytes and returns a mutable slice of the taken bytes.
