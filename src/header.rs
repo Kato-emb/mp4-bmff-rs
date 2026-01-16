@@ -6,7 +6,7 @@ use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 use crate::types::FourCC;
 
-use super::error::*;
+use crate::error::*;
 
 pub mod boxsize;
 pub mod boxtype;

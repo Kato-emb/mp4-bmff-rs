@@ -3,7 +3,6 @@
 use core::error;
 use core::fmt;
 
-use crate::boxes::error::ErrorKind;
 use crate::types::{
     FourCC, //
     Uuid,
@@ -28,17 +27,6 @@ impl fmt::Display for BoxTypeError {
 }
 
 impl error::Error for BoxTypeError {}
-
-impl From<BoxTypeError> for ErrorKind {
-    fn from(value: BoxTypeError) -> Self {
-        match value {
-            BoxTypeError::UuidFourCCNotAllowed => Self::InvalidBoxType {
-                reason: "Cannot create UUID BoxType from FourCC code 'uuid'",
-                got: typecode::UUID,
-            },
-        }
-    }
-}
 
 /// User extensions use an extended type
 pub type UserType = Uuid;

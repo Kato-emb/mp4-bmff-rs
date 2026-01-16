@@ -19,7 +19,7 @@ struct Args {
 
 #[cfg(feature = "std")]
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    use mp4_bmff::boxes::BoxIter;
+    use mp4_bmff::iter::BoxIter;
 
     let args = Args::parse();
 
@@ -38,10 +38,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             view.header.boxsize(),
         );
 
-        use mp4_bmff::boxes::specs::*;
+        use mp4_bmff::boxes::*;
         match view.header.boxtype().type_field().as_ascii() {
             Some("ftyp") => {
-                let ftyp = FtypBoxRef::parse(view.payload)?;
+                let ftyp = FtypBoxView::parse(view.payload)?;
                 println!("  Major Brand: {:?}", ftyp.major_brand);
                 println!("  Minor Version: {}", ftyp.minor_version);
                 println!("  Compatible Brands:");
@@ -50,28 +50,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Some("moov") => {
-                let moov = MoovBoxRef::parse(view.payload)?;
+                // let moov = MoovBoxRef::parse(view.payload)?;
 
-                for trak in moov.traks() {
-                    let trak = trak?;
-                    println!("    Track Box:");
-                    for trak_child in trak.children() {
-                        let trak_child = trak_child?;
-                        println!(
-                            "      Track Child Box: {:?}, Size: {}",
-                            trak_child.header.boxtype(),
-                            trak_child.header.boxsize()
-                        );
-                    }
-                }
+                // for trak in moov.traks() {
+                //     let trak = trak?;
+                //     println!("    Track Box:");
+                //     for trak_child in trak.children() {
+                //         let trak_child = trak_child?;
+                //         println!(
+                //             "      Track Child Box: {:?}, Size: {}",
+                //             trak_child.header.boxtype(),
+                //             trak_child.header.boxsize()
+                //         );
+                //     }
+                // }
             }
             Some("free") => {
-                let free = FreeBoxRef::parse(view.payload)?;
-                println!("  Free Space Data Length: {}", free.data.len());
+                // let free = FreeBoxRef::parse(view.payload)?;
+                // println!("  Free Space Data Length: {}", free.data.len());
             }
             Some("mdat") => {
-                let mdat = MdatBoxRef::parse(view.payload)?;
-                println!("  Media Data Length: {}", mdat.data.len());
+                // let mdat = MdatBoxView::parse(view.payload)?;
+                // println!("  Media Data Length: {}", mdat.data.len());
             }
             Some(typ) => {
                 println!("  (No parser available for this box type '{}')", typ);

@@ -5,8 +5,6 @@
 use core::error;
 use core::fmt;
 
-use crate::boxes::error::ErrorKind;
-
 /// Kinds of errors that can occur while processing box sizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoxSizeError {
@@ -37,21 +35,6 @@ impl fmt::Display for BoxSizeError {
 }
 
 impl error::Error for BoxSizeError {}
-
-impl From<BoxSizeError> for ErrorKind {
-    fn from(value: BoxSizeError) -> Self {
-        match value {
-            BoxSizeError::SizeTooSmall { expected: _, found } => Self::InvalidBoxSize {
-                reason: "Box size is too small to be valid",
-                got: found,
-            },
-            BoxSizeError::ExtendedSizeMarker => Self::InvalidBoxSize {
-                reason: "Box size indicates extended size, but none was provided",
-                got: BoxSize::MARKER_EXTENDED_SIZE as u64,
-            },
-        }
-    }
-}
 
 /// Internal representation of box size variants.
 /// Private to enforce validation through constructors.

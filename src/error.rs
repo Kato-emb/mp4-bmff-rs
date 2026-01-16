@@ -3,9 +3,12 @@
 use core::error;
 use core::fmt;
 
+use crate::cursor::Error as CursorError;
 use crate::types::FourCC;
 
-use super::header::BoxType;
+use crate::header::boxsize::BoxSizeError;
+use crate::header::boxtype::BoxTypeError;
+use crate::header::{BoxSize, BoxType};
 
 /// Result type for BMFF box operations.
 pub type Result<T> = core::result::Result<T, Error>;
@@ -179,8 +182,6 @@ impl From<ErrorKind> for Error {
     }
 }
 
-use crate::cursor::Error as CursorError;
-
 impl From<CursorError> for ErrorKind {
     fn from(value: CursorError) -> Self {
         match value {
@@ -198,6 +199,34 @@ impl From<CursorError> for ErrorKind {
             } => ErrorKind::NotEnoughBytes {
                 expected,
                 remaining,
+            },
+        }
+    }
+}
+
+impl From<BoxSizeError> for ErrorKind {
+    fn from(value: BoxSizeError) -> Self {
+        match value {
+            BoxSizeError::SizeTooSmall { expected: _, found } => Self::InvalidBoxSize {
+                reason: "Box size is too small to be valid",
+                got: found,
+            },
+            BoxSizeError::ExtendedSizeMarker => Self::InvalidBoxSize {
+                reason: "Box size indicates extended size, but none was provided",
+                got: BoxSize::MARKER_EXTENDED_SIZE as u64,
+            },
+        }
+    }
+}
+
+impl From<BoxTypeError> for ErrorKind {
+    fn from(value: BoxTypeError) -> Self {
+        use crate::header::boxtype::UUID;
+
+        match value {
+            BoxTypeError::UuidFourCCNotAllowed => Self::InvalidBoxType {
+                reason: "Cannot create UUID BoxType from FourCC code 'uuid'",
+                got: UUID,
             },
         }
     }
