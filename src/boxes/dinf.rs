@@ -10,12 +10,12 @@ pub struct DinfBoxView<'a> {
 }
 
 impl<'a> DinfBoxView<'a> {
-    /// Parses a `DinfBoxRef` from the given payload.
+    /// Parses a `DinfBoxView` from the given payload.
     pub fn parse(payload: &'a [u8]) -> Result<DinfBoxView<'a>> {
         Ok(DinfBoxView { payload })
     }
 
-    /// Returns an iterator over the child boxes of this `DinfBoxRef`.
+    /// Returns an iterator over the child boxes of this `DinfBoxView`.
     pub fn children(&self) -> BoxIter<'a> {
         BoxIter::new(self.payload)
     }

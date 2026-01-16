@@ -28,7 +28,7 @@
 //! |    |    |    |    |smhd|    | | |sound media header, overall information (sound track only)
 //! |    |    |    |    |hmhd|    | | |hint media header, overall information (hint track only)
 //! |    |    |    |    |nmhd|    | | |Null media header, overall information (some tracks only)
-//! |    |    |    |    |dinf|    |*|#|data information box, container
+//! |    |    |    |    |dinf|    |*|○|data information box, container
 //! |    |    |    |    |    |dref|*|○|data reference box, declares source(s) of media data in track
 //! |    |    |    |    |stbl|    |*| |sample table box, container for the time/space map
 //! |    |    |    |    |    |stsd|*| |sample descriptions (codec types, initialization etc.)
