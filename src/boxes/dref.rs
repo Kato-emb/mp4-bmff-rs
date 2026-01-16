@@ -44,20 +44,6 @@ impl<'a> DrefBoxView<'a> {
             .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
 
         let entries = cur.remaining_slice();
-        let mut count = 0;
-        let mut entry_cursor = ReadCursor::new(entries);
-        while !entry_cursor.is_empty() {
-            BoxView::parse(&mut entry_cursor)?;
-            count += 1;
-        }
-
-        if count != entry_count {
-            return Err(Error::new(ErrorKind::InvalidBoxField {
-                field: "entry_count",
-                reason: "mismatch between declared entry count and actual entries",
-            })
-            .at(cur.position() as u64));
-        }
 
         Ok(DrefBoxView {
             version: full_box_header.version(),
