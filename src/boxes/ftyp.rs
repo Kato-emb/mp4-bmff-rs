@@ -53,22 +53,16 @@ impl<'a> FtypBoxView<'a> {
             compatible_brands,
         })
     }
-
-    /// Converts this `FtypBoxView` into an owned `FtypBox`.
-    #[cfg(feature = "alloc")]
-    pub fn to_owned(&self) -> FtypBox {
-        FtypBox::from_view(self)
-    }
 }
 
-use owned::FtypBox;
+#[cfg(feature = "alloc")]
+pub use owned::FtypBox;
 
 #[cfg(feature = "alloc")]
-pub mod owned {
+mod owned {
     use crate::lib::Vec;
 
     use super::*;
-    use crate::cursor::WriteCursor;
 
     /// An owned File Type Box (`ftyp`).
     #[derive(Debug, Clone)]
@@ -83,12 +77,12 @@ pub mod owned {
 
     impl FtypBox {
         /// Creates an `FtypBox` from an `FtypBoxView`.
-        pub fn from_view(ftyp_view: &FtypBoxView) -> Self {
-            let compatible_brands = ftyp_view.compatible_brands().collect::<Vec<FourCC>>();
+        pub fn from_view(view: &FtypBoxView) -> Self {
+            let compatible_brands = view.compatible_brands().collect::<Vec<FourCC>>();
 
             FtypBox {
-                major_brand: ftyp_view.major_brand,
-                minor_version: ftyp_view.minor_version,
+                major_brand: view.major_brand,
+                minor_version: view.minor_version,
                 compatible_brands,
             }
         }
@@ -98,58 +92,18 @@ pub mod owned {
             let ftyp_view = FtypBoxView::parse(payload)?;
             Ok(Self::from_view(&ftyp_view))
         }
+    }
 
-        /// Writes the `FtypBox` to the given `WriteCursor`.
-        pub fn write(&self, cur: &mut WriteCursor) -> Result<()> {
-            cur.write_array(self.major_brand.as_bytes())
-                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
-            cur.write_u32_be(self.minor_version)
-                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
-            for brand in &self.compatible_brands {
-                cur.write_array(brand.as_bytes())
-                    .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
-            }
-
-            Ok(())
+    impl FtypBoxView<'_> {
+        /// Converts this `FtypBoxView` into an owned `FtypBox`.
+        pub fn to_owned(&self) -> FtypBox {
+            FtypBox::from_view(self)
         }
     }
 
     impl From<FtypBoxView<'_>> for FtypBox {
-        fn from(ftyp_ref: FtypBoxView) -> Self {
-            Self::from_view(&ftyp_ref)
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn test_ftyp_box_owned_write() {
-            let ftyp = FtypBox {
-                major_brand: FourCC::new(*b"isom"),
-                minor_version: 512,
-                compatible_brands: vec![
-                    FourCC::new(*b"isom"),
-                    FourCC::new(*b"iso2"),
-                    FourCC::new(*b"avc1"),
-                ],
-            };
-
-            let mut buffer = [0u8; 20];
-            let mut cursor = WriteCursor::new(&mut buffer);
-
-            ftyp.write(&mut cursor).unwrap();
-
-            let expected: [u8; 20] = [
-                b'i', b's', b'o', b'm', // major_brand
-                0x00, 0x00, 0x02, 0x00, // minor_version (512)
-                b'i', b's', b'o', b'm', // compatible_brand 1
-                b'i', b's', b'o', b'2', // compatible_brand 2
-                b'a', b'v', b'c', b'1', // compatible_brand 3
-            ];
-
-            assert_eq!(&buffer, &expected);
+        fn from(view: FtypBoxView) -> Self {
+            Self::from_view(&view)
         }
     }
 }

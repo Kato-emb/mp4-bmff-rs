@@ -5,11 +5,9 @@ use crate::cursor::WriteCursor;
 
 use crate::error::*;
 use crate::header::BoxHeader;
-use crate::header::BoxSize;
-use crate::header::BoxType;
 
 /// A view into a BMFF box, containing its header and payload.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct BoxView<'a> {
     /// The box header.
     pub header: BoxHeader,
@@ -55,64 +53,6 @@ impl<'a> BoxView<'a> {
 
         Ok(())
     }
-}
-
-/// Writes a BMFF box with the given header and payload to the `WriteCursor`.
-pub fn write_box(cur: &mut WriteCursor<'_>, type_: BoxType, payload: &[u8]) -> Result<()> {
-    let box_type_size = if type_.is_uuid() { 16 } else { 4 };
-    let box_size = 4 + box_type_size + payload.len(); // size (4) + type (4 or 16) + payload
-
-    let size = if box_size > u32::MAX as usize {
-        BoxSize::from_u64(payload.len() as u64 + 16)
-    } else {
-        BoxSize::from_u64(payload.len() as u64 + 8)
-    }
-    .map_err(|e| Error::new(e.into()).with_box_type(type_))?;
-
-    let header = BoxHeader::new(size, type_);
-    header.write(cur).map_err(|e| e.at(cur.position() as u64))?;
-
-    cur.write_slice(payload)
-        .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
-
-    Ok(())
-}
-
-/// Writes a BMFF box to the `WriteCursor`, using the provided closure to write the payload.
-pub fn write_box_with<F>(w: &mut WriteCursor<'_>, type_: BoxType, f: F) -> Result<()>
-where
-    F: FnOnce(&mut WriteCursor<'_>) -> Result<()>,
-{
-    let start_pos = w.position();
-
-    // Reserve space for header
-    let box_type_size = if type_.is_uuid() { 16 } else { 4 };
-    let header_size = 4 + box_type_size; // size (4) + type (4 or 16)
-    w.reserve_zeros(header_size)
-        .map_err(|e| Error::new(e.into()).at(w.position() as u64))?;
-
-    // Write payload using the provided closure
-    f(w)?;
-
-    let end_pos = w.position();
-    let payload_size = (end_pos - start_pos - header_size) as u64;
-
-    // Go back and write the header
-    let box_size = if end_pos - start_pos > u32::MAX as usize {
-        BoxSize::from_u64(payload_size + 16)
-    } else {
-        BoxSize::from_u64(payload_size + 8)
-    }
-    .map_err(|e| Error::new(e.into()).with_box_type(type_))?;
-
-    let header = BoxHeader::new(box_size, type_);
-
-    let current_pos = w.position();
-    w.set_position(start_pos);
-    header.write(w).map_err(|e| e.at(w.position() as u64))?;
-    w.set_position(current_pos);
-
-    Ok(())
 }
 
 #[cfg(test)]

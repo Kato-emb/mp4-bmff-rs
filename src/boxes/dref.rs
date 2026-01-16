@@ -66,6 +66,12 @@ impl<'a> DrefBoxView<'a> {
             entries,
         })
     }
+
+    /// Converts this `DrefBoxView` into an owned `DrefBox`.
+    #[cfg(feature = "alloc")]
+    pub fn to_owned(&self) -> DrefBox {
+        DrefBox::from_view(self)
+    }
 }
 
 struct DrefEntryIter<'a> {
@@ -110,8 +116,10 @@ impl<'a> Iterator for DrefEntryIter<'a> {
     }
 }
 
+/// Specification type for Data Reference Box (`dref`).
 pub struct DrefSpec;
 
+/// The flags for the Data Reference Box (`dref`).
 pub type DrefFlags = FullBoxFlags<DrefSpec>;
 
 /// A reference to a Data Entry URL Box (`url `).
@@ -157,7 +165,7 @@ impl<'a> UrlBoxView<'a> {
     /// Converts this `UrlBoxView` into an owned `UrlBox`.
     #[cfg(feature = "alloc")]
     pub fn to_owned(&self) -> UrlBox {
-        UrlBox::from_ref(self)
+        UrlBox::from_view(self)
     }
 }
 
@@ -225,7 +233,7 @@ impl<'a> UrnBoxView<'a> {
     /// Converts this `UrnBoxView` into an owned `UrnBox`.
     #[cfg(feature = "alloc")]
     pub fn to_owned(&self) -> UrnBox {
-        UrnBox::from_ref(self)
+        UrnBox::from_view(self)
     }
 }
 
@@ -242,8 +250,6 @@ pub use owned::{
     UrlBox,
     UrnBox,
 };
-
-use core::str;
 
 #[cfg(feature = "alloc")]
 mod owned {
@@ -274,8 +280,8 @@ mod owned {
 
     impl DrefBox {
         /// Creates a `DrefBox` from a `DrefBoxView`.
-        pub fn from_ref(dref_ref: &DrefBoxView) -> Self {
-            let entries = dref_ref
+        pub fn from_view(view: &DrefBoxView) -> Self {
+            let entries = view
                 .entries()
                 .filter_map(|entry_res| match entry_res {
                     Ok(entry_ref) => match entry_ref {
@@ -287,8 +293,8 @@ mod owned {
                 .collect();
 
             DrefBox {
-                version: dref_ref.version,
-                flags: dref_ref.flags,
+                version: view.version,
+                flags: view.flags,
                 entries,
             }
         }
@@ -296,12 +302,7 @@ mod owned {
         /// Parses a `DrefBox` from the given payload.
         pub fn parse(payload: &[u8]) -> Result<Self> {
             let dref_ref = DrefBoxView::parse(payload)?;
-            Ok(Self::from_ref(&dref_ref))
-        }
-
-        /// Writes the `DrefBox` to the given `WriteCursor`.
-        pub fn write(&self, _cur: &mut WriteCursor<'_>) -> Result<()> {
-            todo!("Implement DrefBox::write");
+            Ok(Self::from_view(&dref_ref))
         }
     }
 
@@ -318,44 +319,24 @@ mod owned {
 
     impl UrlBox {
         /// Creates an `UrlBox` from an `UrlBoxView`.
-        pub fn from_ref(url_ref: &UrlBoxView) -> Self {
+        pub fn from_view(view: &UrlBoxView) -> Self {
             UrlBox {
-                version: url_ref.version,
-                flags: url_ref.flags,
-                location: url_ref.location.map(|s| s.to_string()),
+                version: view.version,
+                flags: view.flags,
+                location: view.location.map(|s| s.to_string()),
             }
         }
 
         /// Parses an `UrlBox` from the given payload.
         pub fn parse(payload: &[u8]) -> Result<Self> {
-            let url_ref = UrlBoxView::parse(payload)?;
-            Ok(Self::from_ref(&url_ref))
-        }
-
-        /// Writes the `UrlBox` to the given `WriteCursor`.
-        pub fn write(&self, cursor: &mut WriteCursor<'_>) -> Result<()> {
-            let full_box_header = FullBoxHeader::<UrlSpec>::new(self.version, self.flags);
-            full_box_header
-                .write(cursor)
-                .map_err(|e| e.at(cursor.position() as u64))?;
-
-            if let Some(location) = &self.location {
-                cursor
-                    .write_slice(location.as_bytes())
-                    .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
-                // Null-terminate the location string if present
-                cursor
-                    .write_u8(0)
-                    .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
-            }
-
-            Ok(())
+            let url_view = UrlBoxView::parse(payload)?;
+            Ok(Self::from_view(&url_view))
         }
     }
 
     impl From<UrlBoxView<'_>> for UrlBox {
-        fn from(value: UrlBoxView<'_>) -> Self {
-            Self::from_ref(&value)
+        fn from(view: UrlBoxView<'_>) -> Self {
+            Self::from_view(&view)
         }
     }
 
@@ -374,19 +355,19 @@ mod owned {
 
     impl UrnBox {
         /// Creates an `UrnBox` from an `UrnBoxView`.
-        pub fn from_ref(urn_ref: &UrnBoxView) -> Self {
+        pub fn from_view(view: &UrnBoxView) -> Self {
             UrnBox {
-                version: urn_ref.version,
-                flags: urn_ref.flags,
-                name: urn_ref.name.to_string(),
-                location: urn_ref.location.to_string(),
+                version: view.version,
+                flags: view.flags,
+                name: view.name.to_string(),
+                location: view.location.to_string(),
             }
         }
 
         /// Parses an `UrnBox` from the given payload.
         pub fn parse(payload: &[u8]) -> Result<Self> {
-            let urn_ref = UrnBoxView::parse(payload)?;
-            Ok(Self::from_ref(&urn_ref))
+            let urn_view = UrnBoxView::parse(payload)?;
+            Ok(Self::from_view(&urn_view))
         }
 
         /// Writes the `UrnBox` to the given `WriteCursor`.
@@ -417,8 +398,8 @@ mod owned {
     }
 
     impl From<UrnBoxView<'_>> for UrnBox {
-        fn from(value: UrnBoxView<'_>) -> Self {
-            Self::from_ref(&value)
+        fn from(view: UrnBoxView<'_>) -> Self {
+            Self::from_view(&view)
         }
     }
 }
@@ -718,44 +699,6 @@ mod tests {
             assert_eq!(url_owned.version, url_ref.version);
             assert_eq!(url_owned.flags.get(), url_ref.flags.get());
             assert_eq!(url_owned.location.as_deref(), url_ref.location);
-        }
-
-        #[test]
-        fn url_box_write_roundtrip_self_contained() {
-            let original = UrlBox {
-                version: 0,
-                flags: UrlFlags::SELF_CONTAINED,
-                location: None,
-            };
-
-            let mut buf = vec![0u8; 4]; // FullBoxHeader only
-            let mut cursor = WriteCursor::new(&mut buf);
-            original.write(&mut cursor).unwrap();
-
-            let parsed = UrlBox::parse(&buf).unwrap();
-            assert_eq!(parsed.version, original.version);
-            assert_eq!(parsed.flags.get(), original.flags.get());
-            assert_eq!(parsed.location, original.location);
-        }
-
-        #[test]
-        fn url_box_write_roundtrip_with_location() {
-            let location = "http://example.com/video.mp4";
-            let original = UrlBox {
-                version: 0,
-                flags: FullBoxFlags::empty(),
-                location: Some(location.to_string()),
-            };
-
-            let size = 4 + location.len() + 1; // FullBoxHeader + location + null
-            let mut buf = vec![0u8; size];
-            let mut cursor = WriteCursor::new(&mut buf);
-            original.write(&mut cursor).unwrap();
-
-            let parsed = UrlBox::parse(&buf).unwrap();
-            assert_eq!(parsed.version, original.version);
-            assert_eq!(parsed.flags.get(), original.flags.get());
-            assert_eq!(parsed.location, original.location);
         }
 
         #[test]
