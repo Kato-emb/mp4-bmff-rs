@@ -1,0 +1,54 @@
+use crate::error::*;
+use crate::iter::BoxIter;
+
+use super::tkhd::TkhdBox;
+
+/// A reference to a Track Box (`trak`).
+#[derive(Debug)]
+pub struct TrakBoxView<'a> {
+    payload: &'a [u8],
+}
+
+impl<'a> TrakBoxView<'a> {
+    /// Parses a `TrakBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<TrakBoxView<'a>> {
+        Ok(TrakBoxView { payload })
+    }
+
+    /// Returns an iterator over the child boxes of this `TrakBoxView`.
+    pub fn children(&self) -> BoxIter<'a> {
+        BoxIter::new(self.payload)
+    }
+
+    /// Returns the Track Header Box (`tkhd`) if present.
+    pub fn tkhd(&self) -> Option<Result<TkhdBox>> {
+        use crate::header::boxtype;
+
+        for child in self.children() {
+            match child {
+                Ok(c) if c.header.boxtype().type_field() == boxtype::TKHD => {
+                    return Some(TkhdBox::parse(c.payload));
+                }
+                Ok(_) => continue,
+                Err(e) => return Some(Err(e)),
+            }
+        }
+
+        None
+    }
+}
+
+#[cfg(feature = "alloc")]
+pub use owned::TrakBox;
+
+#[cfg(feature = "alloc")]
+mod owned {
+    use super::*;
+
+    /// An owned Track Box (`trak`).
+    pub struct TrakBox {
+        /// The Track Header Box (`tkhd`).
+        pub tkhd: TkhdBox,
+        // Add fields as necessary for owned representation
+    }
+}

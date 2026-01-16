@@ -133,6 +133,10 @@ mod dref;
 mod free;
 mod ftyp;
 mod mdat;
+mod moov;
+mod mvhd;
+mod tkhd;
+mod trak;
 
 // file type box
 pub use ftyp::FtypBoxView;
@@ -140,6 +144,13 @@ pub use ftyp::FtypBoxView;
 //
 pub use free::FreeBoxView;
 pub use mdat::MdatBoxView;
+
+pub use moov::MoovBoxView;
+
+pub use trak::TrakBoxView;
+
+pub use mvhd::MvhdBox;
+pub use tkhd::TkhdBox;
 
 pub use dinf::DinfBoxView;
 pub use dref::{
@@ -163,6 +174,10 @@ pub use dref::{
 mod owned {
     use super::*;
     pub use ftyp::FtypBox;
+
+    pub use moov::MoovBox;
+
+    pub use trak::TrakBox;
 
     pub use free::FreeBox;
     pub use mdat::MdatBox;
