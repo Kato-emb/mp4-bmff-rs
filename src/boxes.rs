@@ -128,22 +128,52 @@
 //! |    |    |    |    |    |    | | |
 //! ```
 
+mod dinf;
 mod dref;
 mod free;
 mod ftyp;
 mod mdat;
 
 // file type box
-pub use free::FreeBoxView;
+pub use ftyp::FtypBoxView;
 
 //
-pub use ftyp::FtypBoxView;
+pub use free::FreeBoxView;
 pub use mdat::MdatBoxView;
+
+pub use dinf::DinfBoxView;
+pub use dref::{
+    DrefBoxView, //
+    DrefEntryView,
+    DrefFlags,
+    DrefSpec,
+};
+pub use dref::{
+    UrlBoxView, //
+    UrlFlags,
+    UrlSpec,
+};
+pub use dref::{
+    UrnBoxView, //
+    UrnFlags,
+    UrnSpec,
+};
 
 #[cfg(feature = "alloc")]
 mod owned {
     use super::*;
-    pub use ftyp::owned::FtypBox;
+    pub use ftyp::FtypBox;
+
+    pub use free::FreeBox;
+    pub use mdat::MdatBox;
+
+    pub use dinf::DinfBox;
+    pub use dref::{
+        DrefBox, //
+        DrefEntry,
+        UrlBox,
+        UrnBox,
+    };
 }
 
 #[cfg(feature = "alloc")]

@@ -67,6 +67,11 @@ pub enum ErrorKind {
         /// A description of the reason why the field is invalid.
         reason: &'static str,
     },
+    /// A required box is missing.
+    BoxMissing {
+        /// The type of the required box.
+        required: FourCC,
+    },
     /// Some other kind of error.
     Other {
         /// A description of the error.
@@ -102,6 +107,9 @@ impl fmt::Display for ErrorKind {
             }
             ErrorKind::InvalidBoxField { field, reason } => {
                 write!(f, "invalid box field '{field}': {reason}")
+            }
+            ErrorKind::BoxMissing { required } => {
+                write!(f, "required box '{required}' is missing")
             }
             ErrorKind::Other { description } => write!(f, "error: {description}"),
         }

@@ -13,6 +13,51 @@ impl<'a> FreeBoxView<'a> {
     }
 }
 
+#[cfg(feature = "alloc")]
+pub use owned::FreeBox;
+
+#[cfg(feature = "alloc")]
+mod owned {
+    use crate::lib::Vec;
+
+    use super::*;
+
+    /// An owned Free Space Box (`free`).
+    #[derive(Debug, Clone)]
+    pub struct FreeBox {
+        /// The raw data of the Free Space Box (`free`).
+        pub data: Vec<u8>,
+    }
+
+    impl FreeBox {
+        /// Creates a `FreeBox` from a `FreeBoxView`.
+        pub fn from_view(view: &FreeBoxView<'_>) -> Self {
+            FreeBox {
+                data: view.data.to_vec(),
+            }
+        }
+
+        /// Parses a `FreeBox` from the given payload.
+        pub fn parse(payload: &[u8]) -> Result<Self> {
+            let free_view = FreeBoxView::parse(payload)?;
+            Ok(Self::from_view(&free_view))
+        }
+    }
+
+    impl FreeBoxView<'_> {
+        /// Converts this `FreeBoxView` into an owned `FreeBox`.
+        pub fn to_owned(&self) -> FreeBox {
+            FreeBox::from_view(self)
+        }
+    }
+
+    impl From<FreeBoxView<'_>> for FreeBox {
+        fn from(view: FreeBoxView) -> Self {
+            Self::from_view(&view)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
