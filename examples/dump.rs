@@ -50,28 +50,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Some("moov") => {
-                // let moov = MoovBoxRef::parse(view.payload)?;
+                let moov = MoovBoxView::parse(view.payload)?;
 
-                // for trak in moov.traks() {
-                //     let trak = trak?;
-                //     println!("    Track Box:");
-                //     for trak_child in trak.children() {
-                //         let trak_child = trak_child?;
-                //         println!(
-                //             "      Track Child Box: {:?}, Size: {}",
-                //             trak_child.header.boxtype(),
-                //             trak_child.header.boxsize()
-                //         );
-                //     }
-                // }
+                for trak in moov.traks() {
+                    let trak = trak?;
+                    println!("    Track Box:");
+                    for trak_child in trak.children() {
+                        let trak_child = trak_child?;
+                        println!(
+                            "      Track Child Box: {:?}, Size: {}",
+                            trak_child.header.boxtype(),
+                            trak_child.header.boxsize()
+                        );
+                    }
+                }
             }
             Some("free") => {
-                // let free = FreeBoxRef::parse(view.payload)?;
-                // println!("  Free Space Data Length: {}", free.data.len());
+                let free = FreeBoxView::parse(view.payload)?;
+                println!("  Free Space Data Length: {}", free.data.len());
             }
             Some("mdat") => {
-                // let mdat = MdatBoxView::parse(view.payload)?;
-                // println!("  Media Data Length: {}", mdat.data.len());
+                let mdat = MdatBoxView::parse(view.payload)?;
+                println!("  Media Data Length: {}", mdat.data.len());
             }
             Some(typ) => {
                 println!("  (No parser available for this box type '{}')", typ);
