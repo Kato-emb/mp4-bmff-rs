@@ -31,6 +31,9 @@ impl error::Error for BoxTypeError {}
 /// User extensions use an extended type
 pub type UserType = Uuid;
 
+/// The FourCC code used for UUID-based box types.
+pub const UUID: FourCC = FourCC::new(*b"uuid");
+
 /// Type-safe representation of BMFF `boxtype` values.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BoxType {
@@ -44,7 +47,7 @@ impl BoxType {
     /// # Errors
     /// Returns [BoxTypeError::UuidFourCCNotAllowed] if the provided FourCC code is `uuid`.
     pub fn from_fourcc(fourcc: FourCC) -> Result<Self, BoxTypeError> {
-        if fourcc == typecode::UUID {
+        if fourcc == UUID {
             Err(BoxTypeError::UuidFourCCNotAllowed)
         } else {
             Ok(Self {
@@ -57,7 +60,7 @@ impl BoxType {
     /// Creates a UUID-based `BoxType`.
     pub fn from_uuid(user_type: Uuid) -> Self {
         Self {
-            boxtype: typecode::UUID,
+            boxtype: UUID,
             usertype: Some(user_type),
         }
     }
@@ -69,7 +72,7 @@ impl BoxType {
 
     /// Returns `true` when this `BoxType` stores a UUID extension.
     pub fn is_uuid(&self) -> bool {
-        self.boxtype == typecode::UUID
+        self.boxtype == UUID
     }
 
     /// Returns the UUID extension if the type is `uuid`.
@@ -123,36 +126,62 @@ impl From<Uuid> for BoxType {
     }
 }
 
-pub use typecode::*;
-
-mod typecode {
-    use crate::types::FourCC;
-
-    /// `type` field value used by UUID boxes.
-    pub const UUID: FourCC = FourCC::new(*b"uuid");
-
+impl BoxType {
     /// `type` field value used by File Type boxes.
-    pub const FTYP: FourCC = FourCC::new(*b"ftyp");
+    pub const FTYP: Self = Self {
+        boxtype: FourCC::new(*b"ftyp"),
+        usertype: None,
+    };
     /// `type` field value used by Free boxes.
-    pub const FREE: FourCC = FourCC::new(*b"free");
+    pub const FREE: Self = Self {
+        boxtype: FourCC::new(*b"free"),
+        usertype: None,
+    };
     /// `type` field value used by Media Data boxes.
-    pub const MDAT: FourCC = FourCC::new(*b"mdat");
+    pub const MDAT: Self = Self {
+        boxtype: FourCC::new(*b"mdat"),
+        usertype: None,
+    };
     /// `type` field value used by Movie boxes.
-    pub const MOOV: FourCC = FourCC::new(*b"moov");
+    pub const MOOV: Self = Self {
+        boxtype: FourCC::new(*b"moov"),
+        usertype: None,
+    };
     /// `type` field value used by Movie Header boxes.
-    pub const MVHD: FourCC = FourCC::new(*b"mvhd");
+    pub const MVHD: Self = Self {
+        boxtype: FourCC::new(*b"mvhd"),
+        usertype: None,
+    };
     /// `type` field value used by Track boxes.
-    pub const TRAK: FourCC = FourCC::new(*b"trak");
+    pub const TRAK: Self = Self {
+        boxtype: FourCC::new(*b"trak"),
+        usertype: None,
+    };
     /// `type` field value used by Track Header boxes.
-    pub const TKHD: FourCC = FourCC::new(*b"tkhd");
+    pub const TKHD: Self = Self {
+        boxtype: FourCC::new(*b"tkhd"),
+        usertype: None,
+    };
     /// `type` field value used by Data Information boxes.
-    pub const DINF: FourCC = FourCC::new(*b"dinf");
+    pub const DINF: Self = Self {
+        boxtype: FourCC::new(*b"dinf"),
+        usertype: None,
+    };
     /// `type` field value used by Data Reference boxes.
-    pub const DREF: FourCC = FourCC::new(*b"dref");
+    pub const DREF: Self = Self {
+        boxtype: FourCC::new(*b"dref"),
+        usertype: None,
+    };
     /// `type` field value used by URL boxes.
-    pub const URL_: FourCC = FourCC::new(*b"url ");
+    pub const URL_: Self = Self {
+        boxtype: FourCC::new(*b"url "),
+        usertype: None,
+    };
     /// `type` field value used by URN boxes.
-    pub const URN_: FourCC = FourCC::new(*b"urn ");
+    pub const URN_: Self = Self {
+        boxtype: FourCC::new(*b"urn "),
+        usertype: None,
+    };
 }
 
 #[cfg(test)]

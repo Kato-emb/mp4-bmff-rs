@@ -1,5 +1,6 @@
+use crate::BoxIter;
+use crate::BoxType;
 use crate::error::*;
-use crate::iter::BoxIter;
 
 use super::DrefBoxView;
 
@@ -22,11 +23,9 @@ impl<'a> DinfBoxView<'a> {
 
     /// Returns the Data Reference Box (`dref`) if present.
     pub fn dref(&self) -> Result<Option<DrefBoxView<'_>>> {
-        use crate::header::boxtype;
-
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype().type_field() == boxtype::DREF {
+            if child.header.boxtype() == BoxType::DREF {
                 let dref = DrefBoxView::parse(child.payload)?;
                 return Ok(Some(dref));
             }
@@ -42,7 +41,6 @@ pub use owned::DinfBox;
 #[cfg(feature = "alloc")]
 mod owned {
     use super::*;
-    use crate::header::boxtype;
 
     use crate::boxes::DrefBox;
 
@@ -59,15 +57,15 @@ mod owned {
 
             for child in view.children() {
                 let child = child?;
-                if child.header.boxtype().type_field() == boxtype::DREF {
+                if child.header.boxtype() == BoxType::DREF {
                     let dref_view = DrefBoxView::parse(child.payload)?;
-                    dref = Some(DrefBox::from_view(&dref_view));
+                    dref = Some(DrefBox::from_view(&dref_view)?);
                 }
             }
 
             Ok(DinfBox {
                 dref: dref.ok_or(Error::new(ErrorKind::BoxMissing {
-                    required: boxtype::DREF,
+                    required: BoxType::DREF,
                 }))?,
             })
         }

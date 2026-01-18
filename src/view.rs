@@ -23,11 +23,13 @@ impl<'a> BoxView<'a> {
         let payload_size = match header.payload_size() {
             Some(size) => {
                 if cur.remaining() < size as usize {
-                    return Err(Error::new(ErrorKind::MismatchedBoxSize {
-                        expected: size,
-                        found: cur.remaining() as u64,
-                    })
-                    .at(cur.position() as u64));
+                    return Err(Error::at(
+                        ErrorKind::MismatchedBoxSize {
+                            expected: size,
+                            found: cur.remaining() as u64,
+                        },
+                        cur.position() as u64,
+                    ));
                 }
 
                 size as usize
@@ -37,19 +39,17 @@ impl<'a> BoxView<'a> {
 
         let payload = cur
             .take(payload_size)
-            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
         Ok(Self { header, payload })
     }
 
     /// Writes the `BoxView` to the given `WriteCursor`.
     pub fn write(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-        self.header
-            .write(cur)
-            .map_err(|e| e.at(cur.position() as u64))?;
+        self.header.write(cur)?;
 
         cur.write_slice(self.payload)
-            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
         Ok(())
     }

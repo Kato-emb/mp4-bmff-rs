@@ -1,6 +1,8 @@
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
+use crate::BoxType;
+use crate::BoxView;
 use crate::error::*;
 
 /// A reference to a File Type Box (`ftyp`).
@@ -28,22 +30,25 @@ impl<'a> FtypBoxView<'a> {
         // Read major_brand (4 bytes)
         let major_brand = cursor
             .read_array::<4>()
-            .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
         let major_brand = FourCC::new(major_brand);
 
         // Read minor_version (4 bytes)
         let minor_version = cursor
             .read_u32_be()
-            .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
 
         // The remaining bytes are compatible_brands
         let remaining = cursor.remaining();
         if !remaining.is_multiple_of(4) {
-            return Err(Error::new(ErrorKind::InvalidBoxSize {
-                reason: "Compatible brands length is not a multiple of 4",
-                got: remaining as u64,
-            })
-            .at(cursor.position() as u64));
+            return Err(Error::at_in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Compatible brands length is not a multiple of 4",
+                    got: remaining as u64,
+                },
+                cursor.position() as u64,
+                BoxType::FTYP,
+            ));
         }
         let compatible_brands = cursor.remaining_slice();
 
@@ -52,6 +57,29 @@ impl<'a> FtypBoxView<'a> {
             minor_version,
             compatible_brands,
         })
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for FtypBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        FtypBoxView::parse(value)
+    }
+}
+
+impl<'a> TryFrom<BoxView<'a>> for FtypBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: BoxView<'a>) -> std::result::Result<Self, Self::Error> {
+        if value.header.boxtype() != BoxType::FTYP {
+            return Err(Error::new(ErrorKind::MissmatchedBoxType {
+                expected: BoxType::FTYP,
+                found: value.header.boxtype(),
+            }));
+        }
+
+        FtypBoxView::parse(value.payload)
     }
 }
 

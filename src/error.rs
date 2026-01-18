@@ -32,6 +32,13 @@ pub enum ErrorKind {
         /// Found size.
         found: u64,
     },
+    /// Mismatched box type.
+    MissmatchedBoxType {
+        /// Expected box type.
+        expected: BoxType,
+        /// Found box type.
+        found: BoxType,
+    },
     /// Invalid box size.
     InvalidBoxSize {
         /// A description of the invalid size.
@@ -70,7 +77,7 @@ pub enum ErrorKind {
     /// A required box is missing.
     BoxMissing {
         /// The type of the required box.
-        required: FourCC,
+        required: BoxType,
     },
     /// Some other kind of error.
     Other {
@@ -92,6 +99,12 @@ impl fmt::Display for ErrorKind {
             ),
             ErrorKind::MismatchedBoxSize { expected, found } => {
                 write!(f, "mismatched box size: expected {expected}, found {found}")
+            }
+            ErrorKind::MissmatchedBoxType { expected, found } => {
+                write!(
+                    f,
+                    "mismatched box type: expected '{expected}', found '{found}'"
+                )
             }
             ErrorKind::InvalidBoxSize { reason, got } => {
                 write!(f, "invalid box size: {reason} (got {got})")
@@ -125,8 +138,7 @@ pub struct Error {
 }
 
 impl Error {
-    /// Creates a new error with the given kind.
-    pub fn new(kind: ErrorKind) -> Self {
+    pub(crate) const fn new(kind: ErrorKind) -> Self {
         Self {
             kind,
             offset: None,
@@ -134,13 +146,39 @@ impl Error {
         }
     }
 
+    pub(crate) const fn at(kind: ErrorKind, offset: u64) -> Self {
+        Self {
+            kind,
+            offset: Some(offset),
+            box_type: None,
+        }
+    }
+
+    pub(crate) const fn in_box(kind: ErrorKind, box_type: BoxType) -> Self {
+        Self {
+            kind,
+            offset: None,
+            box_type: Some(box_type),
+        }
+    }
+
+    pub(crate) const fn at_in_box(kind: ErrorKind, offset: u64, box_type: BoxType) -> Self {
+        Self {
+            kind,
+            offset: Some(offset),
+            box_type: Some(box_type),
+        }
+    }
+
     /// Sets the offset where the error occurred.
-    pub fn at(mut self, offset: u64) -> Self {
+    #[must_use]
+    pub fn with_offset(mut self, offset: u64) -> Self {
         self.offset = Some(offset);
         self
     }
 
     /// Sets the box type where the error occurred.
+    #[must_use]
     pub fn with_box_type(mut self, box_type: BoxType) -> Self {
         self.box_type = Some(box_type);
         self
@@ -159,6 +197,16 @@ impl Error {
     /// Returns the box type where the error occurred, if available.
     pub fn box_type(&self) -> Option<BoxType> {
         self.box_type
+    }
+
+    /// Returns `true` if the error has an associated offset.
+    pub fn has_offset(&self) -> bool {
+        self.offset.is_some()
+    }
+
+    /// Returns `true` if the error has an associated box type.
+    pub fn has_box_type(&self) -> bool {
+        self.box_type.is_some()
     }
 }
 
@@ -182,11 +230,7 @@ impl error::Error for Error {}
 
 impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Self {
-        Self {
-            kind,
-            offset: None,
-            box_type: None,
-        }
+        Self::new(kind)
     }
 }
 
@@ -212,6 +256,12 @@ impl From<CursorError> for ErrorKind {
     }
 }
 
+impl From<CursorError> for Error {
+    fn from(value: CursorError) -> Self {
+        Self::new(ErrorKind::from(value))
+    }
+}
+
 impl From<BoxSizeError> for ErrorKind {
     fn from(value: BoxSizeError) -> Self {
         match value {
@@ -227,6 +277,12 @@ impl From<BoxSizeError> for ErrorKind {
     }
 }
 
+impl From<BoxSizeError> for Error {
+    fn from(value: BoxSizeError) -> Self {
+        Self::new(ErrorKind::from(value))
+    }
+}
+
 impl From<BoxTypeError> for ErrorKind {
     fn from(value: BoxTypeError) -> Self {
         use crate::header::boxtype::UUID;
@@ -237,5 +293,11 @@ impl From<BoxTypeError> for ErrorKind {
                 got: UUID,
             },
         }
+    }
+}
+
+impl From<BoxTypeError> for Error {
+    fn from(value: BoxTypeError) -> Self {
+        Self::new(ErrorKind::from(value))
     }
 }

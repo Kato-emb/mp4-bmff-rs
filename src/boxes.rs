@@ -135,61 +135,57 @@ mod ftyp;
 mod mdat;
 mod moov;
 mod mvhd;
+mod stsd;
 mod tkhd;
 mod trak;
 
-// file type box
-pub use ftyp::FtypBoxView;
-
-//
+// Variable-size boxes - View types
+pub use dref::DrefBoxView;
+pub use dref::UrlBoxView;
+pub use dref::UrnBoxView;
 pub use free::FreeBoxView;
+pub use ftyp::FtypBoxView;
 pub use mdat::MdatBoxView;
 
+// Container boxes - View types
+pub use dinf::DinfBoxView;
 pub use moov::MoovBoxView;
-
 pub use trak::TrakBoxView;
 
+// Fixed-size boxes (Copy types, no View/Owned distinction)
 pub use mvhd::MvhdBox;
 pub use tkhd::TkhdBox;
 
-pub use dinf::DinfBoxView;
-pub use dref::{
-    DrefBoxView, //
-    DrefEntryView,
-    DrefFlags,
-    DrefSpec,
-};
-pub use dref::{
-    UrlBoxView, //
-    UrlFlags,
-    UrlSpec,
-};
-pub use dref::{
-    UrnBoxView, //
-    UrnFlags,
-    UrnSpec,
-};
+// Re-export entry views
+pub use dref::DrefEntryView;
+
+// Re-export fullbox flags and specs
+pub use dref::{DrefFlags, DrefSpec};
+pub use dref::{UrlFlags, UrlSpec};
+pub use dref::{UrnFlags, UrnSpec};
+pub use mvhd::{MvhdFlags, MvhdSpec};
+pub use tkhd::{TkhdFlags, TkhdSpec};
 
 #[cfg(feature = "alloc")]
-mod owned {
+mod owned_exports {
     use super::*;
-    pub use ftyp::FtypBox;
 
-    pub use moov::MoovBox;
-
-    pub use trak::TrakBox;
-
+    // Variable-size boxes - Owned types
+    pub use dref::DrefBox;
+    pub use dref::UrlBox;
+    pub use dref::UrnBox;
     pub use free::FreeBox;
+    pub use ftyp::FtypBox;
     pub use mdat::MdatBox;
 
+    // Container boxes - Owned types
     pub use dinf::DinfBox;
-    pub use dref::{
-        DrefBox, //
-        DrefEntry,
-        UrlBox,
-        UrnBox,
-    };
+    pub use moov::MoovBox;
+    pub use trak::TrakBox;
+
+    // Re-export entry owned types
+    pub use dref::DrefEntry;
 }
 
 #[cfg(feature = "alloc")]
-pub use owned::*;
+pub use owned_exports::*;

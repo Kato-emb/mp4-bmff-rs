@@ -1,5 +1,6 @@
+use crate::BoxIter;
+use crate::BoxType;
 use crate::error::*;
-use crate::iter::BoxIter;
 
 use super::tkhd::TkhdBox;
 
@@ -22,11 +23,9 @@ impl<'a> TrakBoxView<'a> {
 
     /// Returns the Track Header Box (`tkhd`) if present.
     pub fn tkhd(&self) -> Option<Result<TkhdBox>> {
-        use crate::header::boxtype;
-
         for child in self.children() {
             match child {
-                Ok(c) if c.header.boxtype().type_field() == boxtype::TKHD => {
+                Ok(c) if c.header.boxtype() == BoxType::TKHD => {
                     return Some(TkhdBox::parse(c.payload));
                 }
                 Ok(_) => continue,

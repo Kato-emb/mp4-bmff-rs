@@ -19,14 +19,12 @@ struct Args {
 
 #[cfg(feature = "std")]
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    use mp4_bmff::iter::BoxIter;
-
     let args = Args::parse();
 
     let data = std::fs::read(args.input)?;
 
     println!("Parsing boxes in the input file...");
-    let mut box_iter = BoxIter::new(&data);
+    let mut box_iter = mp4_bmff::BoxIter::new(&data);
 
     let start = std::time::Instant::now();
 
@@ -38,10 +36,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             view.header.boxsize(),
         );
 
-        use mp4_bmff::boxes::*;
         match view.header.boxtype().type_field().as_ascii() {
             Some("ftyp") => {
-                let ftyp = FtypBoxView::parse(view.payload)?;
+                let ftyp = mp4_bmff::boxes::FtypBoxView::parse(view.payload)?;
                 println!("  Major Brand: {:?}", ftyp.major_brand);
                 println!("  Minor Version: {}", ftyp.minor_version);
                 println!("  Compatible Brands:");
@@ -50,7 +47,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Some("moov") => {
-                let moov = MoovBoxView::parse(view.payload)?;
+                let moov = mp4_bmff::boxes::MoovBoxView::parse(view.payload)?;
 
                 for trak in moov.traks() {
                     let trak = trak?;
@@ -66,11 +63,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Some("free") => {
-                let free = FreeBoxView::parse(view.payload)?;
+                let free = mp4_bmff::boxes::FreeBoxView::parse(view.payload)?;
                 println!("  Free Space Data Length: {}", free.data.len());
             }
             Some("mdat") => {
-                let mdat = MdatBoxView::parse(view.payload)?;
+                let mdat = mp4_bmff::boxes::MdatBoxView::parse(view.payload)?;
                 println!("  Media Data Length: {}", mdat.data.len());
             }
             Some(typ) => {

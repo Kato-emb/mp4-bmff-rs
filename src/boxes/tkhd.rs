@@ -62,7 +62,6 @@ impl TkhdBox {
 
     /// Parses a `TkhdBox` from the given payload.
     pub fn parse(payload: &[u8]) -> Result<TkhdBox> {
-        let at = |e: ErrorKind, cur: &ReadCursor| Error::new(e).at(cur.position() as u64);
         let mut cur = ReadCursor::new(payload);
 
         let full_box_header = FullBoxHeader::<TkhdSpec>::parse(&mut cur)?;
@@ -70,12 +69,20 @@ impl TkhdBox {
         let (creation_time, modification_time, track_id, duration) = match full_box_header.version()
         {
             1 => {
-                let creation_time = cur.read_u64_be().map_err(|e| at(e.into(), &cur))?;
-                let modification_time = cur.read_u64_be().map_err(|e| at(e.into(), &cur))?;
-                let track_id = cur.read_u32_be().map_err(|e| at(e.into(), &cur))?;
+                let creation_time = cur
+                    .read_u64_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                let modification_time = cur
+                    .read_u64_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                let track_id = cur
+                    .read_u32_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
                 cur.advance(Self::RESERVED_1_SIZE)
-                    .map_err(|e| at(e.into(), &cur))?;
-                let duration = cur.read_u64_be().map_err(|e| at(e.into(), &cur))?;
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                let duration = cur
+                    .read_u64_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
                 (
                     QuickTimeDateTime::from_quicktime_seconds(creation_time),
                     QuickTimeDateTime::from_quicktime_seconds(modification_time),
@@ -84,12 +91,23 @@ impl TkhdBox {
                 )
             }
             0 => {
-                let creation_time = cur.read_u32_be().map_err(|e| at(e.into(), &cur))? as u64;
-                let modification_time = cur.read_u32_be().map_err(|e| at(e.into(), &cur))? as u64;
-                let track_id = cur.read_u32_be().map_err(|e| at(e.into(), &cur))?;
+                let creation_time = cur
+                    .read_u32_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
+                    as u64;
+                let modification_time = cur
+                    .read_u32_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
+                    as u64;
+                let track_id = cur
+                    .read_u32_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
                 cur.advance(Self::RESERVED_1_SIZE)
-                    .map_err(|e| at(e.into(), &cur))?;
-                let duration = cur.read_u32_be().map_err(|e| at(e.into(), &cur))? as u64;
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                let duration = cur
+                    .read_u32_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
+                    as u64;
                 (
                     QuickTimeDateTime::from_quicktime_seconds(creation_time),
                     QuickTimeDateTime::from_quicktime_seconds(modification_time),
@@ -98,34 +116,47 @@ impl TkhdBox {
                 )
             }
             v => {
-                return Err(Error::new(ErrorKind::InvalidBoxVersion {
-                    reason: "unsupported tkhd version",
-                    got: v,
-                })
-                .at(cur.position() as u64));
+                return Err(Error::at(
+                    ErrorKind::InvalidBoxVersion {
+                        reason: "unsupported tkhd version",
+                        got: v,
+                    },
+                    cur.position() as u64,
+                ));
             }
         };
 
         cur.advance(Self::RESERVED_2_SIZE)
-            .map_err(|e| at(e.into(), &cur))?;
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
-        let layer = cur.read_i16_be().map_err(|e| at(e.into(), &cur))?;
-        let alternate_group = cur.read_i16_be().map_err(|e| at(e.into(), &cur))?;
-        let volume = cur.read_u16_be().map_err(|e| at(e.into(), &cur))?;
+        let layer = cur
+            .read_i16_be()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let alternate_group = cur
+            .read_i16_be()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let volume = cur
+            .read_u16_be()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         let volume = U8F8::from_raw(volume);
 
         cur.advance(Self::RESERVED_3_SIZE)
-            .map_err(|e| at(e.into(), &cur))?;
-
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         let mut matrix = [0i32; 9];
         for m in &mut matrix {
-            *m = cur.read_i32_be().map_err(|e| at(e.into(), &cur))?;
+            *m = cur
+                .read_i32_be()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         }
         let matrix = Matrix::from_raw(matrix);
 
-        let width = cur.read_u32_be().map_err(|e| at(e.into(), &cur))?;
+        let width = cur
+            .read_u32_be()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         let width = U16F16::from_raw(width);
-        let height = cur.read_u32_be().map_err(|e| at(e.into(), &cur))?;
+        let height = cur
+            .read_u32_be()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         let height = U16F16::from_raw(height);
 
         Ok(TkhdBox {

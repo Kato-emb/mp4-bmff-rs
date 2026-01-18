@@ -1,10 +1,7 @@
 use core::mem;
 
 use crate::cursor::ReadCursor;
-use crate::types::I16F16;
-use crate::types::Matrix;
-use crate::types::QuickTimeDateTime;
-use crate::types::U8F8;
+use crate::types::*;
 
 use crate::error::*;
 use crate::header::*;
@@ -61,68 +58,90 @@ impl MvhdBox {
 
     /// Parses an `MvhdBox` from the given payload.
     pub fn parse(payload: &[u8]) -> Result<MvhdBox> {
-        let at = |e: ErrorKind, cur: &ReadCursor| Error::new(e).at(cur.position() as u64);
         let mut cursor = ReadCursor::new(payload);
 
         let full_box_header = FullBoxHeader::<MvhdSpec>::parse(&mut cursor)?;
 
-        let (creation_time, modification_time, timescale, duration) = match full_box_header
-            .version()
-        {
-            1 => {
-                let creation_time = cursor.read_u64_be().map_err(|e| at(e.into(), &cursor))?;
-                let modification_time = cursor.read_u64_be().map_err(|e| at(e.into(), &cursor))?;
-                let timescale = cursor.read_u32_be().map_err(|e| at(e.into(), &cursor))?;
-                let duration = cursor.read_u64_be().map_err(|e| at(e.into(), &cursor))?;
-                (
-                    QuickTimeDateTime::from_quicktime_seconds(creation_time),
-                    QuickTimeDateTime::from_quicktime_seconds(modification_time),
-                    timescale,
-                    duration,
-                )
-            }
-            0 => {
-                let creation_time = cursor.read_u32_be().map_err(|e| at(e.into(), &cursor))? as u64;
-                let modification_time =
-                    cursor.read_u32_be().map_err(|e| at(e.into(), &cursor))? as u64;
-                let timescale = cursor.read_u32_be().map_err(|e| at(e.into(), &cursor))?;
-                let duration = cursor.read_u32_be().map_err(|e| at(e.into(), &cursor))? as u64;
-                (
-                    QuickTimeDateTime::from_quicktime_seconds(creation_time),
-                    QuickTimeDateTime::from_quicktime_seconds(modification_time),
-                    timescale,
-                    duration,
-                )
-            }
-            other => {
-                return Err(Error::new(ErrorKind::InvalidBoxVersion {
-                    reason: "0 or 1 in this specification",
-                    got: other,
-                }));
-            }
-        };
+        let (creation_time, modification_time, timescale, duration) =
+            match full_box_header.version() {
+                1 => {
+                    let creation_time = cursor
+                        .read_u64_be()
+                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+                    let modification_time = cursor
+                        .read_u64_be()
+                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+                    let timescale = cursor
+                        .read_u32_be()
+                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+                    let duration = cursor
+                        .read_u64_be()
+                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+                    (
+                        QuickTimeDateTime::from_quicktime_seconds(creation_time),
+                        QuickTimeDateTime::from_quicktime_seconds(modification_time),
+                        timescale,
+                        duration,
+                    )
+                }
+                0 => {
+                    let creation_time = cursor
+                        .read_u32_be()
+                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?
+                        as u64;
+                    let modification_time = cursor
+                        .read_u32_be()
+                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?
+                        as u64;
+                    let timescale = cursor
+                        .read_u32_be()
+                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+                    let duration = cursor
+                        .read_u32_be()
+                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?
+                        as u64;
+                    (
+                        QuickTimeDateTime::from_quicktime_seconds(creation_time),
+                        QuickTimeDateTime::from_quicktime_seconds(modification_time),
+                        timescale,
+                        duration,
+                    )
+                }
+                other => {
+                    return Err(Error::new(ErrorKind::InvalidBoxVersion {
+                        reason: "0 or 1 in this specification",
+                        got: other,
+                    }));
+                }
+            };
 
-        let rate = cursor.read_i32_be().map_err(|e| at(e.into(), &cursor))?;
+        let rate = cursor
+            .read_i32_be()
+            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
         let rate = I16F16::from_raw(rate);
-        let volume = cursor.read_u16_be().map_err(|e| at(e.into(), &cursor))?;
+        let volume = cursor
+            .read_u16_be()
+            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
         let volume = U8F8::from_raw(volume);
 
         cursor
             .advance(MvhdBox::RESERVED_SIZE)
-            .map_err(|e| at(e.into(), &cursor))?;
+            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
 
         let mut matrix = [0i32; 9];
         for m in &mut matrix {
-            *m = cursor.read_i32_be().map_err(|e| at(e.into(), &cursor))?;
+            *m = cursor
+                .read_i32_be()
+                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
         }
         let matrix = Matrix::from_raw(matrix);
 
         cursor
             .advance(MvhdBox::PRE_DEFINED_SIZE)
-            .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
         let next_track_id = cursor
             .read_u32_be()
-            .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
 
         Ok(MvhdBox {
             version: full_box_header.version(),

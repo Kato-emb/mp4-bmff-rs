@@ -1,3 +1,5 @@
+use crate::BoxIter;
+use crate::BoxType;
 use crate::cursor::ReadCursor;
 
 use crate::error::*;
@@ -30,7 +32,20 @@ pub struct DrefBoxView<'a> {
 impl<'a> DrefBoxView<'a> {
     /// Returns an iterator over the entries in the Data Reference Box.
     pub fn entries(&self) -> impl Iterator<Item = Result<DrefEntryView<'a>>> + 'a {
-        DrefEntryIter::new(self.entries)
+        BoxIter::new(self.entries).map(|box_result| {
+            let view = box_result?;
+            match view.header.boxtype() {
+                BoxType::URL_ => UrlBoxView::parse(view.payload).map(DrefEntryView::Url),
+                BoxType::URN_ => UrnBoxView::parse(view.payload).map(DrefEntryView::Urn),
+                other => Err(Error::in_box(
+                    ErrorKind::InvalidBoxType {
+                        reason: "Unexpected box type in entries",
+                        got: other.type_field(),
+                    },
+                    BoxType::DREF,
+                )),
+            }
+        })
     }
 
     /// Parses a `DrefBoxView` from the given payload.
@@ -41,9 +56,23 @@ impl<'a> DrefBoxView<'a> {
 
         let entry_count = cur
             .read_u32_be()
-            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
         let entries = cur.remaining_slice();
+        let mut tmp_cur = ReadCursor::new(entries);
+        for _ in 0..entry_count {
+            BoxView::parse(&mut tmp_cur)?;
+        }
+
+        if !tmp_cur.is_empty() {
+            return Err(Error::at(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Extra data after parsing all entries",
+                    got: tmp_cur.remaining() as u64,
+                },
+                cur.position() as u64,
+            ));
+        }
 
         Ok(DrefBoxView {
             version: full_box_header.version(),
@@ -51,54 +80,6 @@ impl<'a> DrefBoxView<'a> {
             entry_count,
             entries,
         })
-    }
-
-    /// Converts this `DrefBoxView` into an owned `DrefBox`.
-    #[cfg(feature = "alloc")]
-    pub fn to_owned(&self) -> DrefBox {
-        DrefBox::from_view(self)
-    }
-}
-
-struct DrefEntryIter<'a> {
-    cur: ReadCursor<'a>,
-}
-
-impl<'a> DrefEntryIter<'a> {
-    fn new(entries: &'a [u8]) -> Self {
-        Self {
-            cur: ReadCursor::new(entries),
-        }
-    }
-}
-
-impl<'a> Iterator for DrefEntryIter<'a> {
-    type Item = Result<DrefEntryView<'a>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.cur.is_empty() {
-            return None;
-        }
-
-        let start = self.cur.position();
-        let view = match BoxView::parse(&mut self.cur) {
-            Ok(view) => view,
-            Err(err) => return Some(Err(err)),
-        };
-
-        use crate::header::boxtype;
-        let result = match view.header.boxtype().type_field() {
-            boxtype::URL_ => UrlBoxView::parse(view.payload).map(DrefEntryView::Url),
-            boxtype::URN_ => UrnBoxView::parse(view.payload).map(DrefEntryView::Urn),
-            other => Err(Error::new(ErrorKind::InvalidBoxType {
-                reason: "Unexpected box type in dref entries",
-                got: other,
-            })
-            .with_box_type(*view.header.boxtype())
-            .at(start as u64)),
-        };
-
-        Some(result)
     }
 }
 
@@ -131,13 +112,15 @@ impl<'a> UrlBoxView<'a> {
         } else {
             let loc_bytes = cur
                 .take_until(0)
-                .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
             Some(str::from_utf8(loc_bytes).map_err(|_| {
-                Error::new(ErrorKind::InvalidBoxField {
-                    field: "location",
-                    reason: "invalid UTF-8 data",
-                })
-                .at(cur.position() as u64)
+                Error::at(
+                    ErrorKind::InvalidBoxField {
+                        field: "location",
+                        reason: "invalid UTF-8 data",
+                    },
+                    cur.position() as u64,
+                )
             })?)
         };
 
@@ -188,24 +171,28 @@ impl<'a> UrnBoxView<'a> {
 
         let name_bytes = cur
             .take_until(0)
-            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         let name = str::from_utf8(name_bytes).map_err(|_| {
-            Error::new(ErrorKind::InvalidBoxField {
-                field: "name",
-                reason: "invalid UTF-8 data",
-            })
-            .at(cur.position() as u64)
+            Error::at(
+                ErrorKind::InvalidBoxField {
+                    field: "name",
+                    reason: "invalid UTF-8 data",
+                },
+                cur.position() as u64,
+            )
         })?;
 
         let location_bytes = cur
             .take_until(0)
-            .map_err(|e| Error::new(e.into()).at(cur.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         let location = str::from_utf8(location_bytes).map_err(|_| {
-            Error::new(ErrorKind::InvalidBoxField {
-                field: "location",
-                reason: "invalid UTF-8 data",
-            })
-            .at(cur.position() as u64)
+            Error::at(
+                ErrorKind::InvalidBoxField {
+                    field: "location",
+                    reason: "invalid UTF-8 data",
+                },
+                cur.position() as u64,
+            )
         })?;
 
         Ok(UrnBoxView {
@@ -253,6 +240,15 @@ mod owned {
         Urn(UrnBox),
     }
 
+    impl From<DrefEntryView<'_>> for DrefEntry {
+        fn from(view: DrefEntryView<'_>) -> Self {
+            match view {
+                DrefEntryView::Url(url_view) => DrefEntry::Url(UrlBox::from_view(&url_view)),
+                DrefEntryView::Urn(urn_view) => DrefEntry::Urn(UrnBox::from_view(&urn_view)),
+            }
+        }
+    }
+
     /// An owned Data Reference Box (`dref`).
     #[derive(Debug, Clone)]
     pub struct DrefBox {
@@ -266,29 +262,33 @@ mod owned {
 
     impl DrefBox {
         /// Creates a `DrefBox` from a `DrefBoxView`.
-        pub fn from_view(view: &DrefBoxView) -> Self {
-            let entries = view
-                .entries()
-                .filter_map(|entry_res| match entry_res {
-                    Ok(entry_ref) => match entry_ref {
-                        DrefEntryView::Url(url_ref) => Some(DrefEntry::Url(url_ref.to_owned())),
-                        DrefEntryView::Urn(urn_ref) => Some(DrefEntry::Urn(urn_ref.to_owned())),
-                    },
-                    Err(_) => None, // Skip entries that failed to parse
-                })
-                .collect();
+        pub fn from_view(view: &DrefBoxView) -> Result<Self> {
+            let mut entries = Vec::with_capacity(view.entry_count as usize);
 
-            DrefBox {
+            for entry_view in view.entries() {
+                let entry = entry_view?;
+                entries.push(DrefEntry::from(entry));
+            }
+
+            Ok(DrefBox {
                 version: view.version,
                 flags: view.flags,
                 entries,
-            }
+            })
         }
 
         /// Parses a `DrefBox` from the given payload.
         pub fn parse(payload: &[u8]) -> Result<Self> {
             let dref_ref = DrefBoxView::parse(payload)?;
-            Ok(Self::from_view(&dref_ref))
+            Ok(Self::from_view(&dref_ref)?)
+        }
+    }
+
+    impl TryFrom<&DrefBoxView<'_>> for DrefBox {
+        type Error = Error;
+
+        fn try_from(view: &DrefBoxView<'_>) -> Result<Self> {
+            Self::from_view(view)
         }
     }
 
@@ -359,26 +359,22 @@ mod owned {
         /// Writes the `UrnBox` to the given `WriteCursor`.
         pub fn write(&self, cursor: &mut WriteCursor<'_>) -> Result<()> {
             let full_box_header = FullBoxHeader::<UrnSpec>::new(self.version, self.flags);
-            full_box_header
-                .write(cursor)
-                .map_err(|e| e.at(cursor.position() as u64))?;
+            full_box_header.write(cursor)?;
 
             cursor
                 .write_slice(self.name.as_bytes())
-                .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
+                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
             // Null-terminate the name string
             cursor
                 .write_u8(0)
-                .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
-
+                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
             cursor
                 .write_slice(self.location.as_bytes())
-                .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
+                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
             // Null-terminate the location string
             cursor
                 .write_u8(0)
-                .map_err(|e| Error::new(e.into()).at(cursor.position() as u64))?;
-
+                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
             Ok(())
         }
     }

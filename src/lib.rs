@@ -44,8 +44,31 @@ pub mod header;
 pub mod iter;
 pub mod view;
 
+// Re-export for convenience
+pub use error::{
+    Error, //
+    ErrorKind,
+    Result,
+};
+pub use header::{
+    BoxHeader, //
+    BoxSize,
+    BoxType,
+    FullBoxFlags,
+    FullBoxHeader,
+};
+pub use iter::BoxIter;
+pub use view::BoxView;
+
 // =============================================================================
 // Layer 2 - Typed Box Representations (requires alloc)
 // =============================================================================
 
 pub mod boxes;
+
+// =============================================================================
+// Layer 3 -  I/O (std)
+// =============================================================================
+
+#[cfg(feature = "std")]
+pub mod io;

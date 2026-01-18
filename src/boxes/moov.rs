@@ -1,3 +1,4 @@
+use crate::BoxType;
 use crate::error::*;
 use crate::iter::BoxIter;
 
@@ -22,11 +23,9 @@ impl<'a> MoovBoxView<'a> {
 
     /// Returns the Movie Header Box (`mvhd`) if present.
     pub fn mvhd(&self) -> Option<Result<MvhdBox>> {
-        use crate::header::boxtype;
-
         for child in self.children() {
             match child {
-                Ok(c) if c.header.boxtype().type_field() == boxtype::MVHD => {
+                Ok(c) if c.header.boxtype() == BoxType::MVHD => {
                     return Some(MvhdBox::parse(c.payload));
                 }
                 Ok(_) => continue,
@@ -39,10 +38,8 @@ impl<'a> MoovBoxView<'a> {
 
     /// Returns an iterator over the Track Boxes (`trak`) contained in this `MoovBoxView`.
     pub fn traks(&self) -> impl Iterator<Item = Result<TrakBoxView<'a>>> + 'a {
-        use crate::header::boxtype;
-
         self.children().filter_map(|child| match child {
-            Ok(view) if view.header.boxtype().type_field() == boxtype::TRAK => {
+            Ok(view) if view.header.boxtype() == BoxType::TRAK => {
                 Some(TrakBoxView::parse(view.payload))
             }
             Ok(_) => None,
