@@ -182,6 +182,11 @@ impl BoxType {
         boxtype: FourCC::new(*b"urn "),
         usertype: None,
     };
+    /// `type` field value used by Decoding Time to Sample boxes.
+    pub const STTS: Self = Self {
+        boxtype: FourCC::new(*b"stts"),
+        usertype: None,
+    };
 }
 
 #[cfg(test)]

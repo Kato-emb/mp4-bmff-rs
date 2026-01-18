@@ -136,6 +136,7 @@ mod mdat;
 mod moov;
 mod mvhd;
 mod stsd;
+mod stts;
 mod tkhd;
 mod trak;
 
@@ -146,6 +147,7 @@ pub use dref::UrnBoxView;
 pub use free::FreeBoxView;
 pub use ftyp::FtypBoxView;
 pub use mdat::MdatBoxView;
+pub use stts::SttsBoxView;
 
 // Container boxes - View types
 pub use dinf::DinfBoxView;
@@ -156,6 +158,9 @@ pub use trak::TrakBoxView;
 pub use mvhd::MvhdBox;
 pub use tkhd::TkhdBox;
 
+// Re-export entry structs
+pub use stts::SttsEntry;
+
 // Re-export entry views
 pub use dref::DrefEntryView;
 
@@ -164,6 +169,7 @@ pub use dref::{DrefFlags, DrefSpec};
 pub use dref::{UrlFlags, UrlSpec};
 pub use dref::{UrnFlags, UrnSpec};
 pub use mvhd::{MvhdFlags, MvhdSpec};
+pub use stts::{SttsFlags, SttsSpec};
 pub use tkhd::{TkhdFlags, TkhdSpec};
 
 #[cfg(feature = "alloc")]
@@ -177,6 +183,7 @@ mod owned_exports {
     pub use free::FreeBox;
     pub use ftyp::FtypBox;
     pub use mdat::MdatBox;
+    pub use stts::SttsBox;
 
     // Container boxes - Owned types
     pub use dinf::DinfBox;
