@@ -32,10 +32,10 @@
 //! |    |    |    |    |    |dref|*|○|data reference box, declares source(s) of media data in track
 //! |    |    |    |    |stbl|    |*| |sample table box, container for the time/space map
 //! |    |    |    |    |    |stsd|*| |sample descriptions (codec types, initialization etc.)
-//! |    |    |    |    |    |stts|*| |(decoding) time-to-sample
+//! |    |    |    |    |    |stts|*|○|(decoding) time-to-sample
 //! |    |    |    |    |    |ctts| | |(composition) time to sample
 //! |    |    |    |    |    |cslg| | |composition to decode timeline mapping
-//! |    |    |    |    |    |stsc|*| |sample-to-chunk, partial data-offset information
+//! |    |    |    |    |    |stsc|*|○|sample-to-chunk, partial data-offset information
 //! |    |    |    |    |    |stsz| | |sample sizes (framing)
 //! |    |    |    |    |    |stz2| | |compact sample sizes (framing)
 //! |    |    |    |    |    |stco|*| |chunk offset, partial data-offset information
@@ -135,6 +135,7 @@ mod ftyp;
 mod mdat;
 mod moov;
 mod mvhd;
+mod stsc;
 mod stsd;
 mod stts;
 mod tkhd;
@@ -147,6 +148,7 @@ pub use dref::UrnBoxView;
 pub use free::FreeBoxView;
 pub use ftyp::FtypBoxView;
 pub use mdat::MdatBoxView;
+pub use stsc::StscBoxView;
 pub use stts::SttsBoxView;
 
 // Container boxes - View types
@@ -159,6 +161,7 @@ pub use mvhd::MvhdBox;
 pub use tkhd::TkhdBox;
 
 // Re-export entry structs
+pub use stsc::StscEntry;
 pub use stts::SttsEntry;
 
 // Re-export entry views
@@ -169,6 +172,7 @@ pub use dref::{DrefFlags, DrefSpec};
 pub use dref::{UrlFlags, UrlSpec};
 pub use dref::{UrnFlags, UrnSpec};
 pub use mvhd::{MvhdFlags, MvhdSpec};
+pub use stsc::{StscFlags, StscSpec};
 pub use stts::{SttsFlags, SttsSpec};
 pub use tkhd::{TkhdFlags, TkhdSpec};
 
@@ -183,6 +187,7 @@ mod owned_exports {
     pub use free::FreeBox;
     pub use ftyp::FtypBox;
     pub use mdat::MdatBox;
+    pub use stsc::StscBox;
     pub use stts::SttsBox;
 
     // Container boxes - Owned types

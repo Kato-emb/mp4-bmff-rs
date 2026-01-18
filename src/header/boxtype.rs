@@ -187,6 +187,11 @@ impl BoxType {
         boxtype: FourCC::new(*b"stts"),
         usertype: None,
     };
+    /// `type` field value used by Sample to Chunk boxes.
+    pub const STSC: Self = Self {
+        boxtype: FourCC::new(*b"stsc"),
+        usertype: None,
+    };
 }
 
 #[cfg(test)]
