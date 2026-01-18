@@ -192,6 +192,11 @@ impl BoxType {
         boxtype: FourCC::new(*b"stsc"),
         usertype: None,
     };
+    /// `type` field value used by Chunk Offset boxes.
+    pub const STCO: Self = Self {
+        boxtype: FourCC::new(*b"stco"),
+        usertype: None,
+    };
 }
 
 #[cfg(test)]

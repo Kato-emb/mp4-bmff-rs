@@ -38,7 +38,7 @@
 //! |    |    |    |    |    |stsc|*|○|sample-to-chunk, partial data-offset information
 //! |    |    |    |    |    |stsz| | |sample sizes (framing)
 //! |    |    |    |    |    |stz2| | |compact sample sizes (framing)
-//! |    |    |    |    |    |stco|*| |chunk offset, partial data-offset information
+//! |    |    |    |    |    |stco|*|○|chunk offset, partial data-offset information
 //! |    |    |    |    |    |co64| | |64-bit chunk offset
 //! |    |    |    |    |    |stss| | |sync sample table
 //! |    |    |    |    |    |stsh| | |shadow sync sample table
@@ -135,6 +135,7 @@ mod ftyp;
 mod mdat;
 mod moov;
 mod mvhd;
+mod stco;
 mod stsc;
 mod stsd;
 mod stts;
@@ -148,6 +149,7 @@ pub use dref::UrnBoxView;
 pub use free::FreeBoxView;
 pub use ftyp::FtypBoxView;
 pub use mdat::MdatBoxView;
+pub use stco::StcoBoxView;
 pub use stsc::StscBoxView;
 pub use stts::SttsBoxView;
 
@@ -161,6 +163,7 @@ pub use mvhd::MvhdBox;
 pub use tkhd::TkhdBox;
 
 // Re-export entry structs
+pub use stco::StcoEntry;
 pub use stsc::StscEntry;
 pub use stts::SttsEntry;
 
@@ -172,6 +175,7 @@ pub use dref::{DrefFlags, DrefSpec};
 pub use dref::{UrlFlags, UrlSpec};
 pub use dref::{UrnFlags, UrnSpec};
 pub use mvhd::{MvhdFlags, MvhdSpec};
+pub use stco::{StcoFlags, StcoSpec};
 pub use stsc::{StscFlags, StscSpec};
 pub use stts::{SttsFlags, SttsSpec};
 pub use tkhd::{TkhdFlags, TkhdSpec};
@@ -187,6 +191,7 @@ mod owned_exports {
     pub use free::FreeBox;
     pub use ftyp::FtypBox;
     pub use mdat::MdatBox;
+    pub use stco::StcoBox;
     pub use stsc::StscBox;
     pub use stts::SttsBox;
 
