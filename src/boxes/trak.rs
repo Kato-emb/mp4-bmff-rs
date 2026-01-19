@@ -7,6 +7,7 @@ use crate::error::*;
 
 use crate::boxes::MdiaBoxView;
 use crate::boxes::TkhdBox;
+use crate::boxes::TrefBoxView;
 
 /// A reference to a Track Box (`trak`).
 #[derive(Debug)]
@@ -50,6 +51,19 @@ impl<'a> TrakBoxView<'a> {
         }))
     }
 
+    /// Returns the Track Reference Box (`tref`) if present.
+    pub fn tref(&self) -> Result<Option<TrefBoxView<'a>>> {
+        for child in self.children() {
+            let child = child?;
+            if child.header.boxtype() == BoxType::TREF {
+                let tref = TrefBoxView::parse(child.payload)?;
+                return Ok(Some(tref));
+            }
+        }
+
+        Ok(None)
+    }
+
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<TrakBoxView<'a>> {
         let payload = cur.take(cur.remaining())?;
         Ok(TrakBoxView { payload })
@@ -85,11 +99,14 @@ mod owned {
     use super::*;
 
     use crate::boxes::MdiaBox;
+    use crate::boxes::TrefBox;
 
     /// An owned Track Box (`trak`).
     pub struct TrakBox {
         /// The Track Header Box (`tkhd`).
         pub tkhd: TkhdBox,
+        /// The Track Reference Box (`tref`), if present.
+        pub tref: Option<TrefBox>,
         /// The Media Box (`mdia`).
         pub mdia: MdiaBox,
     }
@@ -98,6 +115,7 @@ mod owned {
         /// Constructs a `TrakBox` from a `TrakBoxView`.
         pub fn from_view(view: &TrakBoxView<'_>) -> Result<TrakBox> {
             let mut tkhd = None;
+            let mut tref = None;
             let mut mdia = None;
 
             for child in view.children() {
@@ -112,6 +130,19 @@ mod owned {
                             ErrorKind::InvalidBoxField {
                                 field: "Track Header Box",
                                 reason: "multiple tkhd boxes found",
+                            },
+                            BoxType::TRAK,
+                        ));
+                    }
+                    BoxType::TREF if tref.is_none() => {
+                        let tref_view = TrefBoxView::parse(child.payload)?;
+                        tref = Some(TrefBox::from_view(&tref_view)?);
+                    }
+                    BoxType::TREF => {
+                        return Err(Error::in_box(
+                            ErrorKind::InvalidBoxField {
+                                field: "Track Reference Box",
+                                reason: "multiple tref boxes found",
                             },
                             BoxType::TRAK,
                         ));
@@ -140,6 +171,7 @@ mod owned {
                     },
                     BoxType::TRAK,
                 ))?,
+                tref,
                 mdia: mdia.ok_or(Error::in_box(
                     ErrorKind::BoxMissing {
                         required: BoxType::MDIA,

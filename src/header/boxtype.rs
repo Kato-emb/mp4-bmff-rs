@@ -168,6 +168,8 @@ define_box_types! {
     TRAK = b"trak",
     /// Track Header Box
     TKHD = b"tkhd",
+    /// Track Reference Box
+    TREF = b"tref",
     /// Media Information Box
     MINF = b"minf",
     /// Handler Reference Box

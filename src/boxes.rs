@@ -16,7 +16,7 @@
 //! |    |mvhd|    |    |    |    |*|○|movie header, overall declarations
 //! |    |trak|    |    |    |    |*|○|container for an individual track or stream
 //! |    |    |tkhd|    |    |    |*|○|track header, overall information about the track
-//! |    |    |tref|    |    |    | | |track reference container
+//! |    |    |tref|    |    |    | |○|track reference container
 //! |    |    |trgr|    |    |    | | |track grouping indication
 //! |    |    |edts|    |    |    | | |edit list container
 //! |    |    |    |elst|    |    | | |an edit list
@@ -157,6 +157,7 @@ mod stsz;
 mod stts;
 mod tkhd;
 mod trak;
+mod tref;
 mod vmhd;
 
 mod sample_entry;
@@ -187,6 +188,10 @@ pub use minf::MinfBoxView;
 pub use moov::MoovBoxView;
 pub use stbl::StblBoxView;
 pub use trak::TrakBoxView;
+pub use tref::TrefBoxView;
+
+// Re-export tref related types
+pub use tref::TrackReferenceTypeBoxView;
 
 // Fixed-size boxes (Copy types, no View/Owned distinction)
 pub use cslg::CslgBox;
@@ -280,6 +285,8 @@ mod owned_exports {
     pub use moov::MoovBox;
     pub use stbl::StblBox;
     pub use trak::TrakBox;
+    pub use tref::TrackReferenceTypeBox;
+    pub use tref::TrefBox;
 
     // Re-export entry owned types
     pub use dref::DrefEntry;
