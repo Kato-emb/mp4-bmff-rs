@@ -26,33 +26,32 @@ pub struct StcoBoxView<'a> {
 }
 
 impl<'a> StcoBoxView<'a> {
+    const ENTRY_SIZE: usize = 4;
+
     /// Returns an iterator over the entries in the Chunk Offset Box.
-    pub fn entries(&self) -> impl Iterator<Item = Result<StcoEntry>> + 'a {
+    pub fn entries(&self) -> impl Iterator<Item = StcoEntry> + 'a {
         let entry_bytes = self.entries;
         let entry_count = self.entry_count as usize;
 
         entry_bytes.chunks_exact(4).take(entry_count).map(|chunk| {
-            let mut cursor = ReadCursor::new(chunk);
-
-            let chunk_offset = cursor
-                .read_u32_be()
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-
-            Ok(StcoEntry { chunk_offset })
+            let chunk_offset = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            StcoEntry { chunk_offset }
         })
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StcoBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<StcoSpec>::parse(cur)?;
+        let full_box_header = FullBoxHeader::<StcoSpec>::parse_in(cur)?;
 
         let entry_count = cur
             .read_u32_be()
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
-        if !cur.remaining().is_multiple_of(4) {
+        let expected_size = entry_count as usize * Self::ENTRY_SIZE;
+
+        if cur.remaining() != expected_size {
             return Err(Error::at_in_box(
                 ErrorKind::InvalidBoxSize {
-                    reason: "Entries length is not a multiple of 4",
+                    reason: "Entries length does not match entry count",
                     got: cur.remaining() as u64,
                 },
                 cur.position() as u64,
@@ -72,8 +71,8 @@ impl<'a> StcoBoxView<'a> {
 
     /// Parses a `StcoBoxView` from the given payload.
     pub fn parse(payload: &'a [u8]) -> Result<StcoBoxView<'a>> {
-        let mut cur = ReadCursor::new(payload);
-        let this = StcoBoxView::parse_in(&mut cur)?;
+        let mut cursor = ReadCursor::new(payload);
+        let this = StcoBoxView::parse_in(&mut cursor)?;
 
         Ok(this)
     }
@@ -116,6 +115,7 @@ mod owned {
     use super::*;
 
     /// An owned Chunk Offset Box (`stco`).
+    #[derive(Debug, Clone)]
     pub struct StcoBox {
         /// The version of the box.
         pub version: u8,
@@ -128,7 +128,11 @@ mod owned {
     impl StcoBox {
         /// Creates a `StcoBox` from a `StcoBoxView`.
         pub fn from_view(view: &StcoBoxView<'_>) -> Result<StcoBox> {
-            let entries = view.entries().collect::<Result<Vec<StcoEntry>>>()?;
+            let mut entries = Vec::with_capacity(view.entry_count as usize);
+
+            for entry in view.entries() {
+                entries.push(entry);
+            }
 
             Ok(StcoBox {
                 version: view.version,
@@ -201,7 +205,7 @@ mod tests {
         let parsed_entries: Vec<_> = stco.entries().collect();
         assert_eq!(parsed_entries.len(), 1);
 
-        let entry = parsed_entries[0].as_ref().unwrap();
+        let entry = parsed_entries[0];
         assert_eq!(entry.chunk_offset, 1000);
     }
 
@@ -227,7 +231,7 @@ mod tests {
         assert_eq!(parsed_entries.len(), 4);
 
         for (i, parsed) in parsed_entries.iter().enumerate() {
-            let entry = parsed.as_ref().unwrap();
+            let entry = parsed;
             assert_eq!(entry.chunk_offset, entries[i].chunk_offset);
         }
     }
@@ -263,15 +267,9 @@ mod tests {
 
         let parsed_entries: Vec<_> = stco.entries().collect();
         assert_eq!(parsed_entries.len(), 3);
-        assert_eq!(
-            parsed_entries[0].as_ref().unwrap().chunk_offset,
-            0xFFFF_FFFF
-        );
-        assert_eq!(parsed_entries[1].as_ref().unwrap().chunk_offset, 0);
-        assert_eq!(
-            parsed_entries[2].as_ref().unwrap().chunk_offset,
-            0x8000_0000
-        );
+        assert_eq!(parsed_entries[0].chunk_offset, 0xFFFF_FFFF);
+        assert_eq!(parsed_entries[1].chunk_offset, 0);
+        assert_eq!(parsed_entries[2].chunk_offset, 0x8000_0000);
     }
 
     // Error case tests
@@ -300,14 +298,7 @@ mod tests {
         payload.extend_from_slice(&200u32.to_be_bytes()); // chunk_offset
         // Only 2 entries provided instead of 5
 
-        let stco = StcoBoxView::parse(&payload).unwrap();
-        assert_eq!(stco.entry_count, 5);
-
-        // Iterator will only yield 2 entries (what's actually available)
-        let entries: Vec<_> = stco.entries().collect();
-        assert_eq!(entries.len(), 2);
-        assert!(entries[0].is_ok());
-        assert!(entries[1].is_ok());
+        assert!(StcoBoxView::parse(&payload).is_err());
     }
 
     #[test]
@@ -320,7 +311,7 @@ mod tests {
         let stco = StcoBoxView::try_from(payload.as_slice()).unwrap();
 
         assert_eq!(stco.entry_count, 1);
-        let entry = stco.entries().next().unwrap().unwrap();
+        let entry = stco.entries().next().unwrap();
         assert_eq!(entry.chunk_offset, 12345);
     }
 

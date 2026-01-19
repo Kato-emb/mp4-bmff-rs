@@ -28,6 +28,8 @@ pub struct SttsBoxView<'a> {
 }
 
 impl<'a> SttsBoxView<'a> {
+    const ENTRY_SIZE: usize = 8;
+
     /// Returns an iterator over the entries in the Decoding Time to Sample Box (`stts`).
     pub fn entries(&self) -> impl Iterator<Item = Result<SttsEntry>> + 'a {
         let entry_bytes = self.entries;
@@ -52,16 +54,18 @@ impl<'a> SttsBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<SttsBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<SttsSpec>::parse(cur)?;
+        let full_box_header = FullBoxHeader::<SttsSpec>::parse_in(cur)?;
 
         let entry_count = cur
             .read_u32_be()
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
-        if !cur.remaining().is_multiple_of(8) {
+        let expected_size = entry_count as usize * Self::ENTRY_SIZE;
+
+        if cur.remaining() != expected_size {
             return Err(Error::at_in_box(
                 ErrorKind::InvalidBoxSize {
-                    reason: "Entries length is not a multiple of 8",
+                    reason: "Entries length does not match entry count",
                     got: cur.remaining() as u64,
                 },
                 cur.position() as u64,
@@ -96,10 +100,10 @@ impl<'a> TryFrom<&'a [u8]> for SttsBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxView<'a>> for SttsBoxView<'a> {
+impl<'a> TryFrom<&BoxView<'a>> for SttsBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxView<'a>) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &BoxView<'a>) -> std::result::Result<Self, Self::Error> {
         if value.header.boxtype() != BoxType::STTS {
             return Err(Error::new(ErrorKind::MissmatchedBoxType {
                 expected: BoxType::STTS,
@@ -333,7 +337,7 @@ mod tests {
 
         let mut cursor = ReadCursor::new(&box_data);
         let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let stts = SttsBoxView::try_from(box_view).unwrap();
+        let stts = SttsBoxView::try_from(&box_view).unwrap();
 
         assert_eq!(stts.entry_count, 1);
     }
@@ -351,7 +355,7 @@ mod tests {
 
         let mut cursor = ReadCursor::new(&box_data);
         let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = SttsBoxView::try_from(box_view);
+        let result = SttsBoxView::try_from(&box_view);
 
         assert!(result.is_err());
         if let Err(err) = result {

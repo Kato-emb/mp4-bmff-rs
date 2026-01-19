@@ -30,6 +30,8 @@ pub struct StscBoxView<'a> {
 }
 
 impl<'a> StscBoxView<'a> {
+    const ENTRY_SIZE: usize = 12;
+
     /// Returns an iterator over the entries in the Sample To Chunk Box.
     pub fn entries(&self) -> impl Iterator<Item = Result<StscEntry>> + 'a {
         let entry_bytes = self.entries;
@@ -59,16 +61,18 @@ impl<'a> StscBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StscBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<StscSpec>::parse(cur)?;
+        let full_box_header = FullBoxHeader::<StscSpec>::parse_in(cur)?;
 
         let entry_count = cur
             .read_u32_be()
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
-        if !cur.remaining().is_multiple_of(12) {
+        let expected_size = entry_count as usize * Self::ENTRY_SIZE;
+
+        if cur.remaining() != expected_size {
             return Err(Error::at_in_box(
                 ErrorKind::InvalidBoxSize {
-                    reason: "entries length is not a multiple of 12",
+                    reason: "Entries length does not match entry count",
                     got: cur.remaining() as u64,
                 },
                 cur.position() as u64,
