@@ -116,10 +116,7 @@ impl<T> fmt::Display for FullBoxFlags<T> {
 
 impl<T> Clone for FullBoxFlags<T> {
     fn clone(&self) -> Self {
-        Self {
-            mask: self.mask,
-            _marker: marker::PhantomData,
-        }
+        *self
     }
 }
 

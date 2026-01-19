@@ -1,5 +1,3 @@
-//!
-
 use crate::BoxIter;
 use crate::BoxType;
 use crate::BoxView;

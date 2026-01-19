@@ -1,4 +1,4 @@
-//!
+//! Iterator for traversing BMFF boxes.
 
 use crate::cursor::ReadCursor;
 

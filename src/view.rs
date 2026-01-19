@@ -1,4 +1,4 @@
-//!
+//! Zero-copy views into BMFF boxes.
 
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;

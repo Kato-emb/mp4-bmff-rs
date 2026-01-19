@@ -280,8 +280,8 @@ mod owned {
 
         /// Parses a `DrefBox` from the given payload.
         pub fn parse(payload: &[u8]) -> Result<Self> {
-            let dref_ref = DrefBoxView::parse(payload)?;
-            Ok(Self::from_view(&dref_ref)?)
+            let view = DrefBoxView::parse(payload)?;
+            Self::from_view(&view)
         }
     }
 

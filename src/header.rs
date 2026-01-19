@@ -1,4 +1,4 @@
-//!
+//! BMFF box header types and parsing.
 
 use core::fmt;
 

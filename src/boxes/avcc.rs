@@ -48,21 +48,21 @@ impl<'a> AvcCBoxView<'a> {
 
         // SPS NAL units
         let nb_sps_nalus = cur.read_u8()? & 0x1f;
-        let sps_start = cur.position() as usize;
+        let sps_start = cur.position();
         for _ in 0..nb_sps_nalus {
             let sps_length = cur.read_u16_be()? as usize;
             cur.advance(sps_length)?;
         }
-        let sps = &cur.inner()[sps_start..cur.position() as usize];
+        let sps = &cur.inner()[sps_start..cur.position()];
 
         // PPS NAL units
         let nb_pps_nalus = cur.read_u8()?;
-        let pps_start = cur.position() as usize;
+        let pps_start = cur.position();
         for _ in 0..nb_pps_nalus {
             let pps_length = cur.read_u16_be()? as usize;
             cur.advance(pps_length)?;
         }
-        let pps = &cur.inner()[pps_start..cur.position() as usize];
+        let pps = &cur.inner()[pps_start..cur.position()];
 
         // Extensions (optional)
         let ext = if !cur.is_empty() {

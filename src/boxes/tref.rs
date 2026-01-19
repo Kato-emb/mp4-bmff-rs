@@ -34,7 +34,7 @@ impl<'a> TrackReferenceTypeBoxView<'a> {
         let reference_type = boxtype.type_field();
         let payload = box_view.payload;
 
-        if payload.len() % Self::TRACK_ID_SIZE != 0 {
+        if !payload.len().is_multiple_of(Self::TRACK_ID_SIZE) {
             return Err(Error::in_box(
                 ErrorKind::InvalidBoxSize {
                     reason: "Track reference payload is not a multiple of 4 bytes",
