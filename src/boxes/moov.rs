@@ -19,18 +19,20 @@ impl<'a> MoovBoxView<'a> {
     }
 
     /// Returns the Movie Header Box (`mvhd`) if present.
-    pub fn mvhd(&self) -> Option<Result<MvhdBox>> {
+    pub fn mvhd(&self) -> Result<MvhdBox> {
         for child in self.children() {
             match child {
                 Ok(c) if c.header.boxtype() == BoxType::MVHD => {
-                    return Some(MvhdBox::parse(c.payload));
+                    return MvhdBox::parse(c.payload);
                 }
                 Ok(_) => continue,
-                Err(e) => return Some(Err(e)),
+                Err(e) => return Err(e),
             }
         }
 
-        None
+        Err(Error::new(ErrorKind::BoxMissing {
+            required: BoxType::MVHD,
+        }))
     }
 
     /// Returns an iterator over the Track Boxes (`trak`) contained in this `MoovBoxView`.

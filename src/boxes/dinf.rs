@@ -19,16 +19,18 @@ impl<'a> DinfBoxView<'a> {
     }
 
     /// Returns the Data Reference Box (`dref`) if present.
-    pub fn dref(&self) -> Result<Option<DrefBoxView<'_>>> {
+    pub fn dref(&self) -> Result<DrefBoxView<'a>> {
         for child in self.children() {
             let child = child?;
             if child.header.boxtype() == BoxType::DREF {
                 let dref = DrefBoxView::parse(child.payload)?;
-                return Ok(Some(dref));
+                return Ok(dref);
             }
         }
 
-        Ok(None)
+        Err(Error::new(ErrorKind::BoxMissing {
+            required: BoxType::DREF,
+        }))
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<DinfBoxView<'a>> {
