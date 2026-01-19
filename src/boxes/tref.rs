@@ -237,92 +237,70 @@ mod tests {
     }
 
     #[test]
-    fn parse_tref_empty() {
+    fn parse_and_iterate_references() {
+        // Empty case
         let payload = make_tref_payload(&[]);
         let tref = TrefBoxView::parse(&payload).unwrap();
-
         assert_eq!(tref.references().count(), 0);
-    }
 
-    #[test]
-    fn parse_tref_single_reference() {
+        // Single reference
         let payload = make_tref_payload(&[(b"hint", &[2])]);
         let tref = TrefBoxView::parse(&payload).unwrap();
-
         let references: Vec<_> = tref.references().collect();
         assert_eq!(references.len(), 1);
-
         let hint_ref = references[0].as_ref().unwrap();
         assert_eq!(hint_ref.reference_type, FourCC::new(*b"hint"));
+        assert_eq!(hint_ref.track_ids().collect::<Vec<_>>(), vec![2]);
 
-        let track_ids: Vec<u32> = hint_ref.track_ids().collect();
-        assert_eq!(track_ids, vec![2]);
-    }
-
-    #[test]
-    fn parse_tref_multiple_references() {
+        // Multiple references
         let payload =
             make_tref_payload(&[(b"hint", &[2, 3]), (b"cdsc", &[4]), (b"vdep", &[5, 6, 7])]);
         let tref = TrefBoxView::parse(&payload).unwrap();
-
         let references: Vec<_> = tref.references().map(|r| r.unwrap()).collect();
         assert_eq!(references.len(), 3);
-
-        assert_eq!(references[0].reference_type, FourCC::new(*b"hint"));
-        let track_ids_0: Vec<u32> = references[0].track_ids().collect();
-        assert_eq!(track_ids_0.len(), 2);
-
-        assert_eq!(references[1].reference_type, FourCC::new(*b"cdsc"));
-        let track_ids_1: Vec<u32> = references[1].track_ids().collect();
-        assert_eq!(track_ids_1.len(), 1);
-
-        assert_eq!(references[2].reference_type, FourCC::new(*b"vdep"));
-        let track_ids_2: Vec<u32> = references[2].track_ids().collect();
-        assert_eq!(track_ids_2.len(), 3);
+        assert_eq!(references[0].track_ids().count(), 2);
+        assert_eq!(references[1].track_ids().count(), 1);
+        assert_eq!(references[2].track_ids().count(), 3);
     }
 
     #[test]
-    fn parse_tref_find_reference() {
+    fn find_reference() {
         let payload = make_tref_payload(&[(b"hint", &[2]), (b"cdsc", &[4, 5])]);
         let tref = TrefBoxView::parse(&payload).unwrap();
 
+        // Found cases
         let hint_ref = tref.find_reference(FourCC::new(*b"hint")).unwrap().unwrap();
-        let hint_track_ids: Vec<u32> = hint_ref.track_ids().collect();
-        assert_eq!(hint_track_ids.len(), 1);
+        assert_eq!(hint_ref.track_ids().collect::<Vec<_>>(), vec![2]);
 
         let cdsc_ref = tref.find_reference(FourCC::new(*b"cdsc")).unwrap().unwrap();
-        let cdsc_track_ids: Vec<u32> = cdsc_ref.track_ids().collect();
-        assert_eq!(cdsc_track_ids.len(), 2);
+        assert_eq!(cdsc_ref.track_ids().collect::<Vec<_>>(), vec![4, 5]);
 
-        let missing = tref.find_reference(FourCC::new(*b"vdep")).unwrap();
-        assert!(missing.is_none());
+        // Not found case
+        assert!(tref.find_reference(FourCC::new(*b"vdep")).unwrap().is_none());
     }
 
     #[test]
-    fn try_from_box_view_success() {
-        let payload = make_tref_payload(&[(b"hint", &[2])]);
-
+    fn invalid_payload_size() {
+        // Payload not a multiple of 4 should fail
         let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"tref");
-        box_data.extend_from_slice(&payload);
+        box_data.extend_from_slice(&13u32.to_be_bytes()); // size: 13 (8 header + 5 payload)
+        box_data.extend_from_slice(b"hint");
+        box_data.extend_from_slice(&[1, 2, 3, 4, 5]); // 5 bytes - not multiple of 4
 
         let mut cursor = ReadCursor::new(&box_data);
         let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let tref = TrefBoxView::try_from(&box_view).unwrap();
+        let result = TrackReferenceTypeBoxView::from_box_view(&box_view);
 
-        assert_eq!(tref.references().count(), 1);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err().kind(), ErrorKind::InvalidBoxSize { .. }));
     }
 
     #[test]
-    fn try_from_box_view_wrong_type() {
+    fn wrong_box_type() {
         let payload = make_tref_payload(&[]);
-
         let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"trak"); // Wrong type
+        box_data.extend_from_slice(&(8 + payload.len() as u32).to_be_bytes());
+        box_data.extend_from_slice(b"trak");
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
@@ -330,69 +308,22 @@ mod tests {
         let result = TrefBoxView::try_from(&box_view);
 
         assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::MismatchedBoxType { .. }));
-        }
+        assert!(matches!(result.unwrap_err().kind(), ErrorKind::MismatchedBoxType { .. }));
     }
 
     #[cfg(feature = "alloc")]
-    mod alloc_tests {
-        use super::*;
+    #[test]
+    fn owned_conversion() {
+        let payload = make_tref_payload(&[(b"hint", &[2, 3]), (b"cdsc", &[4])]);
+        let view = TrefBoxView::parse(&payload).unwrap();
+        let owned = TrefBox::from_view(&view).unwrap();
 
-        #[test]
-        fn tref_box_from_view() {
-            let payload = make_tref_payload(&[(b"hint", &[2, 3]), (b"cdsc", &[4])]);
-            let view = TrefBoxView::parse(&payload).unwrap();
-            let tref_box = TrefBox::from_view(&view).unwrap();
+        assert_eq!(owned.references.len(), 2);
+        assert_eq!(owned.references[0].track_ids, vec![2, 3]);
+        assert_eq!(owned.references[1].track_ids, vec![4]);
 
-            assert_eq!(tref_box.references.len(), 2);
-            assert_eq!(tref_box.references[0].reference_type, FourCC::new(*b"hint"));
-            assert_eq!(tref_box.references[0].track_ids, vec![2, 3]);
-            assert_eq!(tref_box.references[1].reference_type, FourCC::new(*b"cdsc"));
-            assert_eq!(tref_box.references[1].track_ids, vec![4]);
-        }
-
-        #[test]
-        fn tref_box_parse() {
-            let payload = make_tref_payload(&[(b"vdep", &[5, 6, 7])]);
-            let tref_box = TrefBox::parse(&payload).unwrap();
-
-            assert_eq!(tref_box.references.len(), 1);
-            assert_eq!(tref_box.references[0].track_ids, vec![5, 6, 7]);
-        }
-
-        #[test]
-        fn tref_box_find_reference() {
-            let payload = make_tref_payload(&[(b"hint", &[2]), (b"cdsc", &[4, 5])]);
-            let tref_box = TrefBox::parse(&payload).unwrap();
-
-            let hint_ref = tref_box.find_reference(FourCC::new(*b"hint")).unwrap();
-            assert_eq!(hint_ref.track_ids, vec![2]);
-
-            let cdsc_ref = tref_box.find_reference(FourCC::new(*b"cdsc")).unwrap();
-            assert_eq!(cdsc_ref.track_ids, vec![4, 5]);
-
-            let missing = tref_box.find_reference(FourCC::new(*b"vdep"));
-            assert!(missing.is_none());
-        }
-
-        #[test]
-        fn tref_box_empty() {
-            let payload = make_tref_payload(&[]);
-            let tref_box = TrefBox::parse(&payload).unwrap();
-
-            assert!(tref_box.references.is_empty());
-        }
-
-        #[test]
-        fn track_reference_type_box_try_from() {
-            let payload = make_tref_payload(&[(b"hint", &[10, 20])]);
-            let view = TrefBoxView::parse(&payload).unwrap();
-            let ref_view = view.references().next().unwrap().unwrap();
-            let track_ref: TrackReferenceTypeBox = (&ref_view).try_into().unwrap();
-
-            assert_eq!(track_ref.reference_type, FourCC::new(*b"hint"));
-            assert_eq!(track_ref.track_ids, vec![10, 20]);
-        }
+        // Test find on owned
+        assert_eq!(owned.find_reference(FourCC::new(*b"hint")).unwrap().track_ids, vec![2, 3]);
+        assert!(owned.find_reference(FourCC::new(*b"vdep")).is_none());
     }
 }

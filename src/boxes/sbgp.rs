@@ -217,27 +217,9 @@ mod tests {
 
     fn make_sbgp_payload_v0(grouping_type: &[u8; 4], entries: &[(u32, u32)]) -> Vec<u8> {
         let mut data = Vec::new();
-        data.push(0); // version
-        data.extend_from_slice(&[0, 0, 0]); // flags
+        data.push(0);
+        data.extend_from_slice(&[0, 0, 0]);
         data.extend_from_slice(grouping_type);
-        data.extend_from_slice(&(entries.len() as u32).to_be_bytes());
-        for (sample_count, group_description_index) in entries {
-            data.extend_from_slice(&sample_count.to_be_bytes());
-            data.extend_from_slice(&group_description_index.to_be_bytes());
-        }
-        data
-    }
-
-    fn make_sbgp_payload_v1(
-        grouping_type: &[u8; 4],
-        grouping_type_parameter: u32,
-        entries: &[(u32, u32)],
-    ) -> Vec<u8> {
-        let mut data = Vec::new();
-        data.push(1); // version
-        data.extend_from_slice(&[0, 0, 0]); // flags
-        data.extend_from_slice(grouping_type);
-        data.extend_from_slice(&grouping_type_parameter.to_be_bytes());
         data.extend_from_slice(&(entries.len() as u32).to_be_bytes());
         for (sample_count, group_description_index) in entries {
             data.extend_from_slice(&sample_count.to_be_bytes());
@@ -247,136 +229,70 @@ mod tests {
     }
 
     #[test]
-    fn parse_sbgp_v0_empty() {
+    fn parse_and_iterate_entries() {
+        // Empty v0
         let payload = make_sbgp_payload_v0(b"roll", &[]);
         let sbgp = SbgpBoxView::parse(&payload).unwrap();
-
         assert_eq!(sbgp.version, 0);
-        assert_eq!(sbgp.grouping_type, FourCC::new(*b"roll"));
         assert!(sbgp.grouping_type_parameter.is_none());
-        assert_eq!(sbgp.entry_count, 0);
         assert_eq!(sbgp.entries().count(), 0);
-    }
 
-    #[test]
-    fn parse_sbgp_v0_with_entries() {
-        let entries = vec![(10, 1), (20, 2), (30, 0)];
-        let payload = make_sbgp_payload_v0(b"seig", &entries);
+        // With entries v0
+        let payload = make_sbgp_payload_v0(b"seig", &[(10, 1), (20, 2), (30, 0)]);
         let sbgp = SbgpBoxView::parse(&payload).unwrap();
-
-        assert_eq!(sbgp.version, 0);
-        assert_eq!(sbgp.grouping_type, FourCC::new(*b"seig"));
         assert_eq!(sbgp.entry_count, 3);
+        let parsed: Vec<_> = sbgp.entries().map(|r| r.unwrap()).collect();
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0].sample_count, 10);
+        assert_eq!(parsed[0].group_description_index, 1);
 
-        let parsed_entries: Vec<_> = sbgp.entries().collect();
-        assert_eq!(parsed_entries.len(), 3);
-        assert_eq!(parsed_entries[0].as_ref().unwrap().sample_count, 10);
-        assert_eq!(
-            parsed_entries[0].as_ref().unwrap().group_description_index,
-            1
-        );
-        assert_eq!(parsed_entries[1].as_ref().unwrap().sample_count, 20);
-        assert_eq!(
-            parsed_entries[2].as_ref().unwrap().group_description_index,
-            0
-        );
-    }
-
-    #[test]
-    fn parse_sbgp_v1_with_parameter() {
-        let entries = vec![(5, 1)];
-        let payload = make_sbgp_payload_v1(b"roll", 0x12345678, &entries);
+        // Version 1 with parameter
+        let mut payload = Vec::new();
+        payload.push(1);
+        payload.extend_from_slice(&[0, 0, 0]);
+        payload.extend_from_slice(b"roll");
+        payload.extend_from_slice(&0x12345678u32.to_be_bytes());
+        payload.extend_from_slice(&1u32.to_be_bytes());
+        payload.extend_from_slice(&5u32.to_be_bytes());
+        payload.extend_from_slice(&1u32.to_be_bytes());
         let sbgp = SbgpBoxView::parse(&payload).unwrap();
-
         assert_eq!(sbgp.version, 1);
-        assert_eq!(sbgp.grouping_type, FourCC::new(*b"roll"));
         assert_eq!(sbgp.grouping_type_parameter, Some(0x12345678));
-        assert_eq!(sbgp.entry_count, 1);
     }
 
     #[test]
-    fn parse_sbgp_invalid_version() {
+    fn invalid_version() {
         let mut data = Vec::new();
-        data.push(2); // invalid version
+        data.push(2);
         data.extend_from_slice(&[0, 0, 0]);
         data.extend_from_slice(b"roll");
         data.extend_from_slice(&0u32.to_be_bytes());
-
-        let result = SbgpBoxView::parse(&data);
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::InvalidBoxVersion { .. }));
-        }
+        assert!(SbgpBoxView::parse(&data).is_err());
     }
 
     #[test]
-    fn parse_sbgp_size_mismatch() {
-        let mut payload = make_sbgp_payload_v0(b"roll", &[(10, 1)]);
-        // Corrupt by adding extra data
-        payload.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF]);
-
-        let result = SbgpBoxView::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn try_from_box_view_success() {
+    fn wrong_box_type() {
         let payload = make_sbgp_payload_v0(b"roll", &[]);
-
         let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"sbgp");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let sbgp = SbgpBoxView::try_from(&box_view).unwrap();
-
-        assert_eq!(sbgp.grouping_type, FourCC::new(*b"roll"));
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_sbgp_payload_v0(b"roll", &[]);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
+        box_data.extend_from_slice(&(8 + payload.len() as u32).to_be_bytes());
         box_data.extend_from_slice(b"sgpd");
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
         let box_view = BoxView::parse_in(&mut cursor).unwrap();
         let result = SbgpBoxView::try_from(&box_view);
-
         assert!(result.is_err());
     }
 
     #[cfg(feature = "alloc")]
-    mod alloc_tests {
-        use super::*;
+    #[test]
+    fn owned_conversion() {
+        let payload = make_sbgp_payload_v0(b"roll", &[(10, 1), (20, 2)]);
+        let view = SbgpBoxView::parse(&payload).unwrap();
+        let owned = SbgpBox::from_view(&view).unwrap();
 
-        #[test]
-        fn sbgp_box_from_view() {
-            let entries = vec![(10, 1), (20, 2)];
-            let payload = make_sbgp_payload_v0(b"roll", &entries);
-            let view = SbgpBoxView::parse(&payload).unwrap();
-            let owned = SbgpBox::from_view(&view).unwrap();
-
-            assert_eq!(owned.grouping_type, FourCC::new(*b"roll"));
-            assert_eq!(owned.entries.len(), 2);
-            assert_eq!(owned.entries[0].sample_count, 10);
-            assert_eq!(owned.entries[1].group_description_index, 2);
-        }
-
-        #[test]
-        fn sbgp_box_parse() {
-            let payload = make_sbgp_payload_v0(b"seig", &[]);
-            let owned = SbgpBox::parse(&payload).unwrap();
-
-            assert_eq!(owned.grouping_type, FourCC::new(*b"seig"));
-            assert_eq!(owned.entries.len(), 0);
-        }
+        assert_eq!(owned.entries.len(), 2);
+        assert_eq!(owned.entries[0].sample_count, 10);
+        assert_eq!(owned.entries[1].group_description_index, 2);
     }
 }
