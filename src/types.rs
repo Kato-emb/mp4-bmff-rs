@@ -6,6 +6,7 @@
 
 mod fixed;
 mod fourcc;
+mod language;
 mod matrix;
 mod time;
 mod uuid;
@@ -19,6 +20,7 @@ pub use fixed::{
     U16F16,
 };
 pub use fourcc::FourCC;
+pub use language::LanguageCode;
 pub use matrix::Matrix;
 pub use time::QuickTimeDateTime;
 pub use uuid::Uuid;

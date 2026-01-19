@@ -7,44 +7,6 @@
 //!
 //! - `std` (default): Enables standard library support. Implies `alloc`.
 //! - `alloc`: Enables heap allocation. Required for typed box representations.
-//!
-//! ## Module Organization
-//!
-//! The crate is organized into layers with different allocation requirements:
-//!
-//! ### Core Layer (no_std, no_alloc)
-//!
-//! These modules work in bare-metal environments without heap allocation:
-//!
-//! - [`cursor`]: Zero-copy read/write cursors for byte slices
-//! - [`types`]: Primitive BMFF types (FourCC, UUID, fixed-point numbers)
-//! - [`boxes`]: Box header parsing, view-based box iteration
-//!
-//! ### Typed Layer (requires `alloc`)
-//!
-//! These modules require heap allocation for owned representations:
-//!
-//! - TODO: Add typed box representations and parsing
-//!
-//! ## Usage
-//!
-//! ### no_alloc: View-based parsing
-//!
-//! ```
-//! use mp4_bmff::boxes::BoxIter;
-//!
-//! let data = [
-//!     0x00, 0x00, 0x00, 0x0C, b'f', b't', b'y', b'p',
-//!     b'i', b's', b'o', b'm',
-//! ];
-//!
-//! for result in BoxIter::new(&data) {
-//!     let view = result.unwrap();
-//!     // Access header and raw payload without allocation
-//!     let _boxtype = view.header.boxtype();
-//!     let _payload = view.payload;
-//! }
-//! ```
 
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 #![warn(missing_docs)]
@@ -67,9 +29,49 @@ mod lib {
 }
 
 // =============================================================================
-// Core Layer - no_std, no_alloc compatible
+// Internal - Byte Slice Cursor Module
 // =============================================================================
+pub(crate) mod cursor;
 
-pub mod boxes;
-pub mod cursor;
+// =============================================================================
+// Layer 0 - Primitive Types
+// =============================================================================
 pub mod types;
+
+// =============================================================================
+// Layer 1 - ISO BMFF Common types and Box Framing (no_std, no_alloc)
+// =============================================================================
+pub mod error;
+pub mod header;
+pub mod iter;
+pub mod view;
+
+// Re-export for convenience
+pub use error::{
+    Error, //
+    ErrorKind,
+    Result,
+};
+pub use header::{
+    BoxHeader, //
+    BoxSize,
+    BoxType,
+    FullBoxFlags,
+    FullBoxHeader,
+};
+pub use iter::BoxIter;
+pub use view::BoxView;
+
+// =============================================================================
+// Layer 2 - Typed Box Representations (requires alloc)
+// =============================================================================
+pub mod boxes;
+pub mod descriptor;
+#[cfg(feature = "alloc")]
+pub use view::BoxOwned;
+
+// =============================================================================
+// Layer 3 -  I/O (std)
+// =============================================================================
+#[cfg(feature = "std")]
+pub mod io;

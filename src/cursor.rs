@@ -1,5 +1,3 @@
-//!
-
 use core::cmp;
 use core::error;
 use core::fmt;
@@ -54,7 +52,6 @@ impl fmt::Display for Error {
 impl error::Error for Error {}
 
 /// A cursor for reading from a byte slice.
-#[derive(Clone)]
 pub struct ReadCursor<'a> {
     inner: &'a [u8],
     pos: usize,
@@ -100,7 +97,7 @@ impl<'a> ReadCursor<'a> {
 
     /// Returns the entire inner byte slice.
     #[inline]
-    pub const fn inner(&self) -> &[u8] {
+    pub const fn inner(&self) -> &'a [u8] {
         self.inner
     }
 
@@ -211,6 +208,14 @@ impl<'a> ReadCursor<'a> {
     pub fn read_u64_be(&mut self) -> Result<u64> {
         let bytes = self.read_array::<8>()?;
         Ok(u64::from_be_bytes(bytes))
+    }
+
+    /// Reads a big-endian 64-bit signed integer from the cursor.
+    #[inline]
+    #[track_caller]
+    pub fn read_i64_be(&mut self) -> Result<i64> {
+        let bytes = self.read_array::<8>()?;
+        Ok(i64::from_be_bytes(bytes))
     }
 }
 
