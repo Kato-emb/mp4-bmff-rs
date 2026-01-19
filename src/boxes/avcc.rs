@@ -517,8 +517,7 @@ mod tests {
         data.extend_from_slice(&0x00480000u32.to_be_bytes()); // vert_resolution (72.0)
         data.extend_from_slice(&[0u8; 4]); // reserved (4 bytes)
         data.extend_from_slice(&1u16.to_be_bytes()); // frame_count
-        // compressorname: 1 byte length + 32 bytes data (read_array::<32>)
-        data.push(0); // compressorname_len
+        // compressorname: 32 bytes total (first byte is length, followed by 31 bytes of data)
         data.extend_from_slice(&[0u8; 32]); // compressorname (32 bytes)
         data.extend_from_slice(&0x0018u16.to_be_bytes()); // depth (24)
         data.extend_from_slice(&[0xFF, 0xFF]); // pre_defined (-1)
