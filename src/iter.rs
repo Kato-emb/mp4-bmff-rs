@@ -27,7 +27,7 @@ impl<'a> Iterator for BoxIter<'a> {
             return None;
         }
 
-        Some(BoxView::parse(&mut self.cur))
+        Some(BoxView::parse_in(&mut self.cur))
     }
 }
 

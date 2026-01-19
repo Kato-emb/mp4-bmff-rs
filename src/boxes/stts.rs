@@ -332,7 +332,7 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse(&mut cursor).unwrap();
+        let box_view = BoxView::parse_in(&mut cursor).unwrap();
         let stts = SttsBoxView::try_from(box_view).unwrap();
 
         assert_eq!(stts.entry_count, 1);
@@ -350,7 +350,7 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse(&mut cursor).unwrap();
+        let box_view = BoxView::parse_in(&mut cursor).unwrap();
         let result = SttsBoxView::try_from(box_view);
 
         assert!(result.is_err());

@@ -16,8 +16,7 @@ pub struct BoxView<'a> {
 }
 
 impl<'a> BoxView<'a> {
-    /// Parses a `BoxView` from the given `ReadCursor`.
-    pub fn parse(cur: &mut ReadCursor<'a>) -> Result<Self> {
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
         let header = BoxHeader::parse(cur)?;
 
         let payload_size = match header.payload_size() {
@@ -42,6 +41,12 @@ impl<'a> BoxView<'a> {
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
         Ok(Self { header, payload })
+    }
+
+    /// Parses a `BoxView` from the given byte slice.
+    pub fn parse(bytes: &'a [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+        Self::parse_in(&mut cur)
     }
 
     /// Writes the `BoxView` to the given `WriteCursor`.
@@ -74,7 +79,7 @@ mod tests {
         ];
 
         let mut cur = ReadCursor::new(&data);
-        let view = BoxView::parse(&mut cur).unwrap();
+        let view = BoxView::parse_in(&mut cur).unwrap();
 
         assert_eq!(view.header.boxsize().value(), Some(20));
         assert!(!view.header.boxsize().is_extended());
@@ -96,7 +101,7 @@ mod tests {
         ];
 
         let mut cur = ReadCursor::new(&data);
-        let view = BoxView::parse(&mut cur).unwrap();
+        let view = BoxView::parse_in(&mut cur).unwrap();
 
         assert!(view.header.boxsize().is_eof());
         assert_eq!(view.header.boxtype().type_field(), FourCC::from(*b"free"));
@@ -118,7 +123,7 @@ mod tests {
         data.extend_from_slice(&[0xAB; 8]); // 8 bytes payload (24 - 16 = 8)
 
         let mut cur = ReadCursor::new(&data);
-        let view = BoxView::parse(&mut cur).unwrap();
+        let view = BoxView::parse_in(&mut cur).unwrap();
 
         assert_eq!(view.header.boxsize().value(), Some(24));
         assert!(view.header.boxsize().is_extended()); // Now correctly true
@@ -142,7 +147,7 @@ mod tests {
         data.extend_from_slice(&[0xCD; 8]); // payload (8 bytes)
 
         let mut cur = ReadCursor::new(&data);
-        let view = BoxView::parse(&mut cur).unwrap();
+        let view = BoxView::parse_in(&mut cur).unwrap();
 
         assert!(view.header.boxtype().is_uuid());
         assert_eq!(
@@ -163,7 +168,7 @@ mod tests {
         ];
 
         let mut cur = ReadCursor::new(&data);
-        let result = BoxView::parse(&mut cur);
+        let result = BoxView::parse_in(&mut cur);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -189,11 +194,11 @@ mod tests {
 
         let mut cur = ReadCursor::new(&data);
 
-        let view1 = BoxView::parse(&mut cur).unwrap();
+        let view1 = BoxView::parse_in(&mut cur).unwrap();
         assert_eq!(view1.header.boxtype().type_field(), FourCC::from(*b"ftyp"));
         assert_eq!(view1.payload, &[0x01, 0x02, 0x03, 0x04]);
 
-        let view2 = BoxView::parse(&mut cur).unwrap();
+        let view2 = BoxView::parse_in(&mut cur).unwrap();
         assert_eq!(view2.header.boxtype().type_field(), FourCC::from(*b"moov"));
         assert_eq!(
             view2.payload,
@@ -217,7 +222,7 @@ mod tests {
         original.write(&mut write_cur).unwrap();
 
         let mut read_cur = ReadCursor::new(&buf);
-        let parsed = BoxView::parse(&mut read_cur).unwrap();
+        let parsed = BoxView::parse_in(&mut read_cur).unwrap();
 
         assert_eq!(original.header, parsed.header);
         assert_eq!(original.payload, parsed.payload);
@@ -235,7 +240,7 @@ mod tests {
         original.write(&mut write_cur).unwrap();
 
         let mut read_cur = ReadCursor::new(&buf);
-        let parsed = BoxView::parse(&mut read_cur).unwrap();
+        let parsed = BoxView::parse_in(&mut read_cur).unwrap();
 
         assert_eq!(original.header, parsed.header);
         assert_eq!(original.payload, parsed.payload);
