@@ -207,6 +207,10 @@ define_box_types! {
     VMHD = b"vmhd",
     /// Sound Media Header Box
     SMHD = b"smhd",
+    /// Hint Media Header Box
+    HMHD = b"hmhd",
+    /// Null Media Header Box
+    NMHD = b"nmhd",
 
     // =========================================================================
     // ISO 14496-15 (AVC/HEVC file format)

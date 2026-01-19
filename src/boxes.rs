@@ -24,10 +24,10 @@
 //! |    |    |    |mdhd|    |    |*| |media header, overall information about the media
 //! |    |    |    |hdlr|    |    |*| |handler, declares the media (handler) type
 //! |    |    |    |minf|    |    |*| |media information container
-//! |    |    |    |    |vmhd|    | | |video media header, overall information (video track only)
-//! |    |    |    |    |smhd|    | | |sound media header, overall information (sound track only)
-//! |    |    |    |    |hmhd|    | | |hint media header, overall information (hint track only)
-//! |    |    |    |    |nmhd|    | | |Null media header, overall information (some tracks only)
+//! |    |    |    |    |vmhd|    | |○|video media header, overall information (video track only)
+//! |    |    |    |    |smhd|    | |○|sound media header, overall information (sound track only)
+//! |    |    |    |    |hmhd|    | |○|hint media header, overall information (hint track only)
+//! |    |    |    |    |nmhd|    | |○|Null media header, overall information (some tracks only)
 //! |    |    |    |    |dinf|    |*|○|data information box, container
 //! |    |    |    |    |    |dref|*|○|data reference box, declares source(s) of media data in track
 //! |    |    |    |    |stbl|    |*|○|sample table box, container for the time/space map
@@ -135,10 +135,13 @@ mod dref;
 mod esds;
 mod free;
 mod ftyp;
+mod hmhd;
 mod mdat;
+mod nmhd;
 mod moov;
 mod mp4a;
 mod mvhd;
+mod smhd;
 mod stbl;
 mod stco;
 mod stsc;
@@ -146,6 +149,7 @@ mod stsd;
 mod stts;
 mod tkhd;
 mod trak;
+mod vmhd;
 
 mod sample_entry;
 
@@ -171,8 +175,12 @@ pub use stbl::StblBoxView;
 pub use trak::TrakBoxView;
 
 // Fixed-size boxes (Copy types, no View/Owned distinction)
+pub use hmhd::HmhdBox;
 pub use mvhd::MvhdBox;
+pub use nmhd::NmhdBox;
+pub use smhd::SmhdBox;
 pub use tkhd::TkhdBox;
+pub use vmhd::VmhdBox;
 
 // Re-export entry structs
 pub use co64::Co64Entry;
@@ -189,6 +197,8 @@ pub use stbl::ChunkOffsetsView;
 // Re-export fullbox flags and specs
 pub use co64::{Co64Flags, Co64Spec};
 pub use dref::{DrefFlags, DrefSpec};
+pub use hmhd::{HmhdFlags, HmhdSpec};
+pub use nmhd::{NmhdFlags, NmhdSpec};
 pub use dref::{UrlFlags, UrlSpec};
 pub use dref::{UrnFlags, UrnSpec};
 pub use esds::{EsdsFlags, EsdsSpec};
@@ -196,8 +206,10 @@ pub use mvhd::{MvhdFlags, MvhdSpec};
 pub use stco::{StcoFlags, StcoSpec};
 pub use stsc::{StscFlags, StscSpec};
 pub use stsd::{StsdFlags, StsdSpec};
+pub use smhd::{SmhdFlags, SmhdSpec};
 pub use stts::{SttsFlags, SttsSpec};
 pub use tkhd::{TkhdFlags, TkhdSpec};
+pub use vmhd::{VmhdFlags, VmhdSpec};
 
 // Re-export sample entry
 pub use sample_entry::AudioSampleEntry;
