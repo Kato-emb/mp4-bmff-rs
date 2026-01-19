@@ -168,6 +168,14 @@ define_box_types! {
     TRAK = b"trak",
     /// Track Header Box
     TKHD = b"tkhd",
+    /// Media Information Box
+    MINF = b"minf",
+    /// Handler Reference Box
+    HDLR = b"hdlr",
+    /// Media Header Box
+    MDHD = b"mdhd",
+    /// Media Box
+    MDIA = b"mdia",
 
     // =========================================================================
     // ISO 14496-12 (BMFF) - Data information

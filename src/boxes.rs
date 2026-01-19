@@ -12,18 +12,18 @@
 //! +----+----+----+----+----+----+-+-+--------------------------------
 //! |ftyp|    |    |    |    |    |*|○|file type and compatibility
 //! |pdin|    |    |    |    |    | | |progressive download information
-//! |moov|    |    |    |    |    |*|#|container for all the metadata
+//! |moov|    |    |    |    |    |*|○|container for all the metadata
 //! |    |mvhd|    |    |    |    |*|○|movie header, overall declarations
-//! |    |trak|    |    |    |    |*|#|container for an individual track or stream
+//! |    |trak|    |    |    |    |*|○|container for an individual track or stream
 //! |    |    |tkhd|    |    |    |*|○|track header, overall information about the track
 //! |    |    |tref|    |    |    | | |track reference container
 //! |    |    |trgr|    |    |    | | |track grouping indication
 //! |    |    |edts|    |    |    | | |edit list container
 //! |    |    |    |elst|    |    | | |an edit list
-//! |    |    |mdia|    |    |    |*|#|container for the media information in a track
-//! |    |    |    |mdhd|    |    |*| |media header, overall information about the media
-//! |    |    |    |hdlr|    |    |*| |handler, declares the media (handler) type
-//! |    |    |    |minf|    |    |*| |media information container
+//! |    |    |mdia|    |    |    |*|○|container for the media information in a track
+//! |    |    |    |mdhd|    |    |*|○|media header, overall information about the media
+//! |    |    |    |hdlr|    |    |*|○|handler, declares the media (handler) type
+//! |    |    |    |minf|    |    |*|○|media information container
 //! |    |    |    |    |vmhd|    | |○|video media header, overall information (video track only)
 //! |    |    |    |    |smhd|    | |○|sound media header, overall information (sound track only)
 //! |    |    |    |    |hmhd|    | |○|hint media header, overall information (hint track only)
@@ -135,12 +135,16 @@ mod dref;
 mod esds;
 mod free;
 mod ftyp;
+mod hdlr;
 mod hmhd;
 mod mdat;
-mod nmhd;
+mod mdhd;
+mod mdia;
+mod minf;
 mod moov;
 mod mp4a;
 mod mvhd;
+mod nmhd;
 mod smhd;
 mod stbl;
 mod stco;
@@ -161,6 +165,7 @@ pub use dref::UrnBoxView;
 pub use esds::EsdsBoxView;
 pub use free::FreeBoxView;
 pub use ftyp::FtypBoxView;
+pub use hdlr::HdlrBoxView;
 pub use mdat::MdatBoxView;
 pub use mp4a::Mp4aBoxView;
 pub use stco::StcoBoxView;
@@ -170,12 +175,15 @@ pub use stts::SttsBoxView;
 
 // Container boxes - View types
 pub use dinf::DinfBoxView;
+pub use mdia::MdiaBoxView;
+pub use minf::MinfBoxView;
 pub use moov::MoovBoxView;
 pub use stbl::StblBoxView;
 pub use trak::TrakBoxView;
 
 // Fixed-size boxes (Copy types, no View/Owned distinction)
 pub use hmhd::HmhdBox;
+pub use mdhd::MdhdBox;
 pub use mvhd::MvhdBox;
 pub use nmhd::NmhdBox;
 pub use smhd::SmhdBox;
@@ -192,21 +200,25 @@ pub use stts::SttsEntry;
 pub use dref::DrefEntryView;
 pub use stsd::StsdEntryView;
 
+// Re-export box utils
+pub use minf::MediaHeader;
 pub use stbl::ChunkOffsetsView;
 
 // Re-export fullbox flags and specs
 pub use co64::{Co64Flags, Co64Spec};
 pub use dref::{DrefFlags, DrefSpec};
-pub use hmhd::{HmhdFlags, HmhdSpec};
-pub use nmhd::{NmhdFlags, NmhdSpec};
 pub use dref::{UrlFlags, UrlSpec};
 pub use dref::{UrnFlags, UrnSpec};
 pub use esds::{EsdsFlags, EsdsSpec};
+pub use hdlr::{HdlrFlags, HdlrSpec};
+pub use hmhd::{HmhdFlags, HmhdSpec};
+pub use mdhd::{MdhdFlags, MdhdSpec};
 pub use mvhd::{MvhdFlags, MvhdSpec};
+pub use nmhd::{NmhdFlags, NmhdSpec};
+pub use smhd::{SmhdFlags, SmhdSpec};
 pub use stco::{StcoFlags, StcoSpec};
 pub use stsc::{StscFlags, StscSpec};
 pub use stsd::{StsdFlags, StsdSpec};
-pub use smhd::{SmhdFlags, SmhdSpec};
 pub use stts::{SttsFlags, SttsSpec};
 pub use tkhd::{TkhdFlags, TkhdSpec};
 pub use vmhd::{VmhdFlags, VmhdSpec};
@@ -233,6 +245,7 @@ mod owned_exports {
     pub use esds::EsdsBox;
     pub use free::FreeBox;
     pub use ftyp::FtypBox;
+    pub use hdlr::HdlrBox;
     pub use mdat::MdatBox;
     pub use mp4a::Mp4aBox;
     pub use stco::StcoBox;
@@ -242,6 +255,8 @@ mod owned_exports {
 
     // Container boxes - Owned types
     pub use dinf::DinfBox;
+    pub use mdia::MdiaBox;
+    pub use minf::MinfBox;
     pub use moov::MoovBox;
     pub use stbl::StblBox;
     pub use trak::TrakBox;
