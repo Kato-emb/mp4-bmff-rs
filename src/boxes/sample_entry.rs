@@ -101,7 +101,7 @@ impl VisualSampleEntry {
 
         // Skip pre_defined (2 bytes)
         cur.advance(Self::PRE_DEFINED_SIZE_1)?;
-        // Skip reserved (4 bytes)
+        // Skip reserved (2 bytes)
         cur.advance(Self::RESERVED_SIZE_1)?;
         // Skip pre_defined (12 bytes)
         cur.advance(Self::PRE_DEFINED_SIZE_2)?;
@@ -165,7 +165,7 @@ impl Default for AudioSampleEntry {
 }
 
 impl AudioSampleEntry {
-    const RESERVED_SIZE_1: usize = mem::size_of::<[u16; 2]>();
+    const RESERVED_SIZE_1: usize = mem::size_of::<[u32; 2]>();
     const PRE_DEFINED_SIZE: usize = mem::size_of::<u16>();
     const RESERVED_SIZE_2: usize = mem::size_of::<u16>();
 
