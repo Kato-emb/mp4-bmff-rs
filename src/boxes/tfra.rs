@@ -76,8 +76,7 @@ impl<'a> Iterator for TfraEntryIter<'a> {
             // Read time field
             let time = if self.version == 1 {
                 let value = u64::from_be_bytes([
-                    chunk[0], chunk[1], chunk[2], chunk[3],
-                    chunk[4], chunk[5], chunk[6], chunk[7],
+                    chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
                 ]);
                 offset += 8;
                 value
@@ -90,14 +89,23 @@ impl<'a> Iterator for TfraEntryIter<'a> {
             // Read moof_offset field
             let moof_offset = if self.version == 1 {
                 let value = u64::from_be_bytes([
-                    chunk[offset], chunk[offset + 1], chunk[offset + 2], chunk[offset + 3],
-                    chunk[offset + 4], chunk[offset + 5], chunk[offset + 6], chunk[offset + 7],
+                    chunk[offset],
+                    chunk[offset + 1],
+                    chunk[offset + 2],
+                    chunk[offset + 3],
+                    chunk[offset + 4],
+                    chunk[offset + 5],
+                    chunk[offset + 6],
+                    chunk[offset + 7],
                 ]);
                 offset += 8;
                 value
             } else {
                 let value = u32::from_be_bytes([
-                    chunk[offset], chunk[offset + 1], chunk[offset + 2], chunk[offset + 3],
+                    chunk[offset],
+                    chunk[offset + 1],
+                    chunk[offset + 2],
+                    chunk[offset + 3],
                 ]) as u64;
                 offset += 4;
                 value
@@ -105,14 +113,17 @@ impl<'a> Iterator for TfraEntryIter<'a> {
 
             // Read variable-sized fields
             let traf_size = (self.length_size_of_traf_num + 1) as usize;
-            let traf_number = Self::read_variable_uint(&chunk[offset..], self.length_size_of_traf_num + 1);
+            let traf_number =
+                Self::read_variable_uint(&chunk[offset..], self.length_size_of_traf_num + 1);
             offset += traf_size;
 
             let trun_size = (self.length_size_of_trun_num + 1) as usize;
-            let trun_number = Self::read_variable_uint(&chunk[offset..], self.length_size_of_trun_num + 1);
+            let trun_number =
+                Self::read_variable_uint(&chunk[offset..], self.length_size_of_trun_num + 1);
             offset += trun_size;
 
-            let sample_number = Self::read_variable_uint(&chunk[offset..], self.length_size_of_sample_num + 1);
+            let sample_number =
+                Self::read_variable_uint(&chunk[offset..], self.length_size_of_sample_num + 1);
 
             Ok(TfraEntry {
                 time,

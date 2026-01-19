@@ -27,10 +27,9 @@ impl TfdtBox {
         let version = full_box_header.version();
 
         let base_media_decode_time = match version {
-            0 => {
-                cur.read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))? as u64
-            }
+            0 => cur
+                .read_u32_be()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))? as u64,
             1 => cur
                 .read_u64_be()
                 .map_err(|e| Error::at(e.into(), cur.position() as u64))?,

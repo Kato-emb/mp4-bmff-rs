@@ -276,7 +276,11 @@ mod tests {
         assert_eq!(cdsc_ref.track_ids().collect::<Vec<_>>(), vec![4, 5]);
 
         // Not found case
-        assert!(tref.find_reference(FourCC::new(*b"vdep")).unwrap().is_none());
+        assert!(
+            tref.find_reference(FourCC::new(*b"vdep"))
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -292,7 +296,10 @@ mod tests {
         let result = TrackReferenceTypeBoxView::from_box_view(&box_view);
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err().kind(), ErrorKind::InvalidBoxSize { .. }));
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            ErrorKind::InvalidBoxSize { .. }
+        ));
     }
 
     #[test]
@@ -308,7 +315,10 @@ mod tests {
         let result = TrefBoxView::try_from(&box_view);
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err().kind(), ErrorKind::MismatchedBoxType { .. }));
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            ErrorKind::MismatchedBoxType { .. }
+        ));
     }
 
     #[cfg(feature = "alloc")]
@@ -323,7 +333,13 @@ mod tests {
         assert_eq!(owned.references[1].track_ids, vec![4]);
 
         // Test find on owned
-        assert_eq!(owned.find_reference(FourCC::new(*b"hint")).unwrap().track_ids, vec![2, 3]);
+        assert_eq!(
+            owned
+                .find_reference(FourCC::new(*b"hint"))
+                .unwrap()
+                .track_ids,
+            vec![2, 3]
+        );
         assert!(owned.find_reference(FourCC::new(*b"vdep")).is_none());
     }
 }

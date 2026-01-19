@@ -38,7 +38,9 @@ impl<'a> MvexBoxView<'a> {
     /// Returns an iterator over the Track Extends Boxes (`trex`) contained in this `MvexBoxView`.
     pub fn trexs(&self) -> impl Iterator<Item = Result<TrexBox>> + 'a {
         self.children().filter_map(|child| match child {
-            Ok(view) if view.header.boxtype() == BoxType::TREX => Some(TrexBox::parse(view.payload)),
+            Ok(view) if view.header.boxtype() == BoxType::TREX => {
+                Some(TrexBox::parse(view.payload))
+            }
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
