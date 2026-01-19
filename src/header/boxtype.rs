@@ -126,112 +126,105 @@ impl From<Uuid> for BoxType {
     }
 }
 
-impl BoxType {
-    /// `type` field value used by File Type boxes.
-    pub const FTYP: Self = Self {
-        boxtype: FourCC::new(*b"ftyp"),
-        usertype: None,
+/// Macro to define BoxType constants in a concise, table-like format.
+macro_rules! define_box_types {
+    ($(
+        $(#[$meta:meta])*
+        $name:ident = $fourcc:literal
+    ),* $(,)?) => {
+        impl BoxType {
+            $(
+                $(#[$meta])*
+                pub const $name: Self = Self {
+                    boxtype: FourCC::new(*$fourcc),
+                    usertype: None,
+                };
+            )*
+        }
     };
-    /// `type` field value used by Free boxes.
-    pub const FREE: Self = Self {
-        boxtype: FourCC::new(*b"free"),
-        usertype: None,
-    };
-    /// `type` field value used by Media Data boxes.
-    pub const MDAT: Self = Self {
-        boxtype: FourCC::new(*b"mdat"),
-        usertype: None,
-    };
-    /// `type` field value used by Movie boxes.
-    pub const MOOV: Self = Self {
-        boxtype: FourCC::new(*b"moov"),
-        usertype: None,
-    };
-    /// `type` field value used by Movie Header boxes.
-    pub const MVHD: Self = Self {
-        boxtype: FourCC::new(*b"mvhd"),
-        usertype: None,
-    };
-    /// `type` field value used by Track boxes.
-    pub const TRAK: Self = Self {
-        boxtype: FourCC::new(*b"trak"),
-        usertype: None,
-    };
-    /// `type` field value used by Track Header boxes.
-    pub const TKHD: Self = Self {
-        boxtype: FourCC::new(*b"tkhd"),
-        usertype: None,
-    };
-    /// `type` field value used by Data Information boxes.
-    pub const DINF: Self = Self {
-        boxtype: FourCC::new(*b"dinf"),
-        usertype: None,
-    };
-    /// `type` field value used by Data Reference boxes.
-    pub const DREF: Self = Self {
-        boxtype: FourCC::new(*b"dref"),
-        usertype: None,
-    };
-    /// `type` field value used by URL boxes.
-    pub const URL_: Self = Self {
-        boxtype: FourCC::new(*b"url "),
-        usertype: None,
-    };
-    /// `type` field value used by URN boxes.
-    pub const URN_: Self = Self {
-        boxtype: FourCC::new(*b"urn "),
-        usertype: None,
-    };
-    /// `type` field value used by Decoding Time to Sample boxes.
-    pub const STTS: Self = Self {
-        boxtype: FourCC::new(*b"stts"),
-        usertype: None,
-    };
-    /// `type` field value used by Sample to Chunk boxes.
-    pub const STSC: Self = Self {
-        boxtype: FourCC::new(*b"stsc"),
-        usertype: None,
-    };
-    /// `type` field value used by Chunk Offset boxes.
-    pub const STCO: Self = Self {
-        boxtype: FourCC::new(*b"stco"),
-        usertype: None,
-    };
-    /// `type` field value used by AVC Configuration boxes.
-    pub const AVCC: Self = Self {
-        boxtype: FourCC::new(*b"avcC"),
-        usertype: None,
-    };
-    /// `type` field value used by AVC Sample Entry boxes.
-    pub const AVC1: Self = Self {
-        boxtype: FourCC::new(*b"avc1"),
-        usertype: None,
-    };
-    /// `type` field value used by Sample Description boxes.
-    pub const STSD: Self = Self {
-        boxtype: FourCC::new(*b"stsd"),
-        usertype: None,
-    };
-    /// `type` field value used by Elementary Stream Descriptor boxes.
-    pub const ESDS: Self = Self {
-        boxtype: FourCC::new(*b"esds"),
-        usertype: None,
-    };
-    /// `type` field value used by MP4 Audio Sample Entry boxes.
-    pub const MP4A: Self = Self {
-        boxtype: FourCC::new(*b"mp4a"),
-        usertype: None,
-    };
-    /// `type` field value used by Sample Table boxes.
-    pub const STBL: Self = Self {
-        boxtype: FourCC::new(*b"stbl"),
-        usertype: None,
-    };
-    /// `type` field value used by 64-bit Chunk Offset boxes.
-    pub const CO64: Self = Self {
-        boxtype: FourCC::new(*b"co64"),
-        usertype: None,
-    };
+}
+
+define_box_types! {
+    // =========================================================================
+    // ISO 14496-12 (BMFF) - Core boxes
+    // =========================================================================
+
+    /// File Type Box
+    FTYP = b"ftyp",
+    /// Free Space Box
+    FREE = b"free",
+    /// Media Data Box
+    MDAT = b"mdat",
+
+    // =========================================================================
+    // ISO 14496-12 (BMFF) - Movie structure
+    // =========================================================================
+
+    /// Movie Box
+    MOOV = b"moov",
+    /// Movie Header Box
+    MVHD = b"mvhd",
+    /// Track Box
+    TRAK = b"trak",
+    /// Track Header Box
+    TKHD = b"tkhd",
+
+    // =========================================================================
+    // ISO 14496-12 (BMFF) - Data information
+    // =========================================================================
+
+    /// Data Information Box
+    DINF = b"dinf",
+    /// Data Reference Box
+    DREF = b"dref",
+    /// URL Box
+    URL_ = b"url ",
+    /// URN Box
+    URN_ = b"urn ",
+
+    // =========================================================================
+    // ISO 14496-12 (BMFF) - Sample table
+    // =========================================================================
+
+    /// Sample Table Box
+    STBL = b"stbl",
+    /// Sample Description Box
+    STSD = b"stsd",
+    /// Decoding Time to Sample Box
+    STTS = b"stts",
+    /// Sample to Chunk Box
+    STSC = b"stsc",
+    /// Chunk Offset Box
+    STCO = b"stco",
+    /// 64-bit Chunk Offset Box
+    CO64 = b"co64",
+
+    // =========================================================================
+    // ISO 14496-12 (BMFF) - Media headers
+    // =========================================================================
+
+    /// Video Media Header Box
+    VMHD = b"vmhd",
+    /// Sound Media Header Box
+    SMHD = b"smhd",
+
+    // =========================================================================
+    // ISO 14496-15 (AVC/HEVC file format)
+    // =========================================================================
+
+    /// AVC Sample Entry Box
+    AVC1 = b"avc1",
+    /// AVC Configuration Box
+    AVCC = b"avcC",
+
+    // =========================================================================
+    // ISO 14496-14 (MP4 file format)
+    // =========================================================================
+
+    /// MP4 Audio Sample Entry Box
+    MP4A = b"mp4a",
+    /// Elementary Stream Descriptor Box
+    ESDS = b"esds",
 }
 
 #[cfg(test)]
