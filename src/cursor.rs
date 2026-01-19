@@ -220,7 +220,7 @@ impl<'a> ReadCursor<'a> {
 }
 
 /// A cursor for writing to a byte slice.
-pub struct WriteCursor<'a> {
+pub(crate) struct WriteCursor<'a> {
     inner: &'a mut [u8],
     pos: usize,
 }

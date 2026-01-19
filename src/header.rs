@@ -112,7 +112,7 @@ impl BoxHeader {
     }
 
     /// Writes the `BoxHeader` to the given `WriteCursor`.
-    pub fn write(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         if self.size.is_eof() {
             // Write size field for EOF (4 bytes)
             cur.write_u32_be(BoxSize::MARKER_EOF)
@@ -222,7 +222,7 @@ impl<B> FullBoxHeader<B> {
     }
 
     /// Writes the `FullBoxHeader` to the given `WriteCursor`.
-    pub fn write(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         cur.write_u8(self.version)
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
@@ -404,7 +404,7 @@ mod tests {
 
         let mut buf = [0u8; 8];
         let mut write_cur = WriteCursor::new(&mut buf);
-        original.write(&mut write_cur).unwrap();
+        original.write_in(&mut write_cur).unwrap();
 
         let mut read_cur = ReadCursor::new(&buf);
         let parsed = BoxHeader::parse(&mut read_cur).unwrap();
@@ -421,7 +421,7 @@ mod tests {
 
         let mut buf = [0u8; 16];
         let mut write_cur = WriteCursor::new(&mut buf);
-        original.write(&mut write_cur).unwrap();
+        original.write_in(&mut write_cur).unwrap();
 
         let mut read_cur = ReadCursor::new(&buf);
         let parsed = BoxHeader::parse(&mut read_cur).unwrap();
@@ -436,7 +436,7 @@ mod tests {
 
         let mut buf = [0u8; 24];
         let mut write_cur = WriteCursor::new(&mut buf);
-        original.write(&mut write_cur).unwrap();
+        original.write_in(&mut write_cur).unwrap();
 
         let mut read_cur = ReadCursor::new(&buf);
         let parsed = BoxHeader::parse(&mut read_cur).unwrap();
@@ -468,7 +468,7 @@ mod tests {
 
         let mut buf = [0u8; 4];
         let mut write_cur = WriteCursor::new(&mut buf);
-        original.write(&mut write_cur).unwrap();
+        original.write_in(&mut write_cur).unwrap();
 
         let mut read_cur = ReadCursor::new(&buf);
         let parsed: FullBoxHeader<TestFullBox> = FullBoxHeader::parse_in(&mut read_cur).unwrap();

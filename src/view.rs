@@ -50,8 +50,8 @@ impl<'a> BoxView<'a> {
     }
 
     /// Writes the `BoxView` to the given `WriteCursor`.
-    pub fn write(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-        self.header.write(cur)?;
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        self.header.write_in(cur)?;
 
         cur.write_slice(self.payload)
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
@@ -259,7 +259,7 @@ mod tests {
 
         let mut buf = [0u8; 20];
         let mut write_cur = WriteCursor::new(&mut buf);
-        original.write(&mut write_cur).unwrap();
+        original.write_in(&mut write_cur).unwrap();
 
         let mut read_cur = ReadCursor::new(&buf);
         let parsed = BoxView::parse_in(&mut read_cur).unwrap();
@@ -277,7 +277,7 @@ mod tests {
 
         let mut buf = [0u8; 32];
         let mut write_cur = WriteCursor::new(&mut buf);
-        original.write(&mut write_cur).unwrap();
+        original.write_in(&mut write_cur).unwrap();
 
         let mut read_cur = ReadCursor::new(&buf);
         let parsed = BoxView::parse_in(&mut read_cur).unwrap();
@@ -297,7 +297,7 @@ mod tests {
 
         let mut buf = [0u8; 10]; // Too small
         let mut write_cur = WriteCursor::new(&mut buf);
-        let result = view.write(&mut write_cur);
+        let result = view.write_in(&mut write_cur);
 
         assert!(result.is_err());
     }
