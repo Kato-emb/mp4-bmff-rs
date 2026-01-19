@@ -21,8 +21,8 @@ impl<'a> DescriptorView<'a> {
         let tag_byte = cur.read_u8()?;
         let tag = Tag(tag_byte);
 
-        let (size_of_instance, size_bytes) =
-            SizeOfInstance::from_bytes(cur.inner()).ok_or(Error::at(
+        let (size_of_instance, size_bytes) = SizeOfInstance::from_bytes(cur.remaining_slice())
+            .ok_or(Error::at(
                 ErrorKind::Other {
                     description: "Failed to parse SizeOfInstance",
                 },

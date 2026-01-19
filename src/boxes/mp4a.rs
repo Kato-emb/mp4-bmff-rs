@@ -1,3 +1,5 @@
+use crate::BoxType;
+use crate::BoxView;
 use crate::cursor::ReadCursor;
 
 use crate::error::*;
@@ -21,8 +23,18 @@ impl<'a> Mp4aBoxView<'a> {
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
         let base = AudioSampleEntry::parse_in(cur)?;
-        let esds = EsdsBoxView::parse_in(cur)?;
+        let view = BoxView::parse_in(cur)?;
+        if view.header.boxtype() != BoxType::ESDS {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxType {
+                    reason: "Expected ESDS box in Mp4a box",
+                    got: view.header.boxtype().type_field(),
+                },
+                BoxType::MP4A,
+            ));
+        }
 
+        let esds = EsdsBoxView::parse(view.payload)?;
         Ok(Mp4aBoxView { base, esds })
     }
 
