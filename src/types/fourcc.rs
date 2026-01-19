@@ -23,7 +23,7 @@ impl FourCC {
     #[inline]
     /// Interprets the code as ASCII and returns the string if it is valid.
     pub fn as_ascii(&self) -> Option<&str> {
-        str::from_utf8(&self.0).ok()
+        core::str::from_utf8(&self.0).ok()
     }
 
     fn fmt_escaped(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
