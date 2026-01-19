@@ -306,8 +306,7 @@ mod tests {
 
     #[test]
     fn parse_stsc_entry_count_mismatch() {
-        // Parse succeeds even with mismatched entry_count,
-        // but the iterator will only yield the available entries
+        // Parse fails when entry_count does not match the actual payload size
         let mut payload = make_full_box_header(0, 0);
         payload.extend_from_slice(&3u32.to_be_bytes()); // entry_count = 3
         payload.extend_from_slice(&1u32.to_be_bytes()); // first_chunk
@@ -315,13 +314,8 @@ mod tests {
         payload.extend_from_slice(&1u32.to_be_bytes()); // sample_description_index
         // Only 1 entry provided instead of 3
 
-        let stsc = StscBoxView::parse(&payload).unwrap();
-        assert_eq!(stsc.entry_count, 3);
-
-        // Iterator will only yield 1 entry (what's actually available)
-        let entries: Vec<_> = stsc.entries().collect();
-        assert_eq!(entries.len(), 1);
-        assert!(entries[0].is_ok());
+        let result = StscBoxView::parse(&payload);
+        assert!(result.is_err());
     }
 
     #[test]

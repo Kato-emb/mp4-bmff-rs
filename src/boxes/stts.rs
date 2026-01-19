@@ -287,21 +287,15 @@ mod tests {
 
     #[test]
     fn parse_stts_entry_count_mismatch() {
-        // Parse succeeds even with mismatched entry_count,
-        // but the iterator will only yield the available entries
+        // Parse fails when entry_count does not match the actual payload size
         let mut payload = make_full_box_header(0, 0);
         payload.extend_from_slice(&2u32.to_be_bytes()); // entry_count = 2
         payload.extend_from_slice(&100u32.to_be_bytes()); // sample_count
         payload.extend_from_slice(&200u32.to_be_bytes()); // sample_delta
-        // Second entry is missing (but size is multiple of 8)
+        // Second entry is missing
 
-        let stts = SttsBoxView::parse(&payload).unwrap();
-        assert_eq!(stts.entry_count, 2);
-
-        // Iterator will only yield 1 entry (what's actually available)
-        let entries: Vec<_> = stts.entries().collect();
-        assert_eq!(entries.len(), 1);
-        assert!(entries[0].is_ok());
+        let result = SttsBoxView::parse(&payload);
+        assert!(result.is_err());
     }
 
     #[test]
