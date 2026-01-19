@@ -33,7 +33,7 @@
 //! |    |    |    |    |stbl|    |*|○|sample table box, container for the time/space map
 //! |    |    |    |    |    |stsd|*|○|sample descriptions (codec types, initialization etc.)
 //! |    |    |    |    |    |stts|*|○|(decoding) time-to-sample
-//! |    |    |    |    |    |ctts| | |(composition) time to sample
+//! |    |    |    |    |    |ctts| |○|(composition) time to sample
 //! |    |    |    |    |    |cslg| | |composition to decode timeline mapping
 //! |    |    |    |    |    |stsc|*|○|sample-to-chunk, partial data-offset information
 //! |    |    |    |    |    |stsz| | |sample sizes (framing)
@@ -130,6 +130,7 @@
 
 mod avcc;
 mod co64;
+mod ctts;
 mod dinf;
 mod dref;
 mod esds;
@@ -159,6 +160,7 @@ mod sample_entry;
 
 // Variable-size boxes - View types
 pub use co64::Co64BoxView;
+pub use ctts::CttsBoxView;
 pub use dref::DrefBoxView;
 pub use dref::UrlBoxView;
 pub use dref::UrnBoxView;
@@ -192,6 +194,7 @@ pub use vmhd::VmhdBox;
 
 // Re-export entry structs
 pub use co64::Co64Entry;
+pub use ctts::CttsEntry;
 pub use stco::StcoEntry;
 pub use stsc::StscEntry;
 pub use stts::SttsEntry;
@@ -206,6 +209,7 @@ pub use stbl::ChunkOffsetsView;
 
 // Re-export fullbox flags and specs
 pub use co64::{Co64Flags, Co64Spec};
+pub use ctts::{CttsFlags, CttsSpec};
 pub use dref::{DrefFlags, DrefSpec};
 pub use dref::{UrlFlags, UrlSpec};
 pub use dref::{UrnFlags, UrnSpec};
@@ -239,6 +243,7 @@ mod owned_exports {
 
     // Variable-size boxes - Owned types
     pub use co64::Co64Box;
+    pub use ctts::CttsBox;
     pub use dref::DrefBox;
     pub use dref::UrlBox;
     pub use dref::UrnBox;

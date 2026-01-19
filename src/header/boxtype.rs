@@ -200,6 +200,8 @@ define_box_types! {
     STSD = b"stsd",
     /// Decoding Time to Sample Box
     STTS = b"stts",
+    /// Composition Time to Sample Box
+    CTTS = b"ctts",
     /// Sample to Chunk Box
     STSC = b"stsc",
     /// Chunk Offset Box
