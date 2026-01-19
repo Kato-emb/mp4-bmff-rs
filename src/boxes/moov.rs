@@ -5,6 +5,7 @@ use crate::BoxType;
 use crate::BoxView;
 use crate::error::*;
 
+use crate::boxes::MvexBoxView;
 use crate::boxes::MvhdBox;
 use crate::boxes::TrakBoxView;
 
@@ -30,9 +31,12 @@ impl<'a> MoovBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::MVHD,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::MVHD,
+            },
+            BoxType::MOOV,
+        ))
     }
 
     /// Returns an iterator over the Track Boxes (`trak`) contained in this `MoovBoxView`.
@@ -44,6 +48,18 @@ impl<'a> MoovBoxView<'a> {
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
+    }
+
+    /// Returns the Movie Extends Box (`mvex`) if present.
+    pub fn mvex(&self) -> Result<Option<MvexBoxView<'a>>> {
+        for child in self.children() {
+            let child = child?;
+            if child.header.boxtype() == BoxType::MVEX {
+                let mvex = MvexBoxView::parse(child.payload)?;
+                return Ok(Some(mvex));
+            }
+        }
+        Ok(None)
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<MoovBoxView<'a>> {
@@ -83,12 +99,15 @@ mod owned {
 
     use super::*;
 
+    use crate::boxes::MvexBox;
     use crate::boxes::TrakBox;
 
     /// An owned Movie Box (`moov`).
     pub struct MoovBox {
         /// The Movie Header Box (`mvhd`).
         pub mvhd: MvhdBox,
+        /// The Movie Extends Box (`mvex`), if present.
+        pub mvex: Option<MvexBox>,
         /// The Track Boxes (`trak`).
         pub traks: Vec<TrakBox>,
     }
@@ -97,6 +116,7 @@ mod owned {
         /// Constructs a `MoovBox` from a `MoovBoxView`.
         pub fn from_view(view: &MoovBoxView<'_>) -> Result<MoovBox> {
             let mut mvhd = None;
+            let mut mvex = None;
             let mut traks = Vec::new();
 
             for child in view.children() {
@@ -111,6 +131,19 @@ mod owned {
                             ErrorKind::InvalidBoxField {
                                 field: "Movie Header Box",
                                 reason: "multiple mvhd boxes found",
+                            },
+                            BoxType::MOOV,
+                        ));
+                    }
+                    BoxType::MVEX if mvex.is_none() => {
+                        let mvex_view = MvexBoxView::parse(child.payload)?;
+                        mvex = Some(MvexBox::from_view(&mvex_view)?);
+                    }
+                    BoxType::MVEX => {
+                        return Err(Error::in_box(
+                            ErrorKind::InvalidBoxField {
+                                field: "Movie Extends Box",
+                                reason: "multiple mvex boxes found",
                             },
                             BoxType::MOOV,
                         ));
@@ -130,6 +163,7 @@ mod owned {
                     },
                     BoxType::MOOV,
                 ))?,
+                mvex,
                 traks,
             })
         }

@@ -52,9 +52,9 @@
 //! |    |    |    |    |    |saio| | |sample auxiliary information offsets
 //! |    |    |    |elng|    |    | | |Extended Language Tag
 //! |    |    |udta|    |    |    | | |user-data
-//! |    |mvex|    |    |    |    | | |movie extends box
-//! |    |    |mehd|    |    |    | | |movie extends header box
-//! |    |    |trex|    |    |    |*| |track extends defaults
+//! |    |mvex|    |    |    |    | |○|movie extends box
+//! |    |    |mehd|    |    |    | |○|movie extends header box
+//! |    |    |trex|    |    |    |*|○|track extends defaults
 //! |    |    |leva|    |    |    | | |level assignment
 //! |moof|    |    |    |    |    | | |movie fragment
 //! |    |mfhd|    |    |    |    |*| |movie fragment header
@@ -142,9 +142,11 @@ mod hmhd;
 mod mdat;
 mod mdhd;
 mod mdia;
+mod mehd;
 mod minf;
 mod moov;
 mod mp4a;
+mod mvex;
 mod mvhd;
 mod nmhd;
 mod smhd;
@@ -158,6 +160,7 @@ mod stts;
 mod tkhd;
 mod trak;
 mod tref;
+mod trex;
 mod vmhd;
 
 mod sample_entry;
@@ -186,6 +189,7 @@ pub use dinf::DinfBoxView;
 pub use mdia::MdiaBoxView;
 pub use minf::MinfBoxView;
 pub use moov::MoovBoxView;
+pub use mvex::MvexBoxView;
 pub use stbl::StblBoxView;
 pub use trak::TrakBoxView;
 pub use tref::TrefBoxView;
@@ -197,10 +201,12 @@ pub use tref::TrackReferenceTypeBoxView;
 pub use cslg::CslgBox;
 pub use hmhd::HmhdBox;
 pub use mdhd::MdhdBox;
+pub use mehd::MehdBox;
 pub use mvhd::MvhdBox;
 pub use nmhd::NmhdBox;
 pub use smhd::SmhdBox;
 pub use tkhd::TkhdBox;
+pub use trex::TrexBox;
 pub use vmhd::VmhdBox;
 
 // Re-export entry structs
@@ -230,6 +236,7 @@ pub use esds::{EsdsFlags, EsdsSpec};
 pub use hdlr::{HdlrFlags, HdlrSpec};
 pub use hmhd::{HmhdFlags, HmhdSpec};
 pub use mdhd::{MdhdFlags, MdhdSpec};
+pub use mehd::{MehdFlags, MehdSpec};
 pub use mvhd::{MvhdFlags, MvhdSpec};
 pub use nmhd::{NmhdFlags, NmhdSpec};
 pub use smhd::{SmhdFlags, SmhdSpec};
@@ -240,6 +247,7 @@ pub use stss::{StssFlags, StssSpec};
 pub use stsz::{StszFlags, StszSpec};
 pub use stts::{SttsFlags, SttsSpec};
 pub use tkhd::{TkhdFlags, TkhdSpec};
+pub use trex::{TrexFlags, TrexSpec};
 pub use vmhd::{VmhdFlags, VmhdSpec};
 
 // Re-export sample entry
@@ -283,6 +291,7 @@ mod owned_exports {
     pub use mdia::MdiaBox;
     pub use minf::MinfBox;
     pub use moov::MoovBox;
+    pub use mvex::MvexBox;
     pub use stbl::StblBox;
     pub use trak::TrakBox;
     pub use tref::TrackReferenceTypeBox;
