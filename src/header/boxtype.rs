@@ -202,8 +202,14 @@ define_box_types! {
     STTS = b"stts",
     /// Composition Time to Sample Box
     CTTS = b"ctts",
+    /// Composition to Decode Timeline Mapping Box
+    CSLG = b"cslg",
     /// Sample to Chunk Box
     STSC = b"stsc",
+    /// Sample Size Box
+    STSZ = b"stsz",
+    /// Sync Sample Table Box
+    STSS = b"stss",
     /// Chunk Offset Box
     STCO = b"stco",
     /// 64-bit Chunk Offset Box

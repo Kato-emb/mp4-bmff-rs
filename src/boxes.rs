@@ -34,13 +34,13 @@
 //! |    |    |    |    |    |stsd|*|○|sample descriptions (codec types, initialization etc.)
 //! |    |    |    |    |    |stts|*|○|(decoding) time-to-sample
 //! |    |    |    |    |    |ctts| |○|(composition) time to sample
-//! |    |    |    |    |    |cslg| | |composition to decode timeline mapping
+//! |    |    |    |    |    |cslg| |○|composition to decode timeline mapping
 //! |    |    |    |    |    |stsc|*|○|sample-to-chunk, partial data-offset information
-//! |    |    |    |    |    |stsz| | |sample sizes (framing)
+//! |    |    |    |    |    |stsz| |○|sample sizes (framing)
 //! |    |    |    |    |    |stz2| | |compact sample sizes (framing)
 //! |    |    |    |    |    |stco|*|○|chunk offset, partial data-offset information
 //! |    |    |    |    |    |co64| |○|64-bit chunk offset
-//! |    |    |    |    |    |stss| | |sync sample table
+//! |    |    |    |    |    |stss| |○|sync sample table
 //! |    |    |    |    |    |stsh| | |shadow sync sample table
 //! |    |    |    |    |    |padb| | |sample padding bits
 //! |    |    |    |    |    |stdp| | |sample degradation priority
@@ -130,6 +130,7 @@
 
 mod avcc;
 mod co64;
+mod cslg;
 mod ctts;
 mod dinf;
 mod dref;
@@ -151,6 +152,8 @@ mod stbl;
 mod stco;
 mod stsc;
 mod stsd;
+mod stss;
+mod stsz;
 mod stts;
 mod tkhd;
 mod trak;
@@ -173,6 +176,8 @@ pub use mp4a::Mp4aBoxView;
 pub use stco::StcoBoxView;
 pub use stsc::StscBoxView;
 pub use stsd::StsdBoxView;
+pub use stss::StssBoxView;
+pub use stsz::StszBoxView;
 pub use stts::SttsBoxView;
 
 // Container boxes - View types
@@ -184,6 +189,7 @@ pub use stbl::StblBoxView;
 pub use trak::TrakBoxView;
 
 // Fixed-size boxes (Copy types, no View/Owned distinction)
+pub use cslg::CslgBox;
 pub use hmhd::HmhdBox;
 pub use mdhd::MdhdBox;
 pub use mvhd::MvhdBox;
@@ -197,6 +203,7 @@ pub use co64::Co64Entry;
 pub use ctts::CttsEntry;
 pub use stco::StcoEntry;
 pub use stsc::StscEntry;
+pub use stss::StssEntry;
 pub use stts::SttsEntry;
 
 // Re-export entry views
@@ -209,6 +216,7 @@ pub use stbl::ChunkOffsetsView;
 
 // Re-export fullbox flags and specs
 pub use co64::{Co64Flags, Co64Spec};
+pub use cslg::{CslgFlags, CslgSpec};
 pub use ctts::{CttsFlags, CttsSpec};
 pub use dref::{DrefFlags, DrefSpec};
 pub use dref::{UrlFlags, UrlSpec};
@@ -223,6 +231,8 @@ pub use smhd::{SmhdFlags, SmhdSpec};
 pub use stco::{StcoFlags, StcoSpec};
 pub use stsc::{StscFlags, StscSpec};
 pub use stsd::{StsdFlags, StsdSpec};
+pub use stss::{StssFlags, StssSpec};
+pub use stsz::{StszFlags, StszSpec};
 pub use stts::{SttsFlags, SttsSpec};
 pub use tkhd::{TkhdFlags, TkhdSpec};
 pub use vmhd::{VmhdFlags, VmhdSpec};
@@ -256,7 +266,12 @@ mod owned_exports {
     pub use stco::StcoBox;
     pub use stsc::StscBox;
     pub use stsd::StsdBox;
+    pub use stss::StssBox;
+    pub use stsz::StszBox;
     pub use stts::SttsBox;
+
+    // Re-export stsz SampleSizes enum
+    pub use stsz::SampleSizes;
 
     // Container boxes - Owned types
     pub use dinf::DinfBox;

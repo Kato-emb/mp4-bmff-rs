@@ -211,6 +211,14 @@ impl<'a> ReadCursor<'a> {
         let bytes = self.read_array::<8>()?;
         Ok(u64::from_be_bytes(bytes))
     }
+
+    /// Reads a big-endian 64-bit signed integer from the cursor.
+    #[inline]
+    #[track_caller]
+    pub fn read_i64_be(&mut self) -> Result<i64> {
+        let bytes = self.read_array::<8>()?;
+        Ok(i64::from_be_bytes(bytes))
+    }
 }
 
 /// A cursor for writing to a byte slice.
