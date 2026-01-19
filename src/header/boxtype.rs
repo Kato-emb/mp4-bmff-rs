@@ -242,6 +242,32 @@ define_box_types! {
     TREX = b"trex",
 
     // =========================================================================
+    // ISO 14496-12 (BMFF) - Movie Fragments
+    // =========================================================================
+
+    /// Movie Fragment Box
+    MOOF = b"moof",
+    /// Movie Fragment Header Box
+    MFHD = b"mfhd",
+    /// Track Fragment Box
+    TRAF = b"traf",
+    /// Track Fragment Header Box
+    TFHD = b"tfhd",
+    /// Track Fragment Decode Time Box
+    TFDT = b"tfdt",
+    /// Track Run Box
+    TRUN = b"trun",
+
+    // =========================================================================
+    // ISO 14496-12 (BMFF) - Sample grouping
+    // =========================================================================
+
+    /// Sample to Group Box
+    SBGP = b"sbgp",
+    /// Sample Group Description Box
+    SGPD = b"sgpd",
+
+    // =========================================================================
     // ISO 14496-15 (AVC/HEVC file format)
     // =========================================================================
 

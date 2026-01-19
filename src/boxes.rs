@@ -56,17 +56,17 @@
 //! |    |    |mehd|    |    |    | |○|movie extends header box
 //! |    |    |trex|    |    |    |*|○|track extends defaults
 //! |    |    |leva|    |    |    | | |level assignment
-//! |moof|    |    |    |    |    | | |movie fragment
-//! |    |mfhd|    |    |    |    |*| |movie fragment header
-//! |    |traf|    |    |    |    | | |track fragment
-//! |    |    |tfhd|    |    |    |*| |track fragment header
-//! |    |    |trun|    |    |    | | |track fragment run
-//! |    |    |sbgp|    |    |    | | |sample-to-group
+//! |moof|    |    |    |    |    | |○|movie fragment
+//! |    |mfhd|    |    |    |    |*|○|movie fragment header
+//! |    |traf|    |    |    |    | |○|track fragment
+//! |    |    |tfhd|    |    |    |*|○|track fragment header
+//! |    |    |trun|    |    |    | |○|track fragment run
+//! |    |    |sbgp|    |    |    | |○|sample-to-group
 //! |    |    |sgpd|    |    |    | | |sample group description
 //! |    |    |subs|    |    |    | | |sub-sample information
 //! |    |    |saiz|    |    |    | | |sample auxiliary information sizes
 //! |    |    |saio|    |    |    | | |sample auxiliary information offsets
-//! |    |    |tfdt|    |    |    | | |track fragment decode time
+//! |    |    |tfdt|    |    |    | |○|track fragment decode time
 //! |mfra|    |    |    |    |    | | |movie fragment random access
 //! |    |tfra|    |    |    |    | | |track fragment random access
 //! |    |mfro|    |    |    |    |*| |movie fragment random access offset
@@ -143,12 +143,15 @@ mod mdat;
 mod mdhd;
 mod mdia;
 mod mehd;
+mod mfhd;
 mod minf;
+mod moof;
 mod moov;
 mod mp4a;
 mod mvex;
 mod mvhd;
 mod nmhd;
+mod sbgp;
 mod smhd;
 mod stbl;
 mod stco;
@@ -157,10 +160,14 @@ mod stsd;
 mod stss;
 mod stsz;
 mod stts;
+mod tfdt;
+mod tfhd;
 mod tkhd;
+mod traf;
 mod trak;
 mod tref;
 mod trex;
+mod trun;
 mod vmhd;
 
 mod sample_entry;
@@ -177,20 +184,25 @@ pub use ftyp::FtypBoxView;
 pub use hdlr::HdlrBoxView;
 pub use mdat::MdatBoxView;
 pub use mp4a::Mp4aBoxView;
+pub use sbgp::SbgpBoxView;
 pub use stco::StcoBoxView;
 pub use stsc::StscBoxView;
 pub use stsd::StsdBoxView;
 pub use stss::StssBoxView;
 pub use stsz::StszBoxView;
 pub use stts::SttsBoxView;
+pub use trun::TrunBoxView;
+pub use trun::TrunSampleIter;
 
 // Container boxes - View types
 pub use dinf::DinfBoxView;
 pub use mdia::MdiaBoxView;
 pub use minf::MinfBoxView;
+pub use moof::MoofBoxView;
 pub use moov::MoovBoxView;
 pub use mvex::MvexBoxView;
 pub use stbl::StblBoxView;
+pub use traf::TrafBoxView;
 pub use trak::TrakBoxView;
 pub use tref::TrefBoxView;
 
@@ -202,9 +214,12 @@ pub use cslg::CslgBox;
 pub use hmhd::HmhdBox;
 pub use mdhd::MdhdBox;
 pub use mehd::MehdBox;
+pub use mfhd::MfhdBox;
 pub use mvhd::MvhdBox;
 pub use nmhd::NmhdBox;
 pub use smhd::SmhdBox;
+pub use tfdt::TfdtBox;
+pub use tfhd::TfhdBox;
 pub use tkhd::TkhdBox;
 pub use trex::TrexBox;
 pub use vmhd::VmhdBox;
@@ -212,10 +227,12 @@ pub use vmhd::VmhdBox;
 // Re-export entry structs
 pub use co64::Co64Entry;
 pub use ctts::CttsEntry;
+pub use sbgp::SbgpEntry;
 pub use stco::StcoEntry;
 pub use stsc::StscEntry;
 pub use stss::StssEntry;
 pub use stts::SttsEntry;
+pub use trun::TrunSample;
 
 // Re-export entry views
 pub use dref::DrefEntryView;
@@ -237,8 +254,10 @@ pub use hdlr::{HdlrFlags, HdlrSpec};
 pub use hmhd::{HmhdFlags, HmhdSpec};
 pub use mdhd::{MdhdFlags, MdhdSpec};
 pub use mehd::{MehdFlags, MehdSpec};
+pub use mfhd::{MfhdFlags, MfhdSpec};
 pub use mvhd::{MvhdFlags, MvhdSpec};
 pub use nmhd::{NmhdFlags, NmhdSpec};
+pub use sbgp::{SbgpFlags, SbgpSpec};
 pub use smhd::{SmhdFlags, SmhdSpec};
 pub use stco::{StcoFlags, StcoSpec};
 pub use stsc::{StscFlags, StscSpec};
@@ -246,8 +265,11 @@ pub use stsd::{StsdFlags, StsdSpec};
 pub use stss::{StssFlags, StssSpec};
 pub use stsz::{StszFlags, StszSpec};
 pub use stts::{SttsFlags, SttsSpec};
+pub use tfdt::{TfdtFlags, TfdtSpec};
+pub use tfhd::{TfhdFlags, TfhdSpec};
 pub use tkhd::{TkhdFlags, TkhdSpec};
 pub use trex::{TrexFlags, TrexSpec};
+pub use trun::{TrunFlags, TrunSpec};
 pub use vmhd::{VmhdFlags, VmhdSpec};
 
 // Re-export sample entry
@@ -276,12 +298,14 @@ mod owned_exports {
     pub use hdlr::HdlrBox;
     pub use mdat::MdatBox;
     pub use mp4a::Mp4aBox;
+    pub use sbgp::SbgpBox;
     pub use stco::StcoBox;
     pub use stsc::StscBox;
     pub use stsd::StsdBox;
     pub use stss::StssBox;
     pub use stsz::StszBox;
     pub use stts::SttsBox;
+    pub use trun::TrunBox;
 
     // Re-export stsz SampleSizes enum
     pub use stsz::SampleSizes;
@@ -290,9 +314,11 @@ mod owned_exports {
     pub use dinf::DinfBox;
     pub use mdia::MdiaBox;
     pub use minf::MinfBox;
+    pub use moof::MoofBox;
     pub use moov::MoovBox;
     pub use mvex::MvexBox;
     pub use stbl::StblBox;
+    pub use traf::TrafBox;
     pub use trak::TrakBox;
     pub use tref::TrackReferenceTypeBox;
     pub use tref::TrefBox;
