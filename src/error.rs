@@ -33,7 +33,7 @@ pub enum ErrorKind {
         found: u64,
     },
     /// Mismatched box type.
-    MissmatchedBoxType {
+    MismatchedBoxType {
         /// Expected box type.
         expected: BoxType,
         /// Found box type.
@@ -100,7 +100,7 @@ impl fmt::Display for ErrorKind {
             ErrorKind::MismatchedBoxSize { expected, found } => {
                 write!(f, "mismatched box size: expected {expected}, found {found}")
             }
-            ErrorKind::MissmatchedBoxType { expected, found } => {
+            ErrorKind::MismatchedBoxType { expected, found } => {
                 write!(
                     f,
                     "mismatched box type: expected '{expected}', found '{found}'"

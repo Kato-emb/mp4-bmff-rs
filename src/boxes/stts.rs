@@ -105,7 +105,7 @@ impl<'a> TryFrom<&BoxView<'a>> for SttsBoxView<'a> {
 
     fn try_from(value: &BoxView<'a>) -> std::result::Result<Self, Self::Error> {
         if value.header.boxtype() != BoxType::STTS {
-            return Err(Error::new(ErrorKind::MissmatchedBoxType {
+            return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STTS,
                 found: value.header.boxtype(),
             }));
@@ -359,7 +359,7 @@ mod tests {
 
         assert!(result.is_err());
         if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::MissmatchedBoxType { .. }));
+            assert!(matches!(err.kind(), ErrorKind::MismatchedBoxType { .. }));
         }
     }
 

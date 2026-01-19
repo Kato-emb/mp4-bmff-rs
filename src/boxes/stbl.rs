@@ -155,7 +155,7 @@ impl<'a> TryFrom<&BoxView<'a>> for StblBoxView<'a> {
 
     fn try_from(value: &BoxView<'a>) -> Result<Self> {
         if value.header.boxtype() != BoxType::STBL {
-            return Err(Error::new(ErrorKind::MissmatchedBoxType {
+            return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STBL,
                 found: value.header.boxtype(),
             }));
@@ -294,7 +294,7 @@ mod owned {
 
         fn try_from(value: &BoxView<'_>) -> Result<Self> {
             if value.header.boxtype() != BoxType::STBL {
-                return Err(Error::new(ErrorKind::MissmatchedBoxType {
+                return Err(Error::new(ErrorKind::MismatchedBoxType {
                     expected: BoxType::STBL,
                     found: value.header.boxtype(),
                 }));

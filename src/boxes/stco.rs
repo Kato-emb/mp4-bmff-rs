@@ -91,7 +91,7 @@ impl<'a> TryFrom<BoxView<'a>> for StcoBoxView<'a> {
 
     fn try_from(box_view: BoxView<'a>) -> Result<Self> {
         if box_view.header.boxtype() != BoxType::STCO {
-            return Err(Error::new(ErrorKind::MissmatchedBoxType {
+            return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STCO,
                 found: box_view.header.boxtype(),
             }));
@@ -354,7 +354,7 @@ mod tests {
 
         assert!(result.is_err());
         if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::MissmatchedBoxType { .. }));
+            assert!(matches!(err.kind(), ErrorKind::MismatchedBoxType { .. }));
         }
     }
 

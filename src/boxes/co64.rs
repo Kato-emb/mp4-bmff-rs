@@ -93,7 +93,7 @@ impl<'a> TryFrom<BoxView<'a>> for Co64BoxView<'a> {
 
     fn try_from(value: BoxView<'a>) -> Result<Self> {
         if value.header.boxtype() != BoxType::CO64 {
-            return Err(Error::new(ErrorKind::MissmatchedBoxType {
+            return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::CO64,
                 found: value.header.boxtype(),
             }));
