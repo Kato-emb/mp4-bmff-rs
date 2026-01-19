@@ -36,15 +36,8 @@ impl<'a> SttsBoxView<'a> {
         let entry_count = self.entry_count as usize;
 
         entry_bytes.chunks_exact(8).take(entry_count).map(|chunk| {
-            let mut cursor = ReadCursor::new(chunk);
-
-            let sample_count = cursor
-                .read_u32_be()
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-
-            let sample_delta = cursor
-                .read_u32_be()
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+            let sample_count = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            let sample_delta = u32::from_be_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
 
             Ok(SttsEntry {
                 sample_count,

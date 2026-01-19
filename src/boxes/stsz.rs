@@ -76,10 +76,12 @@ impl<'a> StszBoxView<'a> {
                 Ok(sample_size)
             } else {
                 let offset = i * Self::ENTRY_SIZE;
-                let mut cursor = ReadCursor::new(&entries[offset..offset + Self::ENTRY_SIZE]);
-                cursor
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), offset as u64))
+                Ok(u32::from_be_bytes([
+                    entries[offset],
+                    entries[offset + 1],
+                    entries[offset + 2],
+                    entries[offset + 3],
+                ]))
             }
         })
     }

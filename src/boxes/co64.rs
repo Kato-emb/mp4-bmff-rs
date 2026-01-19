@@ -33,12 +33,15 @@ impl<'a> Co64BoxView<'a> {
         let entry_bytes = self.entries;
         let entry_count = self.entry_count as usize;
 
-        entry_bytes.chunks_exact(8).take(entry_count).map(|chunk| {
-            let chunk_offset = u64::from_be_bytes([
-                chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
-            ]);
-            Co64Entry { chunk_offset }
-        })
+        entry_bytes
+            .chunks_exact(Self::ENTRY_SIZE)
+            .take(entry_count)
+            .map(|chunk| {
+                let chunk_offset = u64::from_be_bytes([
+                    chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
+                ]);
+                Co64Entry { chunk_offset }
+            })
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Co64BoxView<'a>> {

@@ -45,15 +45,9 @@ impl<'a> SbgpBoxView<'a> {
             .chunks_exact(Self::ENTRY_SIZE)
             .take(entry_count)
             .map(|chunk| {
-                let mut cursor = ReadCursor::new(chunk);
-
-                let sample_count = cursor
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-
-                let group_description_index = cursor
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+                let sample_count = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                let group_description_index =
+                    u32::from_be_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
 
                 Ok(SbgpEntry {
                     sample_count,
@@ -277,9 +271,15 @@ mod tests {
         let parsed_entries: Vec<_> = sbgp.entries().collect();
         assert_eq!(parsed_entries.len(), 3);
         assert_eq!(parsed_entries[0].as_ref().unwrap().sample_count, 10);
-        assert_eq!(parsed_entries[0].as_ref().unwrap().group_description_index, 1);
+        assert_eq!(
+            parsed_entries[0].as_ref().unwrap().group_description_index,
+            1
+        );
         assert_eq!(parsed_entries[1].as_ref().unwrap().sample_count, 20);
-        assert_eq!(parsed_entries[2].as_ref().unwrap().group_description_index, 0);
+        assert_eq!(
+            parsed_entries[2].as_ref().unwrap().group_description_index,
+            0
+        );
     }
 
     #[test]

@@ -39,10 +39,7 @@ impl<'a> StssBoxView<'a> {
             .chunks_exact(Self::ENTRY_SIZE)
             .take(entry_count)
             .map(|chunk| {
-                let mut cursor = ReadCursor::new(chunk);
-                let sample_number = cursor
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+                let sample_number = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
                 Ok(StssEntry { sample_number })
             })
     }

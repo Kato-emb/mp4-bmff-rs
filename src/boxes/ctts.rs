@@ -37,30 +37,26 @@ impl<'a> CttsBoxView<'a> {
         let entry_count = self.entry_count as usize;
         let version = self.version;
 
-        entry_bytes.chunks_exact(8).take(entry_count).map(move |chunk| {
-            let mut cursor = ReadCursor::new(chunk);
+        entry_bytes
+            .chunks_exact(Self::ENTRY_SIZE)
+            .take(entry_count)
+            .map(move |chunk| {
+                let sample_count = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
 
-            let sample_count = cursor
-                .read_u32_be()
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+                // Version 0: unsigned 32-bit offset
+                // Version 1: signed 32-bit offset
+                let sample_offset = if version == 0 {
+                    let offset = u32::from_be_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
+                    offset as i32
+                } else {
+                    i32::from_be_bytes([chunk[4], chunk[5], chunk[6], chunk[7]])
+                };
 
-            // Version 0: unsigned 32-bit offset
-            // Version 1: signed 32-bit offset
-            let sample_offset = if version == 0 {
-                cursor
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cursor.position() as u64))? as i32
-            } else {
-                cursor
-                    .read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cursor.position() as u64))?
-            };
-
-            Ok(CttsEntry {
-                sample_count,
-                sample_offset,
+                Ok(CttsEntry {
+                    sample_count,
+                    sample_offset,
+                })
             })
-        })
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<CttsBoxView<'a>> {
