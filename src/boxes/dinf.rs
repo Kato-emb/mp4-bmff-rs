@@ -28,9 +28,12 @@ impl<'a> DinfBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::DREF,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::DREF,
+            },
+            BoxType::DINF,
+        ))
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<DinfBoxView<'a>> {
@@ -76,9 +79,12 @@ mod owned {
             }
 
             Ok(DinfBox {
-                dref: dref.ok_or(Error::new(ErrorKind::BoxMissing {
-                    required: BoxType::DREF,
-                }))?,
+                dref: dref.ok_or(Error::in_box(
+                    ErrorKind::BoxMissing {
+                        required: BoxType::DREF,
+                    },
+                    BoxType::DINF,
+                ))?,
             })
         }
 

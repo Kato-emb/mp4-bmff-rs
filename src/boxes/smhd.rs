@@ -49,10 +49,13 @@ impl SmhdBox {
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
         if !cur.is_empty() {
-            return Err(Error::new(ErrorKind::InvalidBoxSize {
-                reason: "Extra data after parsing smhd",
-                got: cur.remaining() as u64,
-            }));
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Extra data after parsing smhd",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::SMHD,
+            ));
         }
 
         Ok(SmhdBox {

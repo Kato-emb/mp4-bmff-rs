@@ -66,6 +66,17 @@ impl<'a> CttsBoxView<'a> {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<CttsBoxView<'a>> {
         let full_box_header = FullBoxHeader::<CttsSpec>::parse_in(cur)?;
 
+        let version = full_box_header.version();
+        if version > 1 {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxVersion {
+                    reason: "ctts version must be 0 or 1",
+                    got: version,
+                },
+                BoxType::CTTS,
+            ));
+        }
+
         let entry_count = cur
             .read_u32_be()
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;

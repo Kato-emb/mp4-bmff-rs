@@ -31,9 +31,12 @@ impl<'a> TrakBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::TKHD,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::TKHD,
+            },
+            BoxType::TRAK,
+        ))
     }
 
     /// Returns the Media Box (`mdia`).
@@ -46,9 +49,12 @@ impl<'a> TrakBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::MDIA,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::MDIA,
+            },
+            BoxType::TRAK,
+        ))
     }
 
     /// Returns the Track Reference Box (`tref`) if present.

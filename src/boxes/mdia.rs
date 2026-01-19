@@ -34,9 +34,12 @@ impl<'a> MdiaBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::MDHD,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::MDHD,
+            },
+            BoxType::MDIA,
+        ))
     }
 
     /// Returns the Handler Reference Box (`hdlr`).
@@ -49,9 +52,12 @@ impl<'a> MdiaBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::HDLR,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::HDLR,
+            },
+            BoxType::MDIA,
+        ))
     }
 
     /// Returns the Media Information Box (`minf`).
@@ -64,9 +70,12 @@ impl<'a> MdiaBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::MINF,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::MINF,
+            },
+            BoxType::MDIA,
+        ))
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<MdiaBoxView<'a>> {

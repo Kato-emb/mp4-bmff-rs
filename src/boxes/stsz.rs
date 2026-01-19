@@ -30,9 +30,12 @@ impl<'a> StszBoxView<'a> {
     /// Otherwise, returns the size from the entries array.
     pub fn get_sample_size(&self, sample_number: u32) -> Result<u32> {
         if sample_number == 0 || sample_number > self.sample_count {
-            return Err(Error::new(ErrorKind::Other {
-                description: "Sample number out of range",
-            }));
+            return Err(Error::in_box(
+                ErrorKind::Other {
+                    description: "Sample number out of range",
+                },
+                BoxType::STSZ,
+            ));
         }
 
         if self.sample_size != 0 {
@@ -43,9 +46,12 @@ impl<'a> StszBoxView<'a> {
         let offset = index * Self::ENTRY_SIZE;
 
         if offset + Self::ENTRY_SIZE > self.entries.len() {
-            return Err(Error::new(ErrorKind::Other {
-                description: "Entry index out of bounds",
-            }));
+            return Err(Error::in_box(
+                ErrorKind::Other {
+                    description: "Entry index out of bounds",
+                },
+                BoxType::STSZ,
+            ));
         }
 
         let mut cursor = ReadCursor::new(&self.entries[offset..offset + Self::ENTRY_SIZE]);
@@ -105,7 +111,7 @@ impl<'a> StszBoxView<'a> {
 
             cur.take(cur.remaining())?
         } else {
-            if cur.remaining() != 0 {
+            if !cur.is_empty() {
                 return Err(Error::at_in_box(
                     ErrorKind::InvalidBoxSize {
                         reason: "Extra data after stsz fields when sample_size is non-zero",
@@ -228,9 +234,7 @@ mod owned {
 
             match &self.sample_sizes {
                 SampleSizes::Uniform(size) => Some(*size),
-                SampleSizes::Variable(sizes) => {
-                    sizes.get((sample_number - 1) as usize).copied()
-                }
+                SampleSizes::Variable(sizes) => sizes.get((sample_number - 1) as usize).copied(),
             }
         }
     }

@@ -46,9 +46,12 @@ impl<'a> StblBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::STSD,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::STSD,
+            },
+            BoxType::STBL,
+        ))
     }
 
     /// Returns the Time-to-Sample Box (`stts`) if present.
@@ -61,9 +64,12 @@ impl<'a> StblBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::STTS,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::STTS,
+            },
+            BoxType::STBL,
+        ))
     }
 
     /// Returns the Sample-to-Chunk Box (`stsc`) if present.
@@ -76,9 +82,12 @@ impl<'a> StblBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::STSC,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::STSC,
+            },
+            BoxType::STBL,
+        ))
     }
 
     /// Returns the Composition Time to Sample Box (`ctts`) if present.
@@ -185,11 +194,13 @@ impl<'a> StblBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::InvalidBoxField {
-            field: "Chunk offsets",
-            reason: "no chunk offset box found",
+        chunk_offsets.ok_or_else(|| {
+            Error::new(ErrorKind::InvalidBoxField {
+                field: "Chunk offsets",
+                reason: "no chunk offset box found",
+            })
+            .with_box_type(BoxType::STBL)
         })
-        .with_box_type(BoxType::STBL))
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StblBoxView<'a>> {

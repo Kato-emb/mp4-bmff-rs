@@ -38,8 +38,8 @@ impl CslgBox {
             greatest_decode_to_display_delta,
             composition_start_time,
             composition_end_time,
-        ) = if version == 0 {
-            (
+        ) = match version {
+            0 => (
                 cur.read_i32_be()
                     .map_err(|e| Error::at(e.into(), cur.position() as u64))?
                     as i64,
@@ -55,9 +55,8 @@ impl CslgBox {
                 cur.read_i32_be()
                     .map_err(|e| Error::at(e.into(), cur.position() as u64))?
                     as i64,
-            )
-        } else {
-            (
+            ),
+            1 => (
                 cur.read_i64_be()
                     .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
                 cur.read_i64_be()
@@ -68,10 +67,19 @@ impl CslgBox {
                     .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
                 cur.read_i64_be()
                     .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            ),
+            v => {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxVersion {
+                        reason: "cslg version must be 0 or 1",
+                        got: v,
+                    },
+                    BoxType::CSLG,
+                ));
+            }
         };
 
-        if cur.remaining() != 0 {
+        if !cur.is_empty() {
             return Err(Error::at_in_box(
                 ErrorKind::InvalidBoxSize {
                     reason: "Extra data after cslg fields",

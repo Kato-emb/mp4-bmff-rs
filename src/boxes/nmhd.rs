@@ -32,10 +32,13 @@ impl NmhdBox {
         let full_box_header = FullBoxHeader::<NmhdSpec>::parse_in(cur)?;
 
         if !cur.is_empty() {
-            return Err(Error::new(ErrorKind::InvalidBoxSize {
-                reason: "Extra data after parsing nmhd",
-                got: cur.remaining() as u64,
-            }));
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Extra data after parsing nmhd",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::NMHD,
+            ));
         }
 
         Ok(NmhdBox {

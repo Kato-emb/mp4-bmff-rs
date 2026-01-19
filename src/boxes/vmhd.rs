@@ -45,6 +45,16 @@ impl VmhdBox {
                 .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         }
 
+        if !cur.is_empty() {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Extra data after parsing vmhd",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::VMHD,
+            ));
+        }
+
         Ok(VmhdBox {
             version: full_box_header.version(),
             flags: full_box_header.flags(),

@@ -30,14 +30,18 @@ impl<'a> TrackReferenceTypeBoxView<'a> {
 
     /// Parses a `TrackReferenceTypeView` from the given box view.
     pub fn from_box_view(box_view: &BoxView<'a>) -> Result<Self> {
-        let reference_type = box_view.header.boxtype().type_field();
+        let boxtype = box_view.header.boxtype();
+        let reference_type = boxtype.type_field();
         let payload = box_view.payload;
 
         if payload.len() % Self::TRACK_ID_SIZE != 0 {
-            return Err(Error::new(ErrorKind::InvalidBoxSize {
-                reason: "Track reference payload is not a multiple of 4 bytes",
-                got: payload.len() as u64,
-            }));
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Track reference payload is not a multiple of 4 bytes",
+                    got: payload.len() as u64,
+                },
+                boxtype,
+            ));
         }
 
         Ok(TrackReferenceTypeBoxView {

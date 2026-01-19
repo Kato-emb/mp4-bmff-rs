@@ -146,9 +146,12 @@ impl<'a> MinfBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::DINF,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::DINF,
+            },
+            BoxType::MINF,
+        ))
     }
 
     /// Returns the Sample Table Box (`stbl`).
@@ -161,9 +164,12 @@ impl<'a> MinfBoxView<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::BoxMissing {
-            required: BoxType::STBL,
-        }))
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::STBL,
+            },
+            BoxType::MINF,
+        ))
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<MinfBoxView<'a>> {
