@@ -193,7 +193,7 @@ impl<B> FullBoxHeader<B> {
     }
 
     /// Parses a `FullBoxHeader` from the given `ReadCursor`.
-    pub fn parse(cur: &mut ReadCursor<'_>) -> Result<Self> {
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
         if cur.remaining() < 4 {
             return Err(Error::at(
                 ErrorKind::NotEnoughBytes {
@@ -455,7 +455,7 @@ mod tests {
         let data = [0x01, 0x00, 0x01, 0x02];
         let mut cur = ReadCursor::new(&data);
 
-        let header: FullBoxHeader<TestFullBox> = FullBoxHeader::parse(&mut cur).unwrap();
+        let header: FullBoxHeader<TestFullBox> = FullBoxHeader::parse_in(&mut cur).unwrap();
         assert_eq!(header.version(), 1);
         assert_eq!(header.flags().get(), 0x000102);
         assert_eq!(cur.position(), 4);
@@ -471,7 +471,7 @@ mod tests {
         original.write(&mut write_cur).unwrap();
 
         let mut read_cur = ReadCursor::new(&buf);
-        let parsed: FullBoxHeader<TestFullBox> = FullBoxHeader::parse(&mut read_cur).unwrap();
+        let parsed: FullBoxHeader<TestFullBox> = FullBoxHeader::parse_in(&mut read_cur).unwrap();
 
         assert_eq!(parsed.version(), original.version());
         assert_eq!(parsed.flags().get(), original.flags().get());
@@ -482,7 +482,7 @@ mod tests {
         let data = [0x01, 0x00, 0x01]; // 3 bytes, need 4
         let mut cur = ReadCursor::new(&data);
 
-        let result: Result<FullBoxHeader<TestFullBox>> = FullBoxHeader::parse(&mut cur);
+        let result: Result<FullBoxHeader<TestFullBox>> = FullBoxHeader::parse_in(&mut cur);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err().kind(),

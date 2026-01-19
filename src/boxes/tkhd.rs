@@ -62,7 +62,7 @@ impl TkhdBox {
     const RESERVED_3_SIZE: usize = mem::size_of::<u16>();
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TkhdBox> {
-        let full_box_header = FullBoxHeader::<TkhdSpec>::parse(cur)?;
+        let full_box_header = FullBoxHeader::<TkhdSpec>::parse_in(cur)?;
 
         let (creation_time, modification_time, track_id, duration) = match full_box_header.version()
         {

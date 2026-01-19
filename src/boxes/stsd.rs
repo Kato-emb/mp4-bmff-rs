@@ -54,7 +54,7 @@ impl<'a> StsdBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> crate::error::Result<Self> {
-        let full_box_header = FullBoxHeader::<StsdSpec>::parse(cur)?;
+        let full_box_header = FullBoxHeader::<StsdSpec>::parse_in(cur)?;
 
         let entry_count = cur
             .read_u32_be()

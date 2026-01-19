@@ -19,7 +19,7 @@ pub struct EsdsBoxView<'a> {
 
 impl<'a> EsdsBoxView<'a> {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
-        let full_box_header = FullBoxHeader::<EsdsSpec>::parse(cur)?;
+        let full_box_header = FullBoxHeader::<EsdsSpec>::parse_in(cur)?;
         let esd = EsDescriptorView::parse_in(cur)?;
 
         Ok(EsdsBoxView {

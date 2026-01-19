@@ -57,7 +57,7 @@ impl MvhdBox {
     const PRE_DEFINED_SIZE: usize = 6 * mem::size_of::<u32>(); // pre_defined
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MvhdBox> {
-        let full_box_header = FullBoxHeader::<MvhdSpec>::parse(cur)?;
+        let full_box_header = FullBoxHeader::<MvhdSpec>::parse_in(cur)?;
 
         let (creation_time, modification_time, timescale, duration) =
             match full_box_header.version() {

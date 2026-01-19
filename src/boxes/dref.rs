@@ -49,7 +49,7 @@ impl<'a> DrefBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<DrefBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<DrefSpec>::parse(cur)?;
+        let full_box_header = FullBoxHeader::<DrefSpec>::parse_in(cur)?;
 
         let entry_count = cur
             .read_u32_be()
@@ -106,7 +106,7 @@ pub struct UrlBoxView<'a> {
 
 impl<'a> UrlBoxView<'a> {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<UrlBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<UrlSpec>::parse(cur)?;
+        let full_box_header = FullBoxHeader::<UrlSpec>::parse_in(cur)?;
 
         let location = if full_box_header.flags().contains(UrlFlags::SELF_CONTAINED) {
             None
@@ -167,7 +167,7 @@ pub struct UrnBoxView<'a> {
 
 impl<'a> UrnBoxView<'a> {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<UrnBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<UrnSpec>::parse(cur)?;
+        let full_box_header = FullBoxHeader::<UrnSpec>::parse_in(cur)?;
 
         let name_bytes = cur
             .take_until(0)
