@@ -48,27 +48,23 @@ impl<'a> DrefBoxView<'a> {
         })
     }
 
-    /// Parses a `DrefBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(payload);
-
-        let full_box_header = FullBoxHeader::<DrefSpec>::parse(&mut cur)?;
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<DrefBoxView<'a>> {
+        let full_box_header = FullBoxHeader::<DrefSpec>::parse(cur)?;
 
         let entry_count = cur
             .read_u32_be()
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
         let entries = cur.remaining_slice();
-        let mut tmp_cur = ReadCursor::new(entries);
         for _ in 0..entry_count {
-            BoxView::parse(&mut tmp_cur)?;
+            BoxView::parse(cur)?;
         }
 
-        if !tmp_cur.is_empty() {
+        if !cur.is_empty() {
             return Err(Error::at(
                 ErrorKind::InvalidBoxSize {
                     reason: "Extra data after parsing all entries",
-                    got: tmp_cur.remaining() as u64,
+                    got: cur.remaining() as u64,
                 },
                 cur.position() as u64,
             ));
@@ -80,6 +76,14 @@ impl<'a> DrefBoxView<'a> {
             entry_count,
             entries,
         })
+    }
+
+    /// Parses a `DrefBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(payload);
+        let this = DrefBoxView::parse_in(&mut cur)?;
+
+        Ok(this)
     }
 }
 
@@ -101,11 +105,8 @@ pub struct UrlBoxView<'a> {
 }
 
 impl<'a> UrlBoxView<'a> {
-    /// Parses an `UrlBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(payload);
-
-        let full_box_header = FullBoxHeader::<UrlSpec>::parse(&mut cur)?;
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<UrlBoxView<'a>> {
+        let full_box_header = FullBoxHeader::<UrlSpec>::parse(cur)?;
 
         let location = if full_box_header.flags().contains(UrlFlags::SELF_CONTAINED) {
             None
@@ -131,10 +132,12 @@ impl<'a> UrlBoxView<'a> {
         })
     }
 
-    /// Converts this `UrlBoxView` into an owned `UrlBox`.
-    #[cfg(feature = "alloc")]
-    pub fn to_owned(&self) -> UrlBox {
-        UrlBox::from_view(self)
+    /// Parses an `UrlBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(payload);
+        let this = UrlBoxView::parse_in(&mut cur)?;
+
+        Ok(this)
     }
 }
 
@@ -163,11 +166,8 @@ pub struct UrnBoxView<'a> {
 }
 
 impl<'a> UrnBoxView<'a> {
-    /// Parses an `UrnBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(payload);
-
-        let full_box_header = FullBoxHeader::<UrnSpec>::parse(&mut cur)?;
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<UrnBoxView<'a>> {
+        let full_box_header = FullBoxHeader::<UrnSpec>::parse(cur)?;
 
         let name_bytes = cur
             .take_until(0)
@@ -203,10 +203,12 @@ impl<'a> UrnBoxView<'a> {
         })
     }
 
-    /// Converts this `UrnBoxView` into an owned `UrnBox`.
-    #[cfg(feature = "alloc")]
-    pub fn to_owned(&self) -> UrnBox {
-        UrnBox::from_view(self)
+    /// Parses an `UrnBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(payload);
+        let this = UrnBoxView::parse_in(&mut cur)?;
+
+        Ok(this)
     }
 }
 
@@ -320,6 +322,13 @@ mod owned {
         }
     }
 
+    impl UrlBoxView<'_> {
+        /// Converts this `UrlBoxView` into an owned `UrlBox`.
+        pub fn to_owned(&self) -> UrlBox {
+            UrlBox::from_view(self)
+        }
+    }
+
     impl From<UrlBoxView<'_>> for UrlBox {
         fn from(view: UrlBoxView<'_>) -> Self {
             Self::from_view(&view)
@@ -376,6 +385,13 @@ mod owned {
                 .write_u8(0)
                 .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
             Ok(())
+        }
+    }
+
+    impl UrnBoxView<'_> {
+        /// Converts this `UrnBoxView` into an owned `UrnBox`.
+        pub fn to_owned(&self) -> UrnBox {
+            UrnBox::from_view(self)
         }
     }
 

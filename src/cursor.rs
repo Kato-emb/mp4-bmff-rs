@@ -54,7 +54,6 @@ impl fmt::Display for Error {
 impl error::Error for Error {}
 
 /// A cursor for reading from a byte slice.
-#[derive(Clone)]
 pub struct ReadCursor<'a> {
     inner: &'a [u8],
     pos: usize,

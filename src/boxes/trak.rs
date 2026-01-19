@@ -1,3 +1,5 @@
+use crate::cursor::ReadCursor;
+
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -11,11 +13,6 @@ pub struct TrakBoxView<'a> {
 }
 
 impl<'a> TrakBoxView<'a> {
-    /// Parses a `TrakBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<TrakBoxView<'a>> {
-        Ok(TrakBoxView { payload })
-    }
-
     /// Returns an iterator over the child boxes of this `TrakBoxView`.
     pub fn children(&self) -> BoxIter<'a> {
         BoxIter::new(self.payload)
@@ -34,6 +31,19 @@ impl<'a> TrakBoxView<'a> {
         }
 
         None
+    }
+
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<TrakBoxView<'a>> {
+        let payload = cur.take(cur.remaining())?;
+        Ok(TrakBoxView { payload })
+    }
+
+    /// Parses a `TrakBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<TrakBoxView<'a>> {
+        let mut cursor = ReadCursor::new(payload);
+        let this = TrakBoxView::parse_in(&mut cursor)?;
+
+        Ok(this)
     }
 }
 

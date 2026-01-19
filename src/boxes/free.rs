@@ -1,3 +1,5 @@
+use crate::cursor::ReadCursor;
+
 use crate::error::*;
 
 /// A reference to a Free Space Box (`free`).
@@ -7,9 +9,17 @@ pub struct FreeBoxView<'a> {
 }
 
 impl<'a> FreeBoxView<'a> {
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<FreeBoxView<'a>> {
+        let data = cur.take(cur.remaining())?;
+        Ok(FreeBoxView { data })
+    }
+
     /// Parses a `FreeBoxView` from the given payload.
     pub fn parse(payload: &'a [u8]) -> Result<FreeBoxView<'a>> {
-        Ok(FreeBoxView { data: payload })
+        let mut cursor = ReadCursor::new(payload);
+        let this = FreeBoxView::parse_in(&mut cursor)?;
+
+        Ok(this)
     }
 }
 

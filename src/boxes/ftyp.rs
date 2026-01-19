@@ -23,40 +23,46 @@ impl<'a> FtypBoxView<'a> {
             .map(|chunk| FourCC::new([chunk[0], chunk[1], chunk[2], chunk[3]]))
     }
 
-    /// Parses an `FtypBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<FtypBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<FtypBoxView<'a>> {
         // Read major_brand (4 bytes)
-        let major_brand = cursor
+        let major_brand = cur
             .read_array::<4>()
-            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         let major_brand = FourCC::new(major_brand);
 
         // Read minor_version (4 bytes)
-        let minor_version = cursor
+        let minor_version = cur
             .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
         // The remaining bytes are compatible_brands
-        let remaining = cursor.remaining();
+        let remaining = cur.remaining();
         if !remaining.is_multiple_of(4) {
             return Err(Error::at_in_box(
                 ErrorKind::InvalidBoxSize {
                     reason: "Compatible brands length is not a multiple of 4",
                     got: remaining as u64,
                 },
-                cursor.position() as u64,
+                cur.position() as u64,
                 BoxType::FTYP,
             ));
         }
-        let compatible_brands = cursor.remaining_slice();
+
+        let compatible_brands = cur.take(remaining)?;
 
         Ok(FtypBoxView {
             major_brand,
             minor_version,
             compatible_brands,
         })
+    }
+
+    /// Parses an `FtypBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<FtypBoxView<'a>> {
+        let mut cursor = ReadCursor::new(payload);
+        let this = FtypBoxView::parse_in(&mut cursor)?;
+
+        Ok(this)
     }
 }
 

@@ -1,3 +1,5 @@
+use crate::cursor::ReadCursor;
+
 use crate::BoxType;
 use crate::error::*;
 use crate::iter::BoxIter;
@@ -11,11 +13,6 @@ pub struct MoovBoxView<'a> {
 }
 
 impl<'a> MoovBoxView<'a> {
-    /// Parses a `MoovBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<MoovBoxView<'a>> {
-        Ok(MoovBoxView { payload })
-    }
-
     /// Returns an iterator over the child boxes of this `MoovBoxView`.
     pub fn children(&self) -> BoxIter<'a> {
         BoxIter::new(self.payload)
@@ -45,6 +42,19 @@ impl<'a> MoovBoxView<'a> {
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
+    }
+
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<MoovBoxView<'a>> {
+        let payload = cur.take(cur.remaining())?;
+        Ok(MoovBoxView { payload })
+    }
+
+    /// Parses a `MoovBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<MoovBoxView<'a>> {
+        let mut cursor = ReadCursor::new(payload);
+        let this = MoovBoxView::parse_in(&mut cursor)?;
+
+        Ok(this)
     }
 }
 

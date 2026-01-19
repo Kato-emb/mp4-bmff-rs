@@ -1,3 +1,5 @@
+use crate::cursor::ReadCursor;
+
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -11,11 +13,6 @@ pub struct DinfBoxView<'a> {
 }
 
 impl<'a> DinfBoxView<'a> {
-    /// Parses a `DinfBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<DinfBoxView<'a>> {
-        Ok(DinfBoxView { payload })
-    }
-
     /// Returns an iterator over the child boxes of this `DinfBoxView`.
     pub fn children(&self) -> BoxIter<'a> {
         BoxIter::new(self.payload)
@@ -32,6 +29,19 @@ impl<'a> DinfBoxView<'a> {
         }
 
         Ok(None)
+    }
+
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<DinfBoxView<'a>> {
+        let payload = cur.take(cur.remaining())?;
+        Ok(DinfBoxView { payload })
+    }
+
+    /// Parses a `DinfBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<DinfBoxView<'a>> {
+        let mut cursor = ReadCursor::new(payload);
+        let this = DinfBoxView::parse_in(&mut cursor)?;
+
+        Ok(this)
     }
 }
 

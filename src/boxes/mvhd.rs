@@ -56,27 +56,24 @@ impl MvhdBox {
     const RESERVED_SIZE: usize = mem::size_of::<u16>() + 2 * mem::size_of::<u32>(); // reserved
     const PRE_DEFINED_SIZE: usize = 6 * mem::size_of::<u32>(); // pre_defined
 
-    /// Parses an `MvhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<MvhdBox> {
-        let mut cursor = ReadCursor::new(payload);
-
-        let full_box_header = FullBoxHeader::<MvhdSpec>::parse(&mut cursor)?;
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MvhdBox> {
+        let full_box_header = FullBoxHeader::<MvhdSpec>::parse(cur)?;
 
         let (creation_time, modification_time, timescale, duration) =
             match full_box_header.version() {
                 1 => {
-                    let creation_time = cursor
+                    let creation_time = cur
                         .read_u64_be()
-                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-                    let modification_time = cursor
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    let modification_time = cur
                         .read_u64_be()
-                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-                    let timescale = cursor
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    let timescale = cur
                         .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-                    let duration = cursor
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    let duration = cur
                         .read_u64_be()
-                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
                     (
                         QuickTimeDateTime::from_quicktime_seconds(creation_time),
                         QuickTimeDateTime::from_quicktime_seconds(modification_time),
@@ -85,20 +82,20 @@ impl MvhdBox {
                     )
                 }
                 0 => {
-                    let creation_time = cursor
+                    let creation_time = cur
                         .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?
                         as u64;
-                    let modification_time = cursor
+                    let modification_time = cur
                         .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?
                         as u64;
-                    let timescale = cursor
+                    let timescale = cur
                         .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-                    let duration = cursor
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    let duration = cur
                         .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cursor.position() as u64))?
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?
                         as u64;
                     (
                         QuickTimeDateTime::from_quicktime_seconds(creation_time),
@@ -115,33 +112,42 @@ impl MvhdBox {
                 }
             };
 
-        let rate = cursor
+        let rate = cur
             .read_i32_be()
-            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         let rate = I16F16::from_raw(rate);
-        let volume = cursor
+        let volume = cur
             .read_u16_be()
-            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         let volume = U8F8::from_raw(volume);
 
-        cursor
-            .advance(MvhdBox::RESERVED_SIZE)
-            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+        cur.advance(MvhdBox::RESERVED_SIZE)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
         let mut matrix = [0i32; 9];
         for m in &mut matrix {
-            *m = cursor
+            *m = cur
                 .read_i32_be()
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         }
         let matrix = Matrix::from_raw(matrix);
 
-        cursor
-            .advance(MvhdBox::PRE_DEFINED_SIZE)
-            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-        let next_track_id = cursor
+        cur.advance(MvhdBox::PRE_DEFINED_SIZE)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let next_track_id = cur
             .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        if !cur.is_empty() {
+            return Err(Error::at_in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Extra data remaining after parsing",
+                    got: cur.remaining() as u64,
+                },
+                cur.position() as u64,
+                BoxType::MVHD,
+            ));
+        }
 
         Ok(MvhdBox {
             version: full_box_header.version(),
@@ -155,6 +161,14 @@ impl MvhdBox {
             matrix,
             next_track_id,
         })
+    }
+
+    /// Parses an `MvhdBox` from the given payload.
+    pub fn parse(payload: &[u8]) -> Result<MvhdBox> {
+        let mut cursor = ReadCursor::new(payload);
+        let this = MvhdBox::parse_in(&mut cursor)?;
+
+        Ok(this)
     }
 }
 

@@ -42,17 +42,13 @@ impl<'a> StcoBoxView<'a> {
         })
     }
 
-    /// Parses a `StcoBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<StcoBoxView<'a>> {
-        let mut cur = ReadCursor::new(payload);
-
-        let full_box_header = FullBoxHeader::<StcoSpec>::parse(&mut cur)?;
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StcoBoxView<'a>> {
+        let full_box_header = FullBoxHeader::<StcoSpec>::parse(cur)?;
 
         let entry_count = cur
             .read_u32_be()
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
-        let entries = cur.remaining_slice();
         if !cur.remaining().is_multiple_of(4) {
             return Err(Error::at_in_box(
                 ErrorKind::InvalidBoxSize {
@@ -64,12 +60,22 @@ impl<'a> StcoBoxView<'a> {
             ));
         }
 
+        let entries = cur.take(cur.remaining())?;
+
         Ok(StcoBoxView {
             version: full_box_header.version(),
             flags: full_box_header.flags(),
             entry_count,
             entries,
         })
+    }
+
+    /// Parses a `StcoBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<StcoBoxView<'a>> {
+        let mut cur = ReadCursor::new(payload);
+        let this = StcoBoxView::parse_in(&mut cur)?;
+
+        Ok(this)
     }
 }
 
@@ -185,9 +191,7 @@ mod tests {
 
     #[test]
     fn parse_stco_single_entry() {
-        let entries = vec![StcoEntry {
-            chunk_offset: 1000,
-        }];
+        let entries = vec![StcoEntry { chunk_offset: 1000 }];
         let payload = make_stco_payload(entries.clone());
         let stco = StcoBoxView::parse(&payload).unwrap();
 
@@ -204,12 +208,8 @@ mod tests {
     #[test]
     fn parse_stco_multiple_entries() {
         let entries = vec![
-            StcoEntry {
-                chunk_offset: 1000,
-            },
-            StcoEntry {
-                chunk_offset: 5000,
-            },
+            StcoEntry { chunk_offset: 1000 },
+            StcoEntry { chunk_offset: 5000 },
             StcoEntry {
                 chunk_offset: 10000,
             },
@@ -263,7 +263,10 @@ mod tests {
 
         let parsed_entries: Vec<_> = stco.entries().collect();
         assert_eq!(parsed_entries.len(), 3);
-        assert_eq!(parsed_entries[0].as_ref().unwrap().chunk_offset, 0xFFFF_FFFF);
+        assert_eq!(
+            parsed_entries[0].as_ref().unwrap().chunk_offset,
+            0xFFFF_FFFF
+        );
         assert_eq!(parsed_entries[1].as_ref().unwrap().chunk_offset, 0);
         assert_eq!(
             parsed_entries[2].as_ref().unwrap().chunk_offset,
@@ -324,12 +327,8 @@ mod tests {
     #[test]
     fn try_from_box_view_success() {
         let entries = vec![
-            StcoEntry {
-                chunk_offset: 1024,
-            },
-            StcoEntry {
-                chunk_offset: 2048,
-            },
+            StcoEntry { chunk_offset: 1024 },
+            StcoEntry { chunk_offset: 2048 },
         ];
         let payload = make_stco_payload(entries);
 
@@ -377,15 +376,9 @@ mod tests {
         #[test]
         fn stco_box_from_view() {
             let entries = vec![
-                StcoEntry {
-                    chunk_offset: 1000,
-                },
-                StcoEntry {
-                    chunk_offset: 2000,
-                },
-                StcoEntry {
-                    chunk_offset: 3000,
-                },
+                StcoEntry { chunk_offset: 1000 },
+                StcoEntry { chunk_offset: 2000 },
+                StcoEntry { chunk_offset: 3000 },
             ];
             let payload = make_stco_payload(entries.clone());
             let stco_view = StcoBoxView::parse(&payload).unwrap();
@@ -414,12 +407,8 @@ mod tests {
         #[test]
         fn stco_box_try_from() {
             let entries = vec![
-                StcoEntry {
-                    chunk_offset: 500,
-                },
-                StcoEntry {
-                    chunk_offset: 1500,
-                },
+                StcoEntry { chunk_offset: 500 },
+                StcoEntry { chunk_offset: 1500 },
             ];
             let payload = make_stco_payload(entries);
             let stco_view = StcoBoxView::parse(&payload).unwrap();

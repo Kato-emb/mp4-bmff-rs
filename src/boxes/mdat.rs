@@ -1,3 +1,5 @@
+use crate::cursor::ReadCursor;
+
 use crate::error::*;
 
 /// A reference to a Media Data Box (`mdat`).
@@ -7,9 +9,17 @@ pub struct MdatBoxView<'a> {
 }
 
 impl<'a> MdatBoxView<'a> {
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<MdatBoxView<'a>> {
+        let data = cur.take(cur.remaining())?;
+        Ok(MdatBoxView { data })
+    }
+
     /// Parses an `MdatBoxView` from the given payload.
     pub fn parse(payload: &'a [u8]) -> Result<MdatBoxView<'a>> {
-        Ok(MdatBoxView { data: payload })
+        let mut cursor = ReadCursor::new(payload);
+        let this = MdatBoxView::parse_in(&mut cursor)?;
+
+        Ok(this)
     }
 }
 

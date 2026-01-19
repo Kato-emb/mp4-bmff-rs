@@ -1,5 +1,6 @@
 use core::mem;
 
+use crate::BoxType;
 use crate::cursor::ReadCursor;
 use crate::error::*;
 use crate::header::FullBoxFlags;
@@ -60,11 +61,8 @@ impl TkhdBox {
     const RESERVED_2_SIZE: usize = mem::size_of::<u32>() * 2;
     const RESERVED_3_SIZE: usize = mem::size_of::<u16>();
 
-    /// Parses a `TkhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<TkhdBox> {
-        let mut cur = ReadCursor::new(payload);
-
-        let full_box_header = FullBoxHeader::<TkhdSpec>::parse(&mut cur)?;
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TkhdBox> {
+        let full_box_header = FullBoxHeader::<TkhdSpec>::parse(cur)?;
 
         let (creation_time, modification_time, track_id, duration) = match full_box_header.version()
         {
@@ -159,6 +157,17 @@ impl TkhdBox {
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
         let height = U16F16::from_raw(height);
 
+        if !cur.is_empty() {
+            return Err(Error::at_in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Extra data remaining after parsing",
+                    got: cur.remaining() as u64,
+                },
+                cur.position() as u64,
+                BoxType::TKHD,
+            ));
+        }
+
         Ok(TkhdBox {
             version: full_box_header.version(),
             flags: full_box_header.flags(),
@@ -173,6 +182,14 @@ impl TkhdBox {
             width,
             height,
         })
+    }
+
+    /// Parses a `TkhdBox` from the given payload.
+    pub fn parse(payload: &[u8]) -> Result<TkhdBox> {
+        let mut cur = ReadCursor::new(payload);
+        let this = TkhdBox::parse_in(&mut cur)?;
+
+        Ok(this)
     }
 }
 

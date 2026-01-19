@@ -51,17 +51,13 @@ impl<'a> SttsBoxView<'a> {
         })
     }
 
-    /// Parses a `SttsBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<SttsBoxView<'a>> {
-        let mut cur = ReadCursor::new(payload);
-
-        let full_box_header = FullBoxHeader::<SttsSpec>::parse(&mut cur)?;
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<SttsBoxView<'a>> {
+        let full_box_header = FullBoxHeader::<SttsSpec>::parse(cur)?;
 
         let entry_count = cur
             .read_u32_be()
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
-        let entries = cur.remaining_slice();
         if !cur.remaining().is_multiple_of(8) {
             return Err(Error::at_in_box(
                 ErrorKind::InvalidBoxSize {
@@ -73,12 +69,22 @@ impl<'a> SttsBoxView<'a> {
             ));
         }
 
+        let entries = cur.take(cur.remaining())?;
+
         Ok(SttsBoxView {
             version: full_box_header.version(),
             flags: full_box_header.flags(),
             entry_count,
             entries,
         })
+    }
+
+    /// Parses a `SttsBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<SttsBoxView<'a>> {
+        let mut cur = ReadCursor::new(payload);
+        let this = SttsBoxView::parse_in(&mut cur)?;
+
+        Ok(this)
     }
 }
 
