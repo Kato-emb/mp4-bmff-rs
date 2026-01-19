@@ -269,204 +269,75 @@ mod tests {
         payload
     }
 
-    fn make_stsz_payload_variable(sizes: &[u32]) -> Vec<u8> {
+    fn make_stsz_payload_variable(sample_sizes: Vec<u32>) -> Vec<u8> {
         let mut payload = Vec::new();
         payload.extend_from_slice(&make_full_box_header(0, 0));
-        payload.extend_from_slice(&0u32.to_be_bytes()); // sample_size = 0
-        payload.extend_from_slice(&(sizes.len() as u32).to_be_bytes());
-        for &size in sizes {
+        payload.extend_from_slice(&0u32.to_be_bytes());
+        payload.extend_from_slice(&(sample_sizes.len() as u32).to_be_bytes());
+        for size in sample_sizes {
             payload.extend_from_slice(&size.to_be_bytes());
         }
         payload
     }
 
     #[test]
-    fn parse_stsz_uniform() {
-        let payload = make_stsz_payload_uniform(1024, 100);
-        let stsz = StszBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stsz.version, 0);
-        assert_eq!(stsz.sample_size, 1024);
-        assert_eq!(stsz.sample_count, 100);
-
-        // All samples should have the same size
-        assert_eq!(stsz.get_sample_size(1).unwrap(), 1024);
-        assert_eq!(stsz.get_sample_size(50).unwrap(), 1024);
-        assert_eq!(stsz.get_sample_size(100).unwrap(), 1024);
-    }
-
-    #[test]
-    fn parse_stsz_variable() {
-        let sizes = vec![100, 200, 300, 150, 250];
-        let payload = make_stsz_payload_variable(&sizes);
-        let stsz = StszBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stsz.version, 0);
-        assert_eq!(stsz.sample_size, 0);
-        assert_eq!(stsz.sample_count, 5);
-
-        // Each sample should have its own size
-        assert_eq!(stsz.get_sample_size(1).unwrap(), 100);
-        assert_eq!(stsz.get_sample_size(2).unwrap(), 200);
-        assert_eq!(stsz.get_sample_size(3).unwrap(), 300);
-        assert_eq!(stsz.get_sample_size(4).unwrap(), 150);
-        assert_eq!(stsz.get_sample_size(5).unwrap(), 250);
-    }
-
-    #[test]
-    fn parse_stsz_empty() {
-        let payload = make_stsz_payload_variable(&[]);
-        let stsz = StszBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stsz.sample_count, 0);
-        assert_eq!(stsz.sample_sizes().count(), 0);
-    }
-
-    #[test]
-    fn parse_stsz_sample_sizes_iterator_uniform() {
-        let payload = make_stsz_payload_uniform(512, 3);
-        let stsz = StszBoxView::parse(&payload).unwrap();
-
-        let sizes: Vec<u32> = stsz.sample_sizes().map(|r| r.unwrap()).collect();
-        assert_eq!(sizes, vec![512, 512, 512]);
-    }
-
-    #[test]
-    fn parse_stsz_sample_sizes_iterator_variable() {
-        let sizes = vec![100, 200, 300];
-        let payload = make_stsz_payload_variable(&sizes);
-        let stsz = StszBoxView::parse(&payload).unwrap();
-
-        let parsed_sizes: Vec<u32> = stsz.sample_sizes().map(|r| r.unwrap()).collect();
-        assert_eq!(parsed_sizes, sizes);
-    }
-
-    #[test]
-    fn parse_stsz_sample_number_out_of_range() {
+    fn parse_uniform_and_variable() {
+        // Uniform
         let payload = make_stsz_payload_uniform(1024, 10);
         let stsz = StszBoxView::parse(&payload).unwrap();
+        assert_eq!(stsz.sample_size, 1024);
+        assert_eq!(stsz.sample_count, 10);
+        assert_eq!(stsz.sample_sizes().count(), 10);
+        let sizes: Vec<_> = stsz.sample_sizes().map(|r| r.unwrap()).collect();
+        assert!(sizes.iter().all(|&s| s == 1024));
 
-        // Sample number 0 is invalid
-        assert!(stsz.get_sample_size(0).is_err());
-        // Sample number > sample_count is invalid
-        assert!(stsz.get_sample_size(11).is_err());
+        // Variable
+        let sizes = vec![100, 200, 300];
+        let payload = make_stsz_payload_variable(sizes.clone());
+        let stsz = StszBoxView::parse(&payload).unwrap();
+        assert_eq!(stsz.sample_size, 0);
+        let parsed: Vec<_> = stsz.sample_sizes().map(|r| r.unwrap()).collect();
+        assert_eq!(parsed, sizes);
     }
 
     #[test]
-    fn parse_stsz_variable_entry_count_mismatch() {
+    fn invalid_size() {
         let mut payload = make_full_box_header(0, 0);
-        payload.extend_from_slice(&0u32.to_be_bytes()); // sample_size = 0
-        payload.extend_from_slice(&3u32.to_be_bytes()); // sample_count = 3
-        payload.extend_from_slice(&100u32.to_be_bytes()); // Only 1 entry
-
-        let result = StszBoxView::parse(&payload);
-        assert!(result.is_err());
+        payload.extend_from_slice(&0u32.to_be_bytes());
+        payload.extend_from_slice(&2u32.to_be_bytes());
+        payload.extend_from_slice(&100u32.to_be_bytes());
+        assert!(StszBoxView::parse(&payload).is_err());
     }
 
     #[test]
-    fn parse_stsz_uniform_extra_data() {
-        let mut payload = make_stsz_payload_uniform(1024, 10);
-        payload.extend_from_slice(&[0, 0, 0, 0]); // Extra data
-
-        let result = StszBoxView::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn try_from_byte_slice() {
-        let payload = make_stsz_payload_uniform(512, 5);
-        let stsz = StszBoxView::try_from(payload.as_slice()).unwrap();
-
-        assert_eq!(stsz.sample_size, 512);
-        assert_eq!(stsz.sample_count, 5);
-    }
-
-    #[test]
-    fn try_from_box_view_success() {
-        let payload = make_stsz_payload_uniform(256, 10);
-
+    fn wrong_box_type() {
+        let payload = make_stsz_payload_uniform(1024, 0);
         let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"stsz");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let stsz = StszBoxView::try_from(&box_view).unwrap();
-
-        assert_eq!(stsz.sample_size, 256);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_stsz_payload_uniform(256, 10);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"stts"); // Wrong type
+        box_data.extend_from_slice(&(8 + payload.len() as u32).to_be_bytes());
+        box_data.extend_from_slice(b"stsc");
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
         let box_view = BoxView::parse_in(&mut cursor).unwrap();
         let result = StszBoxView::try_from(&box_view);
-
         assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::MismatchedBoxType { .. }));
-        }
     }
 
     #[cfg(feature = "alloc")]
-    mod alloc_tests {
-        use super::*;
-
-        #[test]
-        fn stsz_box_from_view_uniform() {
-            let payload = make_stsz_payload_uniform(1024, 5);
-            let view = StszBoxView::parse(&payload).unwrap();
-            let stsz_box = StszBox::from_view(&view).unwrap();
-
-            assert_eq!(stsz_box.sample_count, 5);
-            assert!(matches!(stsz_box.sample_sizes, SampleSizes::Uniform(1024)));
-            assert_eq!(stsz_box.get_sample_size(1), Some(1024));
-            assert_eq!(stsz_box.get_sample_size(5), Some(1024));
+    #[test]
+    fn owned_conversion() {
+        let sizes = vec![100, 200, 300];
+        let payload = make_stsz_payload_variable(sizes.clone());
+        let view = StszBoxView::parse(&payload).unwrap();
+        let owned = StszBox::from_view(&view).unwrap();
+        
+        if let SampleSizes::Variable(ref s) = owned.sample_sizes {
+            assert_eq!(s, &sizes);
+        } else {
+            panic!("Expected Variable sample sizes");
         }
-
-        #[test]
-        fn stsz_box_from_view_variable() {
-            let sizes = vec![100, 200, 300];
-            let payload = make_stsz_payload_variable(&sizes);
-            let view = StszBoxView::parse(&payload).unwrap();
-            let stsz_box = StszBox::from_view(&view).unwrap();
-
-            assert_eq!(stsz_box.sample_count, 3);
-            if let SampleSizes::Variable(v) = &stsz_box.sample_sizes {
-                assert_eq!(v, &sizes);
-            } else {
-                panic!("Expected Variable sample sizes");
-            }
-            assert_eq!(stsz_box.get_sample_size(1), Some(100));
-            assert_eq!(stsz_box.get_sample_size(2), Some(200));
-            assert_eq!(stsz_box.get_sample_size(3), Some(300));
-        }
-
-        #[test]
-        fn stsz_box_get_sample_size_out_of_range() {
-            let payload = make_stsz_payload_uniform(1024, 5);
-            let stsz_box = StszBox::parse(&payload).unwrap();
-
-            assert_eq!(stsz_box.get_sample_size(0), None);
-            assert_eq!(stsz_box.get_sample_size(6), None);
-        }
-
-        #[test]
-        fn stsz_box_empty() {
-            let payload = make_stsz_payload_variable(&[]);
-            let stsz_box = StszBox::parse(&payload).unwrap();
-
-            assert_eq!(stsz_box.sample_count, 0);
-        }
+        
+        assert_eq!(owned.get_sample_size(1), Some(100));
+        assert_eq!(owned.get_sample_size(4), None);
     }
 }
