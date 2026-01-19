@@ -66,8 +66,9 @@ pub use view::BoxView;
 // Layer 2 - Typed Box Representations (requires alloc)
 // =============================================================================
 pub mod boxes;
-
 pub mod descriptor;
+#[cfg(feature = "alloc")]
+pub use view::BoxOwned;
 
 // =============================================================================
 // Layer 3 -  I/O (std)

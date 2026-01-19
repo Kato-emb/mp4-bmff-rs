@@ -60,6 +60,46 @@ impl<'a> BoxView<'a> {
     }
 }
 
+#[cfg(feature = "alloc")]
+pub use owned::BoxOwned;
+
+#[cfg(feature = "alloc")]
+mod owned {
+    use super::*;
+
+    /// An owned BMFF box.
+    #[derive(Debug, Clone)]
+    pub struct BoxOwned {
+        /// The box header.
+        pub header: BoxHeader,
+        /// The box payload.
+        pub payload: Vec<u8>,
+    }
+
+    impl BoxOwned {
+        /// Creates an owned `BoxOwned` from a `BoxView`.
+        pub fn from_view(view: &BoxView<'_>) -> Self {
+            Self {
+                header: view.header,
+                payload: view.payload.to_vec(),
+            }
+        }
+
+        /// Parses an owned `BoxOwned` from a byte slice.
+        pub fn parse(bytes: &[u8]) -> Result<Self> {
+            let view = BoxView::parse(bytes)?;
+            Ok(Self::from_view(&view))
+        }
+    }
+
+    impl BoxView<'_> {
+        /// Converts this `BoxView` into an owned `BoxOwned`.
+        pub fn to_owned(&self) -> BoxOwned {
+            BoxOwned::from_view(self)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

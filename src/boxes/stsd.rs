@@ -19,6 +19,8 @@ pub enum StsdEntryView<'a> {
     Mp4a(Mp4aBoxView<'a>),
     /// An Avc1 Box entry.
     Avc1(Avc1BoxView<'a>),
+    /// An unrecognized box entry.
+    Other(BoxView<'a>),
 }
 
 /// An reference to a Sample Description Box (`stsd`).
@@ -42,13 +44,7 @@ impl<'a> StsdBoxView<'a> {
             match view.header.boxtype() {
                 BoxType::AVC1 => Avc1BoxView::parse(view.payload).map(StsdEntryView::Avc1),
                 BoxType::MP4A => Mp4aBoxView::parse(view.payload).map(StsdEntryView::Mp4a),
-                other => Err(Error::in_box(
-                    ErrorKind::InvalidBoxType {
-                        reason: "Unexpected box type in entries",
-                        got: other.type_field(),
-                    },
-                    BoxType::STSD,
-                )),
+                _ => Ok(StsdEntryView::Other(view)),
             }
         })
     }
@@ -106,6 +102,7 @@ pub use owned::{
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::BoxOwned;
     use crate::boxes::Avc1Box;
     use crate::boxes::Mp4aBox;
 
@@ -118,13 +115,18 @@ mod owned {
         Mp4a(Mp4aBox),
         /// An Avc1 Box entry.
         Avc1(Avc1Box),
+        /// An unrecognized box entry.
+        Other(BoxOwned),
     }
 
-    impl From<&StsdEntryView<'_>> for StsdEntry {
-        fn from(value: &StsdEntryView<'_>) -> Self {
+    impl TryFrom<&StsdEntryView<'_>> for StsdEntry {
+        type Error = Error;
+
+        fn try_from(value: &StsdEntryView<'_>) -> Result<Self> {
             match value {
-                StsdEntryView::Mp4a(view) => StsdEntry::Mp4a(Mp4aBox::from_view(view).unwrap()),
-                StsdEntryView::Avc1(view) => StsdEntry::Avc1(Avc1Box::from_view(view).unwrap()),
+                StsdEntryView::Mp4a(view) => Ok(StsdEntry::Mp4a(Mp4aBox::from_view(view)?)),
+                StsdEntryView::Avc1(view) => Ok(StsdEntry::Avc1(Avc1Box::from_view(view)?)),
+                StsdEntryView::Other(view) => Ok(StsdEntry::Other(view.to_owned())),
             }
         }
     }
@@ -149,7 +151,7 @@ mod owned {
 
             for entry_view in view.entries() {
                 let entry = entry_view?;
-                entries.push(StsdEntry::from(&entry));
+                entries.push(StsdEntry::try_from(&entry)?);
             }
 
             Ok(StsdBox {
