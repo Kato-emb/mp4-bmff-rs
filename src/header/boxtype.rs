@@ -151,6 +151,8 @@ define_box_types! {
 
     /// File Type Box
     FTYP = b"ftyp",
+    /// Segment Type Box
+    STYP = b"styp",
     /// Free Space Box
     FREE = b"free",
     /// Media Data Box
@@ -257,6 +259,17 @@ define_box_types! {
     TFDT = b"tfdt",
     /// Track Run Box
     TRUN = b"trun",
+
+    // =========================================================================
+    // ISO 14496-12 (BMFF) - Movie Fragment Random Access
+    // =========================================================================
+
+    /// Movie Fragment Random Access Box
+    MFRA = b"mfra",
+    /// Track Fragment Random Access Box
+    TFRA = b"tfra",
+    /// Movie Fragment Random Access Offset Box
+    MFRO = b"mfro",
 
     // =========================================================================
     // ISO 14496-12 (BMFF) - Sample grouping

@@ -67,12 +67,12 @@
 //! |    |    |saiz|    |    |    | | |sample auxiliary information sizes
 //! |    |    |saio|    |    |    | | |sample auxiliary information offsets
 //! |    |    |tfdt|    |    |    | |○|track fragment decode time
-//! |mfra|    |    |    |    |    | | |movie fragment random access
-//! |    |tfra|    |    |    |    | | |track fragment random access
-//! |    |mfro|    |    |    |    |*| |movie fragment random access offset
-//! |mdat|    |    |    |    |    | | |media data container
-//! |free|    |    |    |    |    | | |free space
-//! |skip|    |    |    |    |    | | |free space
+//! |mfra|    |    |    |    |    | |○|movie fragment random access
+//! |    |tfra|    |    |    |    | |○|track fragment random access
+//! |    |mfro|    |    |    |    |*|○|movie fragment random access offset
+//! |mdat|    |    |    |    |    | |○|media data container
+//! |free|    |    |    |    |    | |○|free space
+//! |skip|    |    |    |    |    | |○|free space
 //! |    |udta|    |    |    |    | | |user-data
 //! |    |    |cprt|    |    |    | | |copyright etc.
 //! |    |    |tsel|    |    |    | | |track selection box
@@ -104,12 +104,12 @@
 //! |    |iref|    |    |    |    | | |item reference
 //! |meco|    |    |    |    |    | | |additional metadata container
 //! |    |mere|    |    |    |    | | |metabox relation
-//! |styp|    |    |    |    |    | | |segment type
+//! |styp|    |    |    |    |    | |○|segment type
 //! |sidx|    |    |    |    |    | | |segment index
 //! |ssix|    |    |    |    |    | | |subsegment index
 //! |prft|    |    |    |    |    | | |producer reference time
 //! +----+----+----+----+----+----+-+-+--------------------------------
-//! |stsd|    |    |    |    |    | | |sample descriptions
+//! |stsd|    |    |    |    |    | |○|sample descriptions
 //! |    |avcc|    |    |    |    | |-|
 //! |    |    |avc1|    |    |    | |○|Advanced Video Coding
 //! |    |hevx|    |    |    |    | |-|
@@ -144,6 +144,8 @@ mod mdhd;
 mod mdia;
 mod mehd;
 mod mfhd;
+mod mfra;
+mod mfro;
 mod minf;
 mod moof;
 mod moov;
@@ -160,8 +162,10 @@ mod stsd;
 mod stss;
 mod stsz;
 mod stts;
+mod styp;
 mod tfdt;
 mod tfhd;
+mod tfra;
 mod tkhd;
 mod traf;
 mod trak;
@@ -191,12 +195,16 @@ pub use stsd::StsdBoxView;
 pub use stss::StssBoxView;
 pub use stsz::StszBoxView;
 pub use stts::SttsBoxView;
+pub use styp::StypBoxView;
+pub use tfra::TfraBoxView;
+pub use tfra::TfraEntryIter;
 pub use trun::TrunBoxView;
 pub use trun::TrunSampleIter;
 
 // Container boxes - View types
 pub use dinf::DinfBoxView;
 pub use mdia::MdiaBoxView;
+pub use mfra::MfraBoxView;
 pub use minf::MinfBoxView;
 pub use moof::MoofBoxView;
 pub use moov::MoovBoxView;
@@ -215,6 +223,7 @@ pub use hmhd::HmhdBox;
 pub use mdhd::MdhdBox;
 pub use mehd::MehdBox;
 pub use mfhd::MfhdBox;
+pub use mfro::MfroBox;
 pub use mvhd::MvhdBox;
 pub use nmhd::NmhdBox;
 pub use smhd::SmhdBox;
@@ -232,6 +241,7 @@ pub use stco::StcoEntry;
 pub use stsc::StscEntry;
 pub use stss::StssEntry;
 pub use stts::SttsEntry;
+pub use tfra::TfraEntry;
 pub use trun::TrunSample;
 
 // Re-export entry views
@@ -255,6 +265,7 @@ pub use hmhd::{HmhdFlags, HmhdSpec};
 pub use mdhd::{MdhdFlags, MdhdSpec};
 pub use mehd::{MehdFlags, MehdSpec};
 pub use mfhd::{MfhdFlags, MfhdSpec};
+pub use mfro::{MfroFlags, MfroSpec};
 pub use mvhd::{MvhdFlags, MvhdSpec};
 pub use nmhd::{NmhdFlags, NmhdSpec};
 pub use sbgp::{SbgpFlags, SbgpSpec};
@@ -267,6 +278,7 @@ pub use stsz::{StszFlags, StszSpec};
 pub use stts::{SttsFlags, SttsSpec};
 pub use tfdt::{TfdtFlags, TfdtSpec};
 pub use tfhd::{TfhdFlags, TfhdSpec};
+pub use tfra::{TfraFlags, TfraSpec};
 pub use tkhd::{TkhdFlags, TkhdSpec};
 pub use trex::{TrexFlags, TrexSpec};
 pub use trun::{TrunFlags, TrunSpec};
@@ -305,6 +317,8 @@ mod owned_exports {
     pub use stss::StssBox;
     pub use stsz::StszBox;
     pub use stts::SttsBox;
+    pub use styp::StypBox;
+    pub use tfra::TfraBox;
     pub use trun::TrunBox;
 
     // Re-export stsz SampleSizes enum
@@ -313,6 +327,7 @@ mod owned_exports {
     // Container boxes - Owned types
     pub use dinf::DinfBox;
     pub use mdia::MdiaBox;
+    pub use mfra::MfraBox;
     pub use minf::MinfBox;
     pub use moof::MoofBox;
     pub use moov::MoovBox;
