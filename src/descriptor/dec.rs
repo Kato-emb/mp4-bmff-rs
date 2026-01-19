@@ -48,33 +48,12 @@ pub struct DecoderConfigDescriptorView<'a> {
     pub max_bitrate: u32,
     /// Average bitrate in bits per second
     pub avg_bitrate: u32,
-    dec_specific_info: Option<&'a [u8]>,
+    /// Decoder Specific Info descriptor
+    pub dec_specific_info: Option<DescriptorView<'a>>,
     profile_level_indication_index_descriptor: &'a [u8],
 }
 
 impl<'a> DecoderConfigDescriptorView<'a> {
-    /// Parses DecoderConfigDescriptor from a DescriptorView (ISO/IEC 14496-1 Section 7.2.6.7)
-    pub fn dec_specific_info(&self) -> Option<Result<DescriptorView<'a>>> {
-        self.dec_specific_info.map(|data| {
-            let mut cur = ReadCursor::new(data);
-            match DescriptorView::parse_in(&mut cur) {
-                Ok(descr) => {
-                    if descr.tag != Tag::DECODER_SPECIFIC_INFO_TAG {
-                        Err(Error::at(
-                            ErrorKind::Other {
-                                description: "Expected Decoder Specific Info descriptor",
-                            },
-                            0,
-                        ))
-                    } else {
-                        Ok(descr)
-                    }
-                }
-                Err(e) => Err(e),
-            }
-        })
-    }
-
     /// Returns an iterator over Profile Level Indication Index Descriptors
     pub fn profile_level_indication_index_descriptors(
         &self,
@@ -108,16 +87,19 @@ impl<'a> DecoderConfigDescriptorView<'a> {
         let avg_bitrate = cur.read_u32_be()?;
 
         let start_pos = cur.position();
-        let dec_specific_info =
-            if DescriptorView::parse_in(cur)?.tag == Tag::DECODER_CONFIG_DESCR_TAG {
-                let end_pos = cur.position();
-                Some(&cur.inner()[start_pos..end_pos])
+        let dec_specific_info = if cur.remaining() > 0 {
+            let descr = DescriptorView::parse_in(cur)?;
+            if descr.tag == Tag::DECODER_SPECIFIC_INFO_TAG {
+                Some(descr)
             } else {
                 cur.set_position(start_pos);
                 None
-            };
+            }
+        } else {
+            None
+        };
 
-        let profile_level_indication_index_descriptor = &cur.inner()[cur.position() as usize..];
+        let profile_level_indication_index_descriptor = &cur.inner()[cur.position()..];
 
         Ok(DecoderConfigDescriptorView {
             object_type_indication,
@@ -170,10 +152,9 @@ mod owned {
     impl DecoderConfigDescriptor {
         /// Creates an owned DecoderConfigDescriptor from a view
         pub fn from_view(view: &DecoderConfigDescriptorView<'_>) -> Result<Self> {
-            let dec_specific_info = match view.dec_specific_info() {
-                Some(res) => Some(DescriptorOwned::from_view(&res?)),
-                None => None,
-            };
+            let dec_specific_info = view
+                .dec_specific_info
+                .map(|descr| DescriptorOwned::from_view(&descr));
 
             let mut profile_level_indication_index_descriptors = Vec::new();
             for res in view.profile_level_indication_index_descriptors() {
