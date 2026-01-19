@@ -96,7 +96,7 @@ impl<'a> TryFrom<&'a [u8]> for SttsBoxView<'a> {
 impl<'a> TryFrom<&BoxView<'a>> for SttsBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &BoxView<'a>) -> Result<Self> {
         if value.header.boxtype() != BoxType::STTS {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STTS,
@@ -201,9 +201,18 @@ mod tests {
 
         // Multiple entries
         let entries = vec![
-            SttsEntry { sample_count: 100, sample_delta: 1000 },
-            SttsEntry { sample_count: 200, sample_delta: 2000 },
-            SttsEntry { sample_count: 300, sample_delta: 3000 },
+            SttsEntry {
+                sample_count: 100,
+                sample_delta: 1000,
+            },
+            SttsEntry {
+                sample_count: 200,
+                sample_delta: 2000,
+            },
+            SttsEntry {
+                sample_count: 300,
+                sample_delta: 3000,
+            },
         ];
         let payload = make_stts_payload(entries.clone());
         let stts = SttsBoxView::parse(&payload).unwrap();
@@ -239,15 +248,24 @@ mod tests {
         let result = SttsBoxView::try_from(&box_view);
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err().kind(), ErrorKind::MismatchedBoxType { .. }));
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            ErrorKind::MismatchedBoxType { .. }
+        ));
     }
 
     #[cfg(feature = "alloc")]
     #[test]
     fn owned_conversion() {
         let entries = vec![
-            SttsEntry { sample_count: 100, sample_delta: 1000 },
-            SttsEntry { sample_count: 200, sample_delta: 2000 },
+            SttsEntry {
+                sample_count: 100,
+                sample_delta: 1000,
+            },
+            SttsEntry {
+                sample_count: 200,
+                sample_delta: 2000,
+            },
         ];
         let payload = make_stts_payload(entries.clone());
         let view = SttsBoxView::parse(&payload).unwrap();

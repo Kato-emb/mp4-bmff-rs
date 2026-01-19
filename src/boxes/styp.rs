@@ -77,7 +77,7 @@ impl<'a> TryFrom<&'a [u8]> for StypBoxView<'a> {
 impl<'a> TryFrom<BoxView<'a>> for StypBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxView<'a>) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: BoxView<'a>) -> Result<Self> {
         if value.header.boxtype() != BoxType::STYP {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STYP,

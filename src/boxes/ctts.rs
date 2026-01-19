@@ -120,7 +120,7 @@ impl<'a> TryFrom<&'a [u8]> for CttsBoxView<'a> {
 impl<'a> TryFrom<&BoxView<'a>> for CttsBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &BoxView<'a>) -> Result<Self> {
         if value.header.boxtype() != BoxType::CTTS {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::CTTS,

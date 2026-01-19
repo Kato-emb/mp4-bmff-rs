@@ -25,7 +25,8 @@ pub struct AvcCBoxView<'a> {
     /// Number of PPS NAL units
     pub nb_pps_nalus: u8,
     pps: &'a [u8],
-    ext: Option<&'a [u8]>,
+    /// Extensions (optional)
+    pub ext: Option<&'a [u8]>,
 }
 
 impl<'a> AvcCBoxView<'a> {
@@ -314,20 +315,14 @@ mod tests {
         sps_list: &[&[u8]],
         pps_list: &[&[u8]],
     ) -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // configurationVersion
-        data.push(1);
-        // AVCProfileIndication
-        data.push(profile);
-        // profile_compatibility
-        data.push(compatibility);
-        // AVCLevelIndication
-        data.push(level);
-        // reserved (6 bits = 0b111111) | lengthSizeMinusOne (2 bits)
-        data.push(0xFC | (length_size_minus_one & 0x03));
-        // reserved (3 bits = 0b111) | numOfSequenceParameterSets (5 bits)
-        data.push(0xE0 | (sps_list.len() as u8 & 0x1F));
+        let mut data = vec![
+            1,                                     // configurationVersion
+            profile,                               // AVCProfileIndication
+            compatibility,                         // profile_compatibility
+            level,                                 // AVCLevelIndication
+            0xFC | (length_size_minus_one & 0x03), // reserved (6 bits) | lengthSizeMinusOne (2 bits)
+            0xE0 | (sps_list.len() as u8 & 0x1F), // reserved (3 bits) | numOfSequenceParameterSets (5 bits)
+        ];
 
         // SPS NAL units
         for sps in sps_list {

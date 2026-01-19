@@ -155,7 +155,7 @@ impl<'a> TryFrom<&'a [u8]> for StszBoxView<'a> {
 impl<'a> TryFrom<&BoxView<'a>> for StszBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &BoxView<'a>) -> Result<Self> {
         if value.header.boxtype() != BoxType::STSZ {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STSZ,

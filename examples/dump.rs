@@ -24,11 +24,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let data = std::fs::read(args.input)?;
 
     println!("Parsing boxes in the input file...");
-    let mut box_iter = mp4_bmff::BoxIter::new(&data);
+    let box_iter = mp4_bmff::BoxIter::new(&data);
 
     let start = std::time::Instant::now();
 
-    while let Some(view) = box_iter.next() {
+    for view in box_iter {
         let view = view?;
         println!(
             "Box: {:?}, Size: {}",
