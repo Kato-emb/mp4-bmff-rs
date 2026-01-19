@@ -40,7 +40,7 @@ pub struct VisualSampleEntry {
     pub vertresolution: U16F16,
     /// The number of frames.
     pub frame_count: u16,
-    compressorname_len: u8,
+    /// Compressor name field (32 bytes total: first byte is length, followed by 31 bytes of data).
     compressorname: [u8; 32],
     /// The color depth.
     pub depth: u16,
@@ -57,7 +57,6 @@ impl Default for VisualSampleEntry {
             horizresolution: U16F16::from_raw(0x00480000), // 72 dpi
             vertresolution: U16F16::from_raw(0x00480000),  // 72 dpi
             frame_count: 1,
-            compressorname_len: 0,
             compressorname: [0; 32],
             depth: 0x0018,
         }
@@ -77,22 +76,25 @@ impl VisualSampleEntry {
     }
 
     /// Returns the compressor name as a string slice, if valid UTF-8.
+    ///
+    /// The compressorname field is 32 bytes: first byte is length, followed by 31 bytes of data.
     pub fn compressorname(&self) -> Option<&str> {
-        let len = self.compressorname_len as usize;
-        let name_bytes = &self.compressorname[..len];
+        let len = (self.compressorname[0] as usize).min(31);
+        let name_bytes = &self.compressorname[1..1 + len];
         core::str::from_utf8(name_bytes).ok()
     }
 
-    /// Sets the compressor name. Truncates if longer than 32 bytes.
+    /// Sets the compressor name. Truncates if longer than 31 bytes.
+    ///
+    /// The compressorname field is 32 bytes: first byte is length, followed by 31 bytes of data.
     pub fn set_compressorname(&mut self, name: &str) {
         let bytes = name.as_bytes();
-        let len = bytes.len().min(32);
-        self.compressorname_len = len as u8;
-        self.compressorname[..len].copy_from_slice(&bytes[..len]);
-        if len < 32 {
-            for b in &mut self.compressorname[len..] {
-                *b = 0;
-            }
+        let len = bytes.len().min(31);
+        self.compressorname[0] = len as u8;
+        self.compressorname[1..1 + len].copy_from_slice(&bytes[..len]);
+        // Clear remaining bytes
+        for b in &mut self.compressorname[1 + len..] {
+            *b = 0;
         }
     }
 
@@ -117,7 +119,7 @@ impl VisualSampleEntry {
 
         let frame_count = cur.read_u16_be()?;
 
-        let compressorname_len = cur.read_u8()?;
+        // compressorname is a 32-byte field: first byte is length, followed by 31 bytes of data
         let compressorname = cur.read_array::<32>()?;
 
         let depth = cur.read_u16_be()?;
@@ -132,7 +134,6 @@ impl VisualSampleEntry {
             horizresolution,
             vertresolution,
             frame_count,
-            compressorname_len,
             compressorname,
             depth,
         })
