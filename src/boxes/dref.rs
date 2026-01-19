@@ -57,7 +57,7 @@ impl<'a> DrefBoxView<'a> {
 
         let entries = cur.remaining_slice();
         for _ in 0..entry_count {
-            BoxView::parse(cur)?;
+            BoxView::parse_in(cur)?;
         }
 
         if !cur.is_empty() {
@@ -231,7 +231,6 @@ mod owned {
     use crate::lib::String;
 
     use super::*;
-    use crate::cursor::WriteCursor;
 
     /// An owned entry in the Data Reference Box (`dref`).
     #[derive(Debug, Clone)]
@@ -363,28 +362,6 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<Self> {
             let urn_view = UrnBoxView::parse(payload)?;
             Ok(Self::from_view(&urn_view))
-        }
-
-        /// Writes the `UrnBox` to the given `WriteCursor`.
-        pub fn write(&self, cursor: &mut WriteCursor<'_>) -> Result<()> {
-            let full_box_header = FullBoxHeader::<UrnSpec>::new(self.version, self.flags);
-            full_box_header.write(cursor)?;
-
-            cursor
-                .write_slice(self.name.as_bytes())
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-            // Null-terminate the name string
-            cursor
-                .write_u8(0)
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-            cursor
-                .write_slice(self.location.as_bytes())
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-            // Null-terminate the location string
-            cursor
-                .write_u8(0)
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))?;
-            Ok(())
         }
     }
 
@@ -686,7 +663,6 @@ mod tests {
     #[cfg(feature = "alloc")]
     mod alloc_tests {
         use super::*;
-        use crate::cursor::WriteCursor;
 
         #[test]
         fn url_box_ref_to_owned() {
@@ -709,30 +685,6 @@ mod tests {
             assert_eq!(urn_owned.flags.get(), urn_ref.flags.get());
             assert_eq!(urn_owned.name.as_str(), urn_ref.name);
             assert_eq!(urn_owned.location.as_str(), urn_ref.location);
-        }
-
-        #[test]
-        fn urn_box_write_roundtrip() {
-            let name = "urn:example:resource";
-            let location = "http://example.com/resource.mp4";
-            let original = UrnBox {
-                version: 0,
-                flags: FullBoxFlags::empty(),
-                name: name.to_string(),
-                location: location.to_string(),
-            };
-
-            // FullBoxHeader (4) + name + null + location + null
-            let size = 4 + name.len() + 1 + location.len() + 1;
-            let mut buf = vec![0u8; size];
-            let mut cursor = WriteCursor::new(&mut buf);
-            original.write(&mut cursor).unwrap();
-
-            let parsed = UrnBox::parse(&buf).unwrap();
-            assert_eq!(parsed.version, original.version);
-            assert_eq!(parsed.flags.get(), original.flags.get());
-            assert_eq!(parsed.name, original.name);
-            assert_eq!(parsed.location, original.location);
         }
 
         #[test]

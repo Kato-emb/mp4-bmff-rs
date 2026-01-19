@@ -197,6 +197,31 @@ impl BoxType {
         boxtype: FourCC::new(*b"stco"),
         usertype: None,
     };
+    /// `type` field value used by AVC Configuration boxes.
+    pub const AVCC: Self = Self {
+        boxtype: FourCC::new(*b"avcC"),
+        usertype: None,
+    };
+    /// `type` field value used by AVC Sample Entry boxes.
+    pub const AVC1: Self = Self {
+        boxtype: FourCC::new(*b"avc1"),
+        usertype: None,
+    };
+    /// `type` field value used by Sample Description boxes.
+    pub const STSD: Self = Self {
+        boxtype: FourCC::new(*b"stsd"),
+        usertype: None,
+    };
+    /// `type` field value used by Elementary Stream Descriptor boxes.
+    pub const ESDS: Self = Self {
+        boxtype: FourCC::new(*b"esds"),
+        usertype: None,
+    };
+    /// `type` field value used by MP4 Audio Sample Entry boxes.
+    pub const MP4A: Self = Self {
+        boxtype: FourCC::new(*b"mp4a"),
+        usertype: None,
+    };
 }
 
 #[cfg(test)]

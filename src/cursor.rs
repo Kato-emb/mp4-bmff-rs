@@ -99,7 +99,7 @@ impl<'a> ReadCursor<'a> {
 
     /// Returns the entire inner byte slice.
     #[inline]
-    pub const fn inner(&self) -> &[u8] {
+    pub const fn inner(&self) -> &'a [u8] {
         self.inner
     }
 

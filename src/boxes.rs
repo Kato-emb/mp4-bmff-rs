@@ -111,7 +111,7 @@
 //! +----+----+----+----+----+----+-+-+--------------------------------
 //! |stsd|    |    |    |    |    | | |sample descriptions
 //! |    |avcc|    |    |    |    | |-|
-//! |    |    |avc1|    |    |    | | |Advanced Video Coding
+//! |    |    |avc1|    |    |    | |○|Advanced Video Coding
 //! |    |hevx|    |    |    |    | |-|
 //! |    |    |hev1|    |    |    | | |HEVC video with parameter sets in the Sample Entry or samples
 //! |    |vpxx|    |    |    |    | |-|
@@ -128,12 +128,15 @@
 //! |    |    |    |    |    |    | | |
 //! ```
 
+mod avcc;
 mod dinf;
 mod dref;
+mod esds;
 mod free;
 mod ftyp;
 mod mdat;
 mod moov;
+mod mp4a;
 mod mvhd;
 mod stco;
 mod stsc;
@@ -142,15 +145,20 @@ mod stts;
 mod tkhd;
 mod trak;
 
+mod sample_entry;
+
 // Variable-size boxes - View types
 pub use dref::DrefBoxView;
 pub use dref::UrlBoxView;
 pub use dref::UrnBoxView;
+pub use esds::EsdsBoxView;
 pub use free::FreeBoxView;
 pub use ftyp::FtypBoxView;
 pub use mdat::MdatBoxView;
+pub use mp4a::Mp4aBoxView;
 pub use stco::StcoBoxView;
 pub use stsc::StscBoxView;
+pub use stsd::StsdBoxView;
 pub use stts::SttsBoxView;
 
 // Container boxes - View types
@@ -169,16 +177,29 @@ pub use stts::SttsEntry;
 
 // Re-export entry views
 pub use dref::DrefEntryView;
+pub use stsd::StsdEntryView;
 
 // Re-export fullbox flags and specs
 pub use dref::{DrefFlags, DrefSpec};
 pub use dref::{UrlFlags, UrlSpec};
 pub use dref::{UrnFlags, UrnSpec};
+pub use esds::{EsdsFlags, EsdsSpec};
 pub use mvhd::{MvhdFlags, MvhdSpec};
 pub use stco::{StcoFlags, StcoSpec};
 pub use stsc::{StscFlags, StscSpec};
+pub use stsd::{StsdFlags, StsdSpec};
 pub use stts::{SttsFlags, SttsSpec};
 pub use tkhd::{TkhdFlags, TkhdSpec};
+
+// Re-export sample entry
+pub use sample_entry::AudioSampleEntry;
+pub use sample_entry::SampleEntry;
+pub use sample_entry::VisualSampleEntry;
+
+// Re-export avcc box and related types
+pub use avcc::Avc1BoxView;
+pub use avcc::AvcCBoxView;
+pub use avcc::NalUnitIter;
 
 #[cfg(feature = "alloc")]
 mod owned_exports {
@@ -188,11 +209,14 @@ mod owned_exports {
     pub use dref::DrefBox;
     pub use dref::UrlBox;
     pub use dref::UrnBox;
+    pub use esds::EsdsBox;
     pub use free::FreeBox;
     pub use ftyp::FtypBox;
     pub use mdat::MdatBox;
+    pub use mp4a::Mp4aBox;
     pub use stco::StcoBox;
     pub use stsc::StscBox;
+    pub use stsd::StsdBox;
     pub use stts::SttsBox;
 
     // Container boxes - Owned types
@@ -202,6 +226,11 @@ mod owned_exports {
 
     // Re-export entry owned types
     pub use dref::DrefEntry;
+    pub use stsd::StsdEntry;
+
+    // Re-export avcc owned types
+    pub use avcc::Avc1Box;
+    pub use avcc::AvcCBox;
 }
 
 #[cfg(feature = "alloc")]
