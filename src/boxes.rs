@@ -30,8 +30,8 @@
 //! |    |    |    |    |nmhd|    | | |Null media header, overall information (some tracks only)
 //! |    |    |    |    |dinf|    |*|○|data information box, container
 //! |    |    |    |    |    |dref|*|○|data reference box, declares source(s) of media data in track
-//! |    |    |    |    |stbl|    |*| |sample table box, container for the time/space map
-//! |    |    |    |    |    |stsd|*| |sample descriptions (codec types, initialization etc.)
+//! |    |    |    |    |stbl|    |*|○|sample table box, container for the time/space map
+//! |    |    |    |    |    |stsd|*|○|sample descriptions (codec types, initialization etc.)
 //! |    |    |    |    |    |stts|*|○|(decoding) time-to-sample
 //! |    |    |    |    |    |ctts| | |(composition) time to sample
 //! |    |    |    |    |    |cslg| | |composition to decode timeline mapping
@@ -39,7 +39,7 @@
 //! |    |    |    |    |    |stsz| | |sample sizes (framing)
 //! |    |    |    |    |    |stz2| | |compact sample sizes (framing)
 //! |    |    |    |    |    |stco|*|○|chunk offset, partial data-offset information
-//! |    |    |    |    |    |co64| | |64-bit chunk offset
+//! |    |    |    |    |    |co64| |○|64-bit chunk offset
 //! |    |    |    |    |    |stss| | |sync sample table
 //! |    |    |    |    |    |stsh| | |shadow sync sample table
 //! |    |    |    |    |    |padb| | |sample padding bits
@@ -120,7 +120,7 @@
 //! |    |av1 |    |    |    |    | | |AV1 video
 //! |    |opus|    |    |    |    | | |Opus audio coding
 //! |    |mp4v|    |    |    |    | | |MPEG-4 Visual
-//! |    |mp4a|    |    |    |    | | |MPEG-4 Audio
+//! |    |mp4a|    |    |    |    | |○|MPEG-4 Audio
 //! |    |mp4s|    |    |    |    | | |MPEG-4 System Stream
 //! |    |pasp|    |    |    |    | | |Pixel Aspect Ratio
 //! |    |btrt|    |    |    |    | | |Bitrate
@@ -129,6 +129,7 @@
 //! ```
 
 mod avcc;
+mod co64;
 mod dinf;
 mod dref;
 mod esds;
@@ -138,6 +139,7 @@ mod mdat;
 mod moov;
 mod mp4a;
 mod mvhd;
+mod stbl;
 mod stco;
 mod stsc;
 mod stsd;
@@ -148,6 +150,7 @@ mod trak;
 mod sample_entry;
 
 // Variable-size boxes - View types
+pub use co64::Co64BoxView;
 pub use dref::DrefBoxView;
 pub use dref::UrlBoxView;
 pub use dref::UrnBoxView;
@@ -164,6 +167,7 @@ pub use stts::SttsBoxView;
 // Container boxes - View types
 pub use dinf::DinfBoxView;
 pub use moov::MoovBoxView;
+pub use stbl::StblBoxView;
 pub use trak::TrakBoxView;
 
 // Fixed-size boxes (Copy types, no View/Owned distinction)
@@ -171,6 +175,7 @@ pub use mvhd::MvhdBox;
 pub use tkhd::TkhdBox;
 
 // Re-export entry structs
+pub use co64::Co64Entry;
 pub use stco::StcoEntry;
 pub use stsc::StscEntry;
 pub use stts::SttsEntry;
@@ -179,7 +184,10 @@ pub use stts::SttsEntry;
 pub use dref::DrefEntryView;
 pub use stsd::StsdEntryView;
 
+pub use stbl::ChunkOffsetsView;
+
 // Re-export fullbox flags and specs
+pub use co64::{Co64Flags, Co64Spec};
 pub use dref::{DrefFlags, DrefSpec};
 pub use dref::{UrlFlags, UrlSpec};
 pub use dref::{UrnFlags, UrnSpec};
@@ -206,6 +214,7 @@ mod owned_exports {
     use super::*;
 
     // Variable-size boxes - Owned types
+    pub use co64::Co64Box;
     pub use dref::DrefBox;
     pub use dref::UrlBox;
     pub use dref::UrnBox;
@@ -222,6 +231,7 @@ mod owned_exports {
     // Container boxes - Owned types
     pub use dinf::DinfBox;
     pub use moov::MoovBox;
+    pub use stbl::StblBox;
     pub use trak::TrakBox;
 
     // Re-export entry owned types

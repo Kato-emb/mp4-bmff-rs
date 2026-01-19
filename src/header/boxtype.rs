@@ -222,6 +222,16 @@ impl BoxType {
         boxtype: FourCC::new(*b"mp4a"),
         usertype: None,
     };
+    /// `type` field value used by Sample Table boxes.
+    pub const STBL: Self = Self {
+        boxtype: FourCC::new(*b"stbl"),
+        usertype: None,
+    };
+    /// `type` field value used by 64-bit Chunk Offset boxes.
+    pub const CO64: Self = Self {
+        boxtype: FourCC::new(*b"co64"),
+        usertype: None,
+    };
 }
 
 #[cfg(test)]
