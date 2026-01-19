@@ -4,7 +4,9 @@ use crate::FullBoxFlags;
 use crate::FullBoxHeader;
 use crate::error::*;
 
+use crate::descriptor::DescriptorView;
 use crate::descriptor::EsDescriptorView;
+use crate::descriptor::Tag;
 
 /// A reference to an ESDS box's contents.
 #[derive(Debug)]
@@ -20,7 +22,17 @@ pub struct EsdsBoxView<'a> {
 impl<'a> EsdsBoxView<'a> {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
         let full_box_header = FullBoxHeader::<EsdsSpec>::parse_in(cur)?;
-        let esd = EsDescriptorView::parse_in(cur)?;
+        let es_descr = DescriptorView::parse_in(cur)?;
+        let esd = if es_descr.tag == Tag::ES_DESCR_TAG {
+            EsDescriptorView::parse(es_descr.instance)?
+        } else {
+            return Err(Error::at(
+                ErrorKind::Other {
+                    description: "Expected ES Descriptor",
+                },
+                cur.position() as u64,
+            ));
+        };
 
         Ok(EsdsBoxView {
             version: full_box_header.version(),
