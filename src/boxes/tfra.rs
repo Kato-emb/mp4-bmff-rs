@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// An entry in a Track Fragment Random Access Box (`tfra`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,8 +182,13 @@ impl<'a> TfraBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<TfraBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<TfraSpec>::parse_in(cur)?;
-        let version = full_box_header.version();
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = TfraFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         if version > 1 {
             return Err(Error::in_box(
@@ -238,7 +242,7 @@ impl<'a> TfraBoxView<'a> {
 
         Ok(TfraBoxView {
             version,
-            flags: full_box_header.flags(),
+            flags,
             track_id,
             length_size_of_traf_num,
             length_size_of_trun_num,

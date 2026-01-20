@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// Movie Fragment Random Access Offset Box (`mfro`).
 ///
@@ -22,8 +21,13 @@ pub struct MfroBox {
 
 impl MfroBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MfroBox> {
-        let full_box_header = FullBoxHeader::<MfroSpec>::parse_in(cur)?;
-        let version = full_box_header.version();
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = MfroFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         if version != 0 {
             return Err(Error::in_box(
@@ -51,7 +55,7 @@ impl MfroBox {
 
         Ok(MfroBox {
             version,
-            flags: full_box_header.flags(),
+            flags,
             size: mfra_size,
         })
     }

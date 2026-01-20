@@ -67,6 +67,16 @@ impl<T> FullBoxFlags<T> {
         }
     }
 
+    /// Creates a new `FullBoxFlags` from a 3-byte array (big-endian).
+    #[inline]
+    pub const fn from_bytes(bytes: [u8; 3]) -> Self {
+        let mask = ((bytes[0] as u32) << 16) | ((bytes[1] as u32) << 8) | (bytes[2] as u32);
+        Self {
+            mask,
+            _marker: marker::PhantomData,
+        }
+    }
+
     /// Creates a `FullBoxFlags` from the given raw bits, truncating to 24 bits.
     #[inline]
     pub const fn from_bits_truncate(bits: u32) -> Self {

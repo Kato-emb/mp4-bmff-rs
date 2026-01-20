@@ -3,7 +3,6 @@ use crate::cursor::ReadCursor;
 use crate::BoxType;
 use crate::BoxFrame;
 use crate::FullBoxFlags;
-use crate::FullBoxHeader;
 use crate::error::*;
 
 /// A reference to a Video Media Header Box (`vmhd`).
@@ -32,7 +31,13 @@ impl Default for VmhdBox {
 
 impl VmhdBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<VmhdBox> {
-        let full_box_header = FullBoxHeader::<VmhdSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = VmhdFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let graphicsmode = cur
             .read_u16_be()
@@ -56,8 +61,8 @@ impl VmhdBox {
         }
 
         Ok(VmhdBox {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             graphicsmode,
             opcolor,
         })

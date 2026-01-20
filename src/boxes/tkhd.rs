@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::cursor::ReadCursor;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 use crate::types::*;
 
 /// A Track Header Box (`tkhd`).
@@ -62,10 +61,15 @@ impl TkhdBox {
     const RESERVED_3_SIZE: usize = mem::size_of::<u16>();
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TkhdBox> {
-        let full_box_header = FullBoxHeader::<TkhdSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = TkhdFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
-        let (creation_time, modification_time, track_id, duration) = match full_box_header.version()
-        {
+        let (creation_time, modification_time, track_id, duration) = match version {
             1 => {
                 let creation_time = cur
                     .read_u64_be()
@@ -169,8 +173,8 @@ impl TkhdBox {
         }
 
         Ok(TkhdBox {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             creation_time,
             modification_time,
             track_id,

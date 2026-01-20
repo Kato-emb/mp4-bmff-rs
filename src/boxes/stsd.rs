@@ -4,7 +4,6 @@ use crate::BoxFrame;
 use crate::cursor::ReadCursor;
 
 use crate::FullBoxFlags;
-use crate::FullBoxHeader;
 use crate::error::*;
 
 use crate::boxes::Avc1BoxView;
@@ -48,7 +47,13 @@ impl<'a> StsdBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> crate::error::Result<Self> {
-        let full_box_header = FullBoxHeader::<StsdSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = StsdFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let entry_count = cur
             .read_u32_be()
@@ -70,8 +75,8 @@ impl<'a> StsdBoxView<'a> {
         }
 
         Ok(StsdBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             entry_count,
             entries,
         })

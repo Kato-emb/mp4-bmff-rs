@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// An entry in the Sync Sample Box (`stss`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +62,13 @@ impl<'a> StssBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StssBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<StssSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = StssFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let entry_count = cur
             .read_u32_be()
@@ -85,8 +90,8 @@ impl<'a> StssBoxView<'a> {
         let entries = cur.take(cur.remaining())?;
 
         Ok(StssBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             entry_count,
             entries,
         })

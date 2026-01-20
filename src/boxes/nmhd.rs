@@ -3,7 +3,6 @@ use crate::cursor::ReadCursor;
 use crate::BoxType;
 use crate::BoxFrame;
 use crate::FullBoxFlags;
-use crate::FullBoxHeader;
 use crate::error::*;
 
 /// A Null Media Header Box (`nmhd`).
@@ -29,7 +28,13 @@ impl Default for NmhdBox {
 
 impl NmhdBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<NmhdBox> {
-        let full_box_header = FullBoxHeader::<NmhdSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = NmhdFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         if !cur.is_empty() {
             return Err(Error::in_box(
@@ -42,8 +47,8 @@ impl NmhdBox {
         }
 
         Ok(NmhdBox {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
         })
     }
 

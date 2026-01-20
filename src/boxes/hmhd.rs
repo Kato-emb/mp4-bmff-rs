@@ -5,7 +5,6 @@ use crate::cursor::ReadCursor;
 use crate::BoxType;
 use crate::BoxFrame;
 use crate::FullBoxFlags;
-use crate::FullBoxHeader;
 use crate::error::*;
 
 /// A Hint Media Header Box (`hmhd`).
@@ -46,7 +45,13 @@ impl HmhdBox {
     const RESERVED_SIZE: usize = mem::size_of::<u32>();
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<HmhdBox> {
-        let full_box_header = FullBoxHeader::<HmhdSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = HmhdFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let max_pdu_size = cur
             .read_u16_be()
@@ -79,8 +84,8 @@ impl HmhdBox {
         }
 
         Ok(HmhdBox {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             max_pdu_size,
             avg_pdu_size,
             max_bitrate,

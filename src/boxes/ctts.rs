@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// An entry in the Composition Time to Sample Box (`ctts`).
 #[derive(Debug, Clone, Copy)]
@@ -60,9 +59,14 @@ impl<'a> CttsBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<CttsBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<CttsSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = CttsFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
-        let version = full_box_header.version();
         if version > 1 {
             return Err(Error::in_box(
                 ErrorKind::InvalidBoxVersion {
@@ -93,8 +97,8 @@ impl<'a> CttsBoxView<'a> {
         let entries = cur.take(cur.remaining())?;
 
         Ok(CttsBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             entry_count,
             entries,
         })

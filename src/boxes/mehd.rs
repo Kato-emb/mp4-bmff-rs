@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// Movie Extends Header Box (`mehd`).
 ///
@@ -23,8 +22,13 @@ pub struct MehdBox {
 
 impl MehdBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MehdBox> {
-        let full_box_header = FullBoxHeader::<MehdSpec>::parse_in(cur)?;
-        let version = full_box_header.version();
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = MehdFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let fragment_duration = match version {
             0 => cur
@@ -46,7 +50,7 @@ impl MehdBox {
 
         Ok(MehdBox {
             version,
-            flags: full_box_header.flags(),
+            flags,
             fragment_duration,
         })
     }

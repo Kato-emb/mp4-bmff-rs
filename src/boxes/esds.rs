@@ -1,7 +1,6 @@
 use crate::cursor::ReadCursor;
 
 use crate::FullBoxFlags;
-use crate::FullBoxHeader;
 use crate::error::*;
 
 use crate::descriptor::DescriptorView;
@@ -21,7 +20,13 @@ pub struct EsdsBoxView<'a> {
 
 impl<'a> EsdsBoxView<'a> {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
-        let full_box_header = FullBoxHeader::<EsdsSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = EsdsFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
         let es_descr = DescriptorView::parse_in(cur)?;
         let esd = if es_descr.tag == Tag::ES_DESCR_TAG {
             EsDescriptorView::parse(es_descr.instance)?
@@ -35,8 +40,8 @@ impl<'a> EsdsBoxView<'a> {
         };
 
         Ok(EsdsBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             esd,
         })
     }

@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// Track Fragment Header Box (`tfhd`).
 ///
@@ -37,8 +36,13 @@ pub struct TfhdBox {
 
 impl TfhdBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TfhdBox> {
-        let full_box_header = FullBoxHeader::<TfhdSpec>::parse_in(cur)?;
-        let flags = full_box_header.flags();
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = TfhdFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let track_id = cur
             .read_u32_be()
@@ -100,7 +104,7 @@ impl TfhdBox {
         }
 
         Ok(TfhdBox {
-            version: full_box_header.version(),
+            version,
             flags,
             track_id,
             base_data_offset,

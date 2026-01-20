@@ -6,7 +6,6 @@ use crate::types::FourCC;
 use crate::BoxType;
 use crate::BoxFrame;
 use crate::FullBoxFlags;
-use crate::FullBoxHeader;
 use crate::error::*;
 
 /// A reference to a Handler Reference Box (`hdlr`).
@@ -30,7 +29,13 @@ impl<'a> HdlrBoxView<'a> {
     const RESERVED_SIZE: usize = 3 * mem::size_of::<u32>();
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<HdlrBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<HdlrSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = HdlrFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         // Skip pre_defined (4 bytes, should be 0)
         cur.advance(Self::PRE_DEFINED_SIZE)
@@ -64,8 +69,8 @@ impl<'a> HdlrBoxView<'a> {
         })?;
 
         Ok(HdlrBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             handler_type,
             name,
         })

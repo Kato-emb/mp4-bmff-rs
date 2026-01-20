@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// Track Extends Defaults Box (`trex`).
 ///
@@ -31,7 +30,13 @@ pub struct TrexBox {
 
 impl TrexBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TrexBox> {
-        let full_box_header = FullBoxHeader::<TrexSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = TrexFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let track_id = cur
             .read_u32_be()
@@ -54,8 +59,8 @@ impl TrexBox {
             .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
 
         Ok(TrexBox {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             track_id,
             default_sample_description_index,
             default_sample_duration,

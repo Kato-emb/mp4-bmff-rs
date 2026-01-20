@@ -57,60 +57,65 @@ impl MvhdBox {
     const PRE_DEFINED_SIZE: usize = 6 * mem::size_of::<u32>(); // pre_defined
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MvhdBox> {
-        let full_box_header = FullBoxHeader::<MvhdSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = MvhdFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
-        let (creation_time, modification_time, timescale, duration) =
-            match full_box_header.version() {
-                1 => {
-                    let creation_time = cur
-                        .read_u64_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    let modification_time = cur
-                        .read_u64_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    let timescale = cur
-                        .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    let duration = cur
-                        .read_u64_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    (
-                        QuickTimeDateTime::from_quicktime_seconds(creation_time),
-                        QuickTimeDateTime::from_quicktime_seconds(modification_time),
-                        timescale,
-                        duration,
-                    )
-                }
-                0 => {
-                    let creation_time = cur
-                        .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                        as u64;
-                    let modification_time = cur
-                        .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                        as u64;
-                    let timescale = cur
-                        .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    let duration = cur
-                        .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                        as u64;
-                    (
-                        QuickTimeDateTime::from_quicktime_seconds(creation_time),
-                        QuickTimeDateTime::from_quicktime_seconds(modification_time),
-                        timescale,
-                        duration,
-                    )
-                }
-                other => {
-                    return Err(Error::new(ErrorKind::InvalidBoxVersion {
-                        reason: "0 or 1 in this specification",
-                        got: other,
-                    }));
-                }
-            };
+        let (creation_time, modification_time, timescale, duration) = match version {
+            1 => {
+                let creation_time = cur
+                    .read_u64_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                let modification_time = cur
+                    .read_u64_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                let timescale = cur
+                    .read_u32_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                let duration = cur
+                    .read_u64_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                (
+                    QuickTimeDateTime::from_quicktime_seconds(creation_time),
+                    QuickTimeDateTime::from_quicktime_seconds(modification_time),
+                    timescale,
+                    duration,
+                )
+            }
+            0 => {
+                let creation_time = cur
+                    .read_u32_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
+                    as u64;
+                let modification_time = cur
+                    .read_u32_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
+                    as u64;
+                let timescale = cur
+                    .read_u32_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                let duration = cur
+                    .read_u32_be()
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
+                    as u64;
+                (
+                    QuickTimeDateTime::from_quicktime_seconds(creation_time),
+                    QuickTimeDateTime::from_quicktime_seconds(modification_time),
+                    timescale,
+                    duration,
+                )
+            }
+            other => {
+                return Err(Error::new(ErrorKind::InvalidBoxVersion {
+                    reason: "0 or 1 in this specification",
+                    got: other,
+                }));
+            }
+        };
 
         let rate = cur
             .read_i32_be()
@@ -150,8 +155,8 @@ impl MvhdBox {
         }
 
         Ok(MvhdBox {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             creation_time,
             modification_time,
             timescale,

@@ -1,8 +1,9 @@
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 use crate::types::FourCC;
 
-use crate::BoxType;
 use crate::BoxFrame;
+use crate::BoxType;
 use crate::error::*;
 
 /// A reference to a File Type Box (`ftyp`).
@@ -63,6 +64,44 @@ impl<'a> FtypBoxView<'a> {
         let this = FtypBoxView::parse_in(&mut cursor)?;
 
         Ok(this)
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        if self.size() > cur.remaining() {
+            // return Err(Error::at(
+            //     ErrorKind::InsufficientBuffer {
+            //         needed: self.size() as u64,
+            //         available: cur.remaining() as u64,
+            //     },
+            //     cur.position() as u64,
+            // ));
+        }
+
+        // Write major_brand (4 bytes)
+        cur.write_array(self.major_brand.as_bytes())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write minor_version (4 bytes)
+        cur.write_u32_be(self.minor_version)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write compatible_brands
+        cur.write_slice(self.compatible_brands)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        Ok(())
+    }
+
+    /// Writes this `FtypBoxView` into the given payload.
+    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+        let mut cursor = WriteCursor::new(payload);
+        self.write_in(&mut cursor)
+    }
+
+    /// Returns the size of this `FtypBoxView` when serialized.
+    #[inline]
+    pub fn size(&self) -> usize {
+        4 + 4 + self.compatible_brands.len()
     }
 }
 

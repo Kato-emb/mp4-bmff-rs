@@ -4,7 +4,6 @@ use crate::BoxFrame;
 use crate::BoxType;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// A single entry in the 64-bit Chunk Offset Box (`co64`).
 #[derive(Debug, Clone, Copy)]
@@ -45,7 +44,13 @@ impl<'a> Co64BoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Co64BoxView<'a>> {
-        let full_box_header = FullBoxHeader::<Co64Spec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = Co64Flags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let entry_count = cur
             .read_u32_be()
@@ -67,8 +72,8 @@ impl<'a> Co64BoxView<'a> {
         let entries = cur.take(cur.remaining())?;
 
         Ok(Co64BoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             entry_count,
             entries,
         })

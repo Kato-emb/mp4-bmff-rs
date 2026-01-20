@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// Movie Fragment Header Box (`mfhd`).
 ///
@@ -23,7 +22,13 @@ pub struct MfhdBox {
 
 impl MfhdBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MfhdBox> {
-        let full_box_header = FullBoxHeader::<MfhdSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = MfhdFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let sequence_number = cur
             .read_u32_be()
@@ -40,8 +45,8 @@ impl MfhdBox {
         }
 
         Ok(MfhdBox {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             sequence_number,
         })
     }

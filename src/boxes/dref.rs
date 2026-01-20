@@ -4,7 +4,6 @@ use crate::cursor::ReadCursor;
 
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 use crate::BoxFrame;
 
 /// A reference to a Data Reference Box (`dref`).
@@ -49,7 +48,13 @@ impl<'a> DrefBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<DrefBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<DrefSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = DrefFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let entry_count = cur
             .read_u32_be()
@@ -71,8 +76,8 @@ impl<'a> DrefBoxView<'a> {
         }
 
         Ok(DrefBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             entry_count,
             entries,
         })
@@ -106,9 +111,15 @@ pub struct UrlBoxView<'a> {
 
 impl<'a> UrlBoxView<'a> {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<UrlBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<UrlSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = UrlFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
-        let location = if full_box_header.flags().contains(UrlFlags::SELF_CONTAINED) {
+        let location = if flags.contains(UrlFlags::SELF_CONTAINED) {
             None
         } else {
             let loc_bytes = cur
@@ -126,8 +137,8 @@ impl<'a> UrlBoxView<'a> {
         };
 
         Ok(UrlBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             location,
         })
     }
@@ -167,7 +178,13 @@ pub struct UrnBoxView<'a> {
 
 impl<'a> UrnBoxView<'a> {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<UrnBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<UrnSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = UrnFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let name_bytes = cur
             .take_until(0)
@@ -196,8 +213,8 @@ impl<'a> UrnBoxView<'a> {
         })?;
 
         Ok(UrnBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             name,
             location,
         })

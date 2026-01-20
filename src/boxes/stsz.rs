@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// A reference to a Sample Size Box (`stsz`).
 #[derive(Debug)]
@@ -87,7 +86,13 @@ impl<'a> StszBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StszBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<StszSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = StszFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let sample_size = cur
             .read_u32_be()
@@ -127,8 +132,8 @@ impl<'a> StszBoxView<'a> {
         };
 
         Ok(StszBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             sample_size,
             sample_count,
             entries,

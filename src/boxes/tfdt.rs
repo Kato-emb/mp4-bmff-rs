@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// Track Fragment Decode Time Box (`tfdt`).
 ///
@@ -23,8 +22,13 @@ pub struct TfdtBox {
 
 impl TfdtBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TfdtBox> {
-        let full_box_header = FullBoxHeader::<TfdtSpec>::parse_in(cur)?;
-        let version = full_box_header.version();
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = TfdtFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let base_media_decode_time = match version {
             0 => cur
@@ -56,7 +60,7 @@ impl TfdtBox {
 
         Ok(TfdtBox {
             version,
-            flags: full_box_header.flags(),
+            flags,
             base_media_decode_time,
         })
     }

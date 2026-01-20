@@ -6,7 +6,6 @@ use crate::types::I8F8;
 use crate::BoxType;
 use crate::BoxFrame;
 use crate::FullBoxFlags;
-use crate::FullBoxHeader;
 use crate::error::*;
 
 /// A Sound Media Header Box (`smhd`).
@@ -37,7 +36,13 @@ impl SmhdBox {
     const RESERVED_SIZE: usize = mem::size_of::<u16>();
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<SmhdBox> {
-        let full_box_header = FullBoxHeader::<SmhdSpec>::parse_in(cur)?;
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = SmhdFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let balance = cur
             .read_i16_be()
@@ -59,8 +64,8 @@ impl SmhdBox {
         }
 
         Ok(SmhdBox {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             balance,
         })
     }

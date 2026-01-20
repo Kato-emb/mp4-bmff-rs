@@ -58,11 +58,9 @@ pub use framing::{
     BoxFrameMut,
 };
 pub use header::{
-    BoxHeader, //
-    BoxSize,
+    BoxSize, //
     BoxType,
     FullBoxFlags,
-    FullBoxHeader,
 };
 pub use iter::BoxIter;
 

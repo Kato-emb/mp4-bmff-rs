@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// Sample data from a Track Run Box (`trun`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,9 +151,13 @@ impl<'a> TrunBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<TrunBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<TrunSpec>::parse_in(cur)?;
-        let version = full_box_header.version();
-        let flags = full_box_header.flags();
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = TrunFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         if version > 1 {
             return Err(Error::in_box(

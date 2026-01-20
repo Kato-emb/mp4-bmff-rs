@@ -4,7 +4,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// Composition to Decode Timeline Mapping Box (`cslg`).
 ///
@@ -29,8 +28,13 @@ pub struct CslgBox {
 
 impl CslgBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
-        let full_box_header = FullBoxHeader::<CslgSpec>::parse_in(cur)?;
-        let version = full_box_header.version();
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = CslgFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         let (
             composition_to_dts_shift,
@@ -92,7 +96,7 @@ impl CslgBox {
 
         Ok(CslgBox {
             version,
-            flags: full_box_header.flags(),
+            flags,
             composition_to_dts_shift,
             least_decode_to_display_delta,
             greatest_decode_to_display_delta,

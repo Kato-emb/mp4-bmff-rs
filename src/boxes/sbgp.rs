@@ -5,7 +5,6 @@ use crate::BoxType;
 use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
 
 /// An entry in the Sample to Group Box (`sbgp`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,8 +56,13 @@ impl<'a> SbgpBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<SbgpBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<SbgpSpec>::parse_in(cur)?;
-        let version = full_box_header.version();
+        let version = cur
+            .read_u8()
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let flags = SbgpFlags::from_bytes(
+            cur.read_array()
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        );
 
         if version > 1 {
             return Err(Error::in_box(
@@ -103,7 +107,7 @@ impl<'a> SbgpBoxView<'a> {
 
         Ok(SbgpBoxView {
             version,
-            flags: full_box_header.flags(),
+            flags,
             grouping_type,
             grouping_type_parameter,
             entry_count,
