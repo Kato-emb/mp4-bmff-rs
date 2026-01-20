@@ -23,7 +23,7 @@
 //! # Example
 //!
 //! ```
-//! use mp4_bmff::header::FullBoxFlags;
+//! use mp4_bmff::boxes::FullBoxFlags;
 //!
 //! // Define a marker type for a specific box
 //! struct MyBox;
