@@ -3,7 +3,8 @@ use crate::cursor::ReadCursor;
 use crate::BoxFrame;
 use crate::BoxType;
 use crate::error::*;
-use crate::header::FullBoxFlags;
+
+use super::FullBoxFlags;
 
 /// A single entry in the 64-bit Chunk Offset Box (`co64`).
 #[derive(Debug, Clone, Copy)]

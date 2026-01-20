@@ -1,13 +1,14 @@
-use crate::BoxIter;
-use crate::BoxType;
-use crate::BoxFrame;
 use crate::cursor::ReadCursor;
 
-use crate::FullBoxFlags;
+use crate::BoxFrame;
+use crate::BoxIter;
+use crate::BoxType;
 use crate::error::*;
 
-use crate::boxes::Avc1BoxView;
-use crate::boxes::Mp4aBoxView;
+use super::FullBoxFlags;
+
+use super::Avc1BoxView;
+use super::Mp4aBoxView;
 
 /// An enum representing the different types of entries in a Sample Description Box (`stsd`).
 #[derive(Debug)]

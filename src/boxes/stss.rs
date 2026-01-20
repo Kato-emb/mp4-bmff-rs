@@ -1,9 +1,10 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxType;
 use crate::BoxFrame;
+use crate::BoxType;
 use crate::error::*;
-use crate::header::FullBoxFlags;
+
+use super::FullBoxFlags;
 
 /// An entry in the Sync Sample Box (`stss`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

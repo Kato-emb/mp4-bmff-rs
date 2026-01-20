@@ -1,9 +1,10 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxType;
 use crate::BoxFrame;
+use crate::BoxType;
 use crate::error::*;
-use crate::header::FullBoxFlags;
+
+use super::FullBoxFlags;
 
 /// Sample data from a Track Run Box (`trun`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

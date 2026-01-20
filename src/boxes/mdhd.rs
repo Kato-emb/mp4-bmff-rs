@@ -4,10 +4,11 @@ use crate::cursor::ReadCursor;
 use crate::types::LanguageCode;
 use crate::types::QuickTimeDateTime;
 
-use crate::BoxType;
 use crate::BoxFrame;
-use crate::FullBoxFlags;
+use crate::BoxType;
 use crate::error::*;
+
+use super::FullBoxFlags;
 
 /// A Media Header Box (`mdhd`).
 ///

@@ -1,10 +1,12 @@
 use core::mem;
 
-use crate::BoxType;
 use crate::cursor::ReadCursor;
+
+use crate::BoxType;
 use crate::error::*;
-use crate::header::FullBoxFlags;
 use crate::types::*;
+
+use super::FullBoxFlags;
 
 /// A Track Header Box (`tkhd`).
 #[derive(Debug, Clone, Copy)]

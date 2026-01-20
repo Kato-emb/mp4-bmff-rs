@@ -60,7 +60,6 @@ pub use framing::{
 pub use header::{
     BoxSize, //
     BoxType,
-    FullBoxFlags,
 };
 pub use iter::BoxIter;
 

@@ -1,10 +1,11 @@
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
-use crate::BoxType;
 use crate::BoxFrame;
+use crate::BoxType;
 use crate::error::*;
-use crate::header::FullBoxFlags;
+
+use super::FullBoxFlags;
 
 /// An entry in the Sample to Group Box (`sbgp`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

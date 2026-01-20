@@ -1,11 +1,12 @@
 use crate::cursor::ReadCursor;
 
-use crate::FullBoxFlags;
 use crate::error::*;
 
 use crate::descriptor::DescriptorView;
 use crate::descriptor::EsDescriptorView;
 use crate::descriptor::Tag;
+
+use super::FullBoxFlags;
 
 /// A reference to an ESDS box's contents.
 #[derive(Debug)]

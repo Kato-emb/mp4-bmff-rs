@@ -1,9 +1,10 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxType;
 use crate::BoxFrame;
-use crate::FullBoxFlags;
+use crate::BoxType;
 use crate::error::*;
+
+use super::FullBoxFlags;
 
 /// A Null Media Header Box (`nmhd`).
 ///
@@ -46,10 +47,7 @@ impl NmhdBox {
             ));
         }
 
-        Ok(NmhdBox {
-            version,
-            flags,
-        })
+        Ok(NmhdBox { version, flags })
     }
 
     /// Parses a `NmhdBox` from the given payload.

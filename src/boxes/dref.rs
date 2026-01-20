@@ -2,9 +2,10 @@ use crate::BoxIter;
 use crate::BoxType;
 use crate::cursor::ReadCursor;
 
-use crate::error::*;
-use crate::header::FullBoxFlags;
 use crate::BoxFrame;
+use crate::error::*;
+
+use super::FullBoxFlags;
 
 /// A reference to a Data Reference Box (`dref`).
 #[derive(Debug)]

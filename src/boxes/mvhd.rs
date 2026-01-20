@@ -6,6 +6,8 @@ use crate::types::*;
 use crate::error::*;
 use crate::header::*;
 
+use super::FullBoxFlags;
+
 /// A reference to a Movie Header Box (`mvhd`).
 #[derive(Debug, Clone, Copy)]
 pub struct MvhdBox {

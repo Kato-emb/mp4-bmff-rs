@@ -1,9 +1,10 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxType;
 use crate::BoxFrame;
+use crate::BoxType;
 use crate::error::*;
-use crate::header::FullBoxFlags;
+
+use super::FullBoxFlags;
 
 /// An entry in the Composition Time to Sample Box (`ctts`).
 #[derive(Debug, Clone, Copy)]
@@ -229,8 +230,14 @@ mod tests {
 
         // v0 with entries
         let entries = vec![
-            CttsEntry { sample_count: 10, sample_offset: 100 },
-            CttsEntry { sample_count: 20, sample_offset: 200 },
+            CttsEntry {
+                sample_count: 10,
+                sample_offset: 100,
+            },
+            CttsEntry {
+                sample_count: 20,
+                sample_offset: 200,
+            },
         ];
         let payload = make_ctts_payload_v0(entries.clone());
         let ctts = CttsBoxView::parse(&payload).unwrap();
@@ -239,7 +246,10 @@ mod tests {
         assert_eq!(parsed[0].sample_offset, 100);
 
         // v1 with negative offset
-        let entries = vec![CttsEntry { sample_count: 5, sample_offset: -50 }];
+        let entries = vec![CttsEntry {
+            sample_count: 5,
+            sample_offset: -50,
+        }];
         let payload = make_ctts_payload_v1(entries);
         let ctts = CttsBoxView::parse(&payload).unwrap();
         assert_eq!(ctts.version, 1);
@@ -274,8 +284,14 @@ mod tests {
     #[test]
     fn owned_conversion() {
         let entries = vec![
-            CttsEntry { sample_count: 10, sample_offset: 100 },
-            CttsEntry { sample_count: 20, sample_offset: -50 },
+            CttsEntry {
+                sample_count: 10,
+                sample_offset: 100,
+            },
+            CttsEntry {
+                sample_count: 20,
+                sample_offset: -50,
+            },
         ];
         let payload = make_ctts_payload_v1(entries.clone());
         let view = CttsBoxView::parse(&payload).unwrap();

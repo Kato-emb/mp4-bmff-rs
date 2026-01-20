@@ -1,9 +1,10 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxType;
 use crate::BoxFrame;
+use crate::BoxType;
 use crate::error::*;
-use crate::header::FullBoxFlags;
+
+use super::FullBoxFlags;
 
 /// A reference to a Sample Size Box (`stsz`).
 #[derive(Debug)]
@@ -335,13 +336,13 @@ mod tests {
         let payload = make_stsz_payload_variable(sizes.clone());
         let view = StszBoxView::parse(&payload).unwrap();
         let owned = StszBox::from_view(&view).unwrap();
-        
+
         if let SampleSizes::Variable(ref s) = owned.sample_sizes {
             assert_eq!(s, &sizes);
         } else {
             panic!("Expected Variable sample sizes");
         }
-        
+
         assert_eq!(owned.get_sample_size(1), Some(100));
         assert_eq!(owned.get_sample_size(4), None);
     }

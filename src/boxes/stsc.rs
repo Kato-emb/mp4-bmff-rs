@@ -1,9 +1,10 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxType;
 use crate::BoxFrame;
+use crate::BoxType;
 use crate::error::*;
-use crate::header::FullBoxFlags;
+
+use super::FullBoxFlags;
 
 /// An entry in the Sample To Chunk Box (`stsc`).
 #[derive(Debug, Clone, Copy)]
@@ -213,8 +214,16 @@ mod tests {
 
         // Multiple
         let entries = vec![
-            StscEntry { first_chunk: 1, samples_per_chunk: 10, sample_description_index: 1 },
-            StscEntry { first_chunk: 5, samples_per_chunk: 20, sample_description_index: 2 },
+            StscEntry {
+                first_chunk: 1,
+                samples_per_chunk: 10,
+                sample_description_index: 1,
+            },
+            StscEntry {
+                first_chunk: 5,
+                samples_per_chunk: 20,
+                sample_description_index: 2,
+            },
         ];
         let payload = make_stsc_payload(entries.clone());
         let stsc = StscBoxView::parse(&payload).unwrap();
@@ -252,8 +261,16 @@ mod tests {
     #[test]
     fn owned_conversion() {
         let entries = vec![
-            StscEntry { first_chunk: 1, samples_per_chunk: 10, sample_description_index: 1 },
-            StscEntry { first_chunk: 5, samples_per_chunk: 20, sample_description_index: 2 },
+            StscEntry {
+                first_chunk: 1,
+                samples_per_chunk: 10,
+                sample_description_index: 1,
+            },
+            StscEntry {
+                first_chunk: 5,
+                samples_per_chunk: 20,
+                sample_description_index: 2,
+            },
         ];
         let payload = make_stsc_payload(entries.clone());
         let view = StscBoxView::parse(&payload).unwrap();

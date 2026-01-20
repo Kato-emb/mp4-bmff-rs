@@ -2,10 +2,11 @@ use core::mem;
 
 use crate::cursor::ReadCursor;
 
-use crate::BoxType;
 use crate::BoxFrame;
-use crate::FullBoxFlags;
+use crate::BoxType;
 use crate::error::*;
+
+use super::FullBoxFlags;
 
 /// A Hint Media Header Box (`hmhd`).
 ///

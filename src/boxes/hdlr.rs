@@ -3,10 +3,11 @@ use core::mem;
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
-use crate::BoxType;
 use crate::BoxFrame;
-use crate::FullBoxFlags;
+use crate::BoxType;
 use crate::error::*;
+
+use super::FullBoxFlags;
 
 /// A reference to a Handler Reference Box (`hdlr`).
 ///

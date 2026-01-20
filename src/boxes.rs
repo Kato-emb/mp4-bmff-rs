@@ -174,7 +174,10 @@ mod trex;
 mod trun;
 mod vmhd;
 
+mod fullbox;
 mod sample_entry;
+
+pub use fullbox::FullBoxFlags;
 
 // Variable-size boxes - View types
 pub use co64::Co64BoxView;

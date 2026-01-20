@@ -1,9 +1,10 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxType;
 use crate::BoxFrame;
-use crate::FullBoxFlags;
+use crate::BoxType;
 use crate::error::*;
+
+use super::FullBoxFlags;
 
 /// A reference to a Video Media Header Box (`vmhd`).
 #[derive(Debug, Clone, Copy)]
