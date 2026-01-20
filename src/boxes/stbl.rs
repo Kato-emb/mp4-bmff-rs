@@ -237,6 +237,8 @@ pub use owned::StblBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::cursor::WriteCursor;
+
     use crate::BoxFrameMut;
     use crate::boxes::Co64Box;
     use crate::boxes::CttsBox;
@@ -246,7 +248,7 @@ mod owned {
     use crate::boxes::StssBox;
     use crate::boxes::StszBox;
     use crate::boxes::SttsBox;
-    use crate::cursor::WriteCursor;
+    use crate::framing::write_box_in;
 
     use super::*;
 
@@ -465,50 +467,34 @@ mod owned {
             size
         }
 
-        fn write_box<F>(
-            cur: &mut WriteCursor<'_>,
-            boxtype: BoxType,
-            payload_size: usize,
-            write_payload: F,
-        ) -> Result<()>
-        where
-            F: FnOnce(&mut [u8]) -> Result<()>,
-        {
-            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
-            let buf = cur.take_mut(frame_size)?;
-            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
-            write_payload(frame.payload_mut())?;
-            Ok(())
-        }
-
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             // stsd
-            Self::write_box(cur, BoxType::STSD, self.stsd.size(), |p| self.stsd.write(p))?;
+            write_box_in(cur, BoxType::STSD, self.stsd.size(), |p| self.stsd.write(p))?;
 
             // stts
-            Self::write_box(cur, BoxType::STTS, self.stts.size(), |p| self.stts.write(p))?;
+            write_box_in(cur, BoxType::STTS, self.stts.size(), |p| self.stts.write(p))?;
 
             // ctts (optional)
             if let Some(ref ctts) = self.ctts {
-                Self::write_box(cur, BoxType::CTTS, ctts.size(), |p| ctts.write(p))?;
+                write_box_in(cur, BoxType::CTTS, ctts.size(), |p| ctts.write(p))?;
             }
 
             // cslg (optional)
             if let Some(ref cslg) = self.cslg {
-                Self::write_box(cur, BoxType::CSLG, cslg.size(), |p| cslg.write(p))?;
+                write_box_in(cur, BoxType::CSLG, cslg.size(), |p| cslg.write(p))?;
             }
 
             // stsc
-            Self::write_box(cur, BoxType::STSC, self.stsc.size(), |p| self.stsc.write(p))?;
+            write_box_in(cur, BoxType::STSC, self.stsc.size(), |p| self.stsc.write(p))?;
 
             // stsz (optional)
             if let Some(ref stsz) = self.stsz {
-                Self::write_box(cur, BoxType::STSZ, stsz.size(), |p| stsz.write(p))?;
+                write_box_in(cur, BoxType::STSZ, stsz.size(), |p| stsz.write(p))?;
             }
 
             // stss (optional)
             if let Some(ref stss) = self.stss {
-                Self::write_box(cur, BoxType::STSS, stss.size(), |p| stss.write(p))?;
+                write_box_in(cur, BoxType::STSS, stss.size(), |p| stss.write(p))?;
             }
 
             // chunk_offsets

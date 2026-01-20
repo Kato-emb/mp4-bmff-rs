@@ -87,13 +87,12 @@ pub use owned::MvexBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    extern crate alloc;
-    use alloc::vec::Vec;
-
-    use crate::BoxFrameMut;
-    use crate::cursor::WriteCursor;
+    use crate::lib::Vec;
 
     use super::*;
+    use crate::BoxFrameMut;
+    use crate::cursor::WriteCursor;
+    use crate::framing::write_box_in;
 
     /// An owned Movie Extends Box (`mvex`).
     #[derive(Debug, Clone)]
@@ -159,29 +158,13 @@ mod owned {
             size
         }
 
-        fn write_box<F>(
-            cur: &mut WriteCursor<'_>,
-            boxtype: BoxType,
-            payload_size: usize,
-            write_payload: F,
-        ) -> Result<()>
-        where
-            F: FnOnce(&mut [u8]) -> Result<()>,
-        {
-            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
-            let buf = cur.take_mut(frame_size)?;
-            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
-            write_payload(frame.payload_mut())?;
-            Ok(())
-        }
-
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             if let Some(ref mehd) = self.mehd {
-                Self::write_box(cur, BoxType::MEHD, mehd.size(), |p| mehd.write(p))?;
+                write_box_in(cur, BoxType::MEHD, mehd.size(), |p| mehd.write(p))?;
             }
 
             for trex in &self.trexs {
-                Self::write_box(cur, BoxType::TREX, trex.size(), |p| trex.write(p))?;
+                write_box_in(cur, BoxType::TREX, trex.size(), |p| trex.write(p))?;
             }
 
             if !cur.is_empty() {

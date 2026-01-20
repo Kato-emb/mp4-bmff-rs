@@ -85,14 +85,14 @@ pub use owned::MfraBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    extern crate alloc;
-    use alloc::vec::Vec;
+    use crate::lib::Vec;
 
-    use crate::BoxFrameMut;
     use crate::cursor::WriteCursor;
 
     use super::*;
+    use crate::BoxFrameMut;
     use crate::boxes::TfraBox;
+    use crate::framing::write_box_in;
 
     /// An owned Movie Fragment Random Access Box (`mfra`).
     #[derive(Debug, Clone)]
@@ -133,28 +133,12 @@ mod owned {
             size
         }
 
-        fn write_box<F>(
-            cur: &mut WriteCursor<'_>,
-            boxtype: BoxType,
-            payload_size: usize,
-            write_payload: F,
-        ) -> Result<()>
-        where
-            F: FnOnce(&mut [u8]) -> Result<()>,
-        {
-            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
-            let buf = cur.take_mut(frame_size)?;
-            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
-            write_payload(frame.payload_mut())?;
-            Ok(())
-        }
-
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             for tfra in &self.tfras {
-                Self::write_box(cur, BoxType::TFRA, tfra.size(), |p| tfra.write(p))?;
+                write_box_in(cur, BoxType::TFRA, tfra.size(), |p| tfra.write(p))?;
             }
 
-            Self::write_box(cur, BoxType::MFRO, self.mfro.payload_size(), |p| {
+            write_box_in(cur, BoxType::MFRO, self.mfro.payload_size(), |p| {
                 self.mfro.write(p)
             })?;
 

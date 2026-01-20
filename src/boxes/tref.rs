@@ -102,9 +102,10 @@ pub use owned::*;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::cursor::WriteCursor;
+
     use super::*;
     use crate::BoxFrameMut;
-    use crate::cursor::WriteCursor;
 
     /// An owned Track Reference Type Box.
     #[derive(Debug, Clone)]

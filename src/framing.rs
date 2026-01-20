@@ -192,6 +192,22 @@ impl<'a> BoxFrameMut<'a> {
     }
 }
 
+pub(crate) fn write_box_in<F>(
+    cur: &mut WriteCursor<'_>,
+    boxtype: BoxType,
+    payload_len: usize,
+    write_payload: F,
+) -> Result<()>
+where
+    F: FnOnce(&mut [u8]) -> Result<()>,
+{
+    let required_len = BoxFrameMut::required_len(boxtype, payload_len);
+    let buf = cur.take_mut(required_len)?;
+    let mut frame = BoxFrameMut::new(buf, boxtype, payload_len)?;
+    write_payload(frame.payload_mut())?;
+    Ok(())
+}
+
 const BASE_HEADER_SIZE: usize = 8;
 
 /// Validates the header and returns (header_len, frame_size).

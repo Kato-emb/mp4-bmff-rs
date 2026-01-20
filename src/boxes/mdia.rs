@@ -110,12 +110,13 @@ pub use owned::MdiaBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use super::*;
+    use crate::cursor::WriteCursor;
 
+    use super::*;
     use crate::BoxFrameMut;
     use crate::boxes::HdlrBox;
     use crate::boxes::MinfBox;
-    use crate::cursor::WriteCursor;
+    use crate::framing::write_box_in;
 
     /// An owned Media Box (`mdia`).
     pub struct MdiaBox {
@@ -217,26 +218,10 @@ mod owned {
             size
         }
 
-        fn write_box<F>(
-            cur: &mut WriteCursor<'_>,
-            boxtype: BoxType,
-            payload_size: usize,
-            write_payload: F,
-        ) -> Result<()>
-        where
-            F: FnOnce(&mut [u8]) -> Result<()>,
-        {
-            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
-            let buf = cur.take_mut(frame_size)?;
-            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
-            write_payload(frame.payload_mut())?;
-            Ok(())
-        }
-
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            Self::write_box(cur, BoxType::MDHD, self.mdhd.size(), |p| self.mdhd.write(p))?;
-            Self::write_box(cur, BoxType::HDLR, self.hdlr.size(), |p| self.hdlr.write(p))?;
-            Self::write_box(cur, BoxType::MINF, self.minf.size(), |p| self.minf.write(p))?;
+            write_box_in(cur, BoxType::MDHD, self.mdhd.size(), |p| self.mdhd.write(p))?;
+            write_box_in(cur, BoxType::HDLR, self.hdlr.size(), |p| self.hdlr.write(p))?;
+            write_box_in(cur, BoxType::MINF, self.minf.size(), |p| self.minf.write(p))?;
 
             if !cur.is_empty() {
                 return Err(Error::in_box(

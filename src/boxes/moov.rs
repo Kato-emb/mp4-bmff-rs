@@ -92,16 +92,15 @@ pub use owned::MoovBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    extern crate alloc;
-    use alloc::vec::Vec;
+    use crate::lib::Vec;
 
-    use crate::BoxFrameMut;
     use crate::cursor::WriteCursor;
 
     use super::*;
-
+    use crate::BoxFrameMut;
     use crate::boxes::MvexBox;
     use crate::boxes::TrakBox;
+    use crate::framing::write_box_in;
 
     /// An owned Movie Box (`moov`).
     pub struct MoovBox {
@@ -188,31 +187,15 @@ mod owned {
             size
         }
 
-        fn write_box<F>(
-            cur: &mut WriteCursor<'_>,
-            boxtype: BoxType,
-            payload_size: usize,
-            write_payload: F,
-        ) -> Result<()>
-        where
-            F: FnOnce(&mut [u8]) -> Result<()>,
-        {
-            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
-            let buf = cur.take_mut(frame_size)?;
-            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
-            write_payload(frame.payload_mut())?;
-            Ok(())
-        }
-
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            Self::write_box(cur, BoxType::MVHD, self.mvhd.size(), |p| self.mvhd.write(p))?;
+            write_box_in(cur, BoxType::MVHD, self.mvhd.size(), |p| self.mvhd.write(p))?;
 
             if let Some(ref mvex) = self.mvex {
-                Self::write_box(cur, BoxType::MVEX, mvex.size(), |p| mvex.write(p))?;
+                write_box_in(cur, BoxType::MVEX, mvex.size(), |p| mvex.write(p))?;
             }
 
             for trak in &self.traks {
-                Self::write_box(cur, BoxType::TRAK, trak.size(), |p| trak.write(p))?;
+                write_box_in(cur, BoxType::TRAK, trak.size(), |p| trak.write(p))?;
             }
 
             if !cur.is_empty() {

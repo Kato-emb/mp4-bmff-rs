@@ -80,14 +80,14 @@ pub use owned::MoofBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    extern crate alloc;
-    use alloc::vec::Vec;
+    use crate::lib::Vec;
 
-    use crate::BoxFrameMut;
     use crate::cursor::WriteCursor;
 
     use super::*;
+    use crate::BoxFrameMut;
     use crate::boxes::TrafBox;
+    use crate::framing::write_box_in;
 
     /// An owned Movie Fragment Box (`moof`).
     #[derive(Debug, Clone)]
@@ -128,27 +128,11 @@ mod owned {
             size
         }
 
-        fn write_box<F>(
-            cur: &mut WriteCursor<'_>,
-            boxtype: BoxType,
-            payload_size: usize,
-            write_payload: F,
-        ) -> Result<()>
-        where
-            F: FnOnce(&mut [u8]) -> Result<()>,
-        {
-            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
-            let buf = cur.take_mut(frame_size)?;
-            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
-            write_payload(frame.payload_mut())?;
-            Ok(())
-        }
-
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            Self::write_box(cur, BoxType::MFHD, self.mfhd.size(), |p| self.mfhd.write(p))?;
+            write_box_in(cur, BoxType::MFHD, self.mfhd.size(), |p| self.mfhd.write(p))?;
 
             for traf in &self.trafs {
-                Self::write_box(cur, BoxType::TRAF, traf.size(), |p| traf.write(p))?;
+                write_box_in(cur, BoxType::TRAF, traf.size(), |p| traf.write(p))?;
             }
 
             if !cur.is_empty() {

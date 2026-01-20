@@ -55,11 +55,11 @@ pub use owned::DinfBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use super::*;
-
     use crate::cursor::WriteCursor;
 
+    use super::*;
     use crate::boxes::DrefBox;
+    use crate::framing::write_box_in;
 
     /// An owned Data Information Box (`dinf`).
     pub struct DinfBox {
@@ -104,7 +104,7 @@ mod owned {
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             // Write dref box
-            self.dref.write_in(cur)?;
+            write_box_in(cur, BoxType::DREF, self.dref.size(), |p| self.dref.write(p))?;
             Ok(())
         }
 

@@ -228,12 +228,13 @@ pub use owned::MinfBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use super::*;
+    use crate::cursor::WriteCursor;
 
+    use super::*;
     use crate::BoxFrameMut;
     use crate::boxes::DinfBox;
     use crate::boxes::StblBox;
-    use crate::cursor::WriteCursor;
+    use crate::framing::write_box_in;
 
     /// An owned Media Information Box (`minf`).
     pub struct MinfBox {
@@ -357,27 +358,11 @@ mod owned {
             size
         }
 
-        fn write_box<F>(
-            cur: &mut WriteCursor<'_>,
-            boxtype: BoxType,
-            payload_size: usize,
-            write_payload: F,
-        ) -> Result<()>
-        where
-            F: FnOnce(&mut [u8]) -> Result<()>,
-        {
-            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
-            let buf = cur.take_mut(frame_size)?;
-            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
-            write_payload(frame.payload_mut())?;
-            Ok(())
-        }
-
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             // media header
             let mhdr_boxtype = self.media_header.boxtype();
             let mhdr_size = self.media_header.size();
-            Self::write_box(cur, mhdr_boxtype, mhdr_size, |p| match &self.media_header {
+            write_box_in(cur, mhdr_boxtype, mhdr_size, |p| match &self.media_header {
                 MediaHeader::Vmhd(vmhd) => vmhd.write(p),
                 MediaHeader::Smhd(smhd) => smhd.write(p),
                 MediaHeader::Hmhd(hmhd) => hmhd.write(p),
@@ -385,10 +370,10 @@ mod owned {
             })?;
 
             // dinf
-            Self::write_box(cur, BoxType::DINF, self.dinf.size(), |p| self.dinf.write(p))?;
+            write_box_in(cur, BoxType::DINF, self.dinf.size(), |p| self.dinf.write(p))?;
 
             // stbl
-            Self::write_box(cur, BoxType::STBL, self.stbl.size(), |p| self.stbl.write(p))?;
+            write_box_in(cur, BoxType::STBL, self.stbl.size(), |p| self.stbl.write(p))?;
 
             if !cur.is_empty() {
                 return Err(Error::in_box(

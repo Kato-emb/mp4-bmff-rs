@@ -102,12 +102,13 @@ pub use owned::TrakBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use super::*;
+    use crate::cursor::WriteCursor;
 
+    use super::*;
     use crate::BoxFrameMut;
     use crate::boxes::MdiaBox;
     use crate::boxes::TrefBox;
-    use crate::cursor::WriteCursor;
+    use crate::framing::write_box_in;
 
     /// An owned Track Box (`trak`).
     pub struct TrakBox {
@@ -206,30 +207,14 @@ mod owned {
             size
         }
 
-        fn write_box<F>(
-            cur: &mut WriteCursor<'_>,
-            boxtype: BoxType,
-            payload_size: usize,
-            write_payload: F,
-        ) -> Result<()>
-        where
-            F: FnOnce(&mut [u8]) -> Result<()>,
-        {
-            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
-            let buf = cur.take_mut(frame_size)?;
-            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
-            write_payload(frame.payload_mut())?;
-            Ok(())
-        }
-
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            Self::write_box(cur, BoxType::TKHD, self.tkhd.size(), |p| self.tkhd.write(p))?;
+            write_box_in(cur, BoxType::TKHD, self.tkhd.size(), |p| self.tkhd.write(p))?;
 
             if let Some(ref tref) = self.tref {
-                Self::write_box(cur, BoxType::TREF, tref.size(), |p| tref.write(p))?;
+                write_box_in(cur, BoxType::TREF, tref.size(), |p| tref.write(p))?;
             }
 
-            Self::write_box(cur, BoxType::MDIA, self.mdia.size(), |p| self.mdia.write(p))?;
+            write_box_in(cur, BoxType::MDIA, self.mdia.size(), |p| self.mdia.write(p))?;
 
             if !cur.is_empty() {
                 return Err(Error::in_box(
