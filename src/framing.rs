@@ -129,7 +129,7 @@ impl<'a> BoxFrameMut<'a> {
             cur.write_u32_be(bytes_len as u32)?; // Write size
         }
 
-        cur.write_array(&boxtype.type_field().as_bytes())?;
+        cur.write_array(boxtype.type_field().as_bytes())?;
 
         if is_extended {
             cur.write_u64_be(bytes_len as u64)?; // Write largesize
@@ -333,5 +333,285 @@ impl<D: AsMut<[u8]>> BoxFrameInner<D> {
     fn payload_mut(&mut self) -> &mut [u8] {
         let header_len = self.header_len;
         &mut self.data.as_mut()[header_len..]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // BoxFrame tests
+    // ========================================================================
+
+    #[test]
+    fn box_frame_parse_basic() {
+        // ftyp box: size=20, type="ftyp", payload=12 bytes
+        let data: [u8; 20] = [
+            0x00, 0x00, 0x00, 0x14, // size = 20
+            b'f', b't', b'y', b'p', // type = "ftyp"
+            b'i', b's', b'o', b'm', // payload: major_brand
+            0x00, 0x00, 0x02, 0x00, // payload: minor_version
+            b'i', b's', b'o', b'm', // payload: compatible_brand
+        ];
+
+        let frame = BoxFrame::parse(&data).unwrap();
+
+        assert_eq!(frame.header_len(), 8);
+        assert_eq!(frame.boxsize().value(), Some(20));
+        assert_eq!(frame.boxtype(), BoxType::FTYP);
+        assert_eq!(frame.payload().len(), 12);
+        assert_eq!(frame.len(), 20);
+        assert!(!frame.is_empty());
+        assert_eq!(frame.as_bytes(), &data);
+    }
+
+    #[test]
+    fn box_frame_parse_empty_payload() {
+        // free box with no payload: size=8
+        let data: [u8; 8] = [
+            0x00, 0x00, 0x00, 0x08, // size = 8
+            b'f', b'r', b'e', b'e', // type = "free"
+        ];
+
+        let frame = BoxFrame::parse(&data).unwrap();
+
+        assert_eq!(frame.header_len(), 8);
+        assert_eq!(frame.payload().len(), 0);
+        assert!(frame.is_empty());
+    }
+
+    #[test]
+    fn box_frame_parse_extended_size() {
+        // Box with extended size (size=1, largesize=24)
+        let mut data = vec![0u8; 24];
+        data[0..4].copy_from_slice(&1u32.to_be_bytes()); // size = 1 (extended marker)
+        data[4..8].copy_from_slice(b"mdat"); // type = "mdat"
+        data[8..16].copy_from_slice(&24u64.to_be_bytes()); // largesize = 24
+        data[16..24].copy_from_slice(b"testdata"); // payload
+
+        let frame = BoxFrame::parse(&data).unwrap();
+
+        assert_eq!(frame.header_len(), 16);
+        assert_eq!(frame.boxsize().value(), Some(24));
+        assert_eq!(frame.boxtype(), BoxType::MDAT);
+        assert_eq!(frame.payload(), b"testdata");
+    }
+
+    #[test]
+    fn box_frame_parse_eof_box() {
+        // EOF box: size=0 means extends to end of file
+        let data: [u8; 16] = [
+            0x00, 0x00, 0x00, 0x00, // size = 0 (EOF)
+            b'm', b'd', b'a', b't', // type = "mdat"
+            b't', b'e', b's', b't', // payload
+            b'd', b'a', b't', b'a',
+        ];
+
+        let frame = BoxFrame::parse(&data).unwrap();
+
+        assert_eq!(frame.header_len(), 8);
+        assert!(frame.boxsize().is_eof());
+        assert_eq!(frame.boxtype(), BoxType::MDAT);
+        assert_eq!(frame.payload(), b"testdata");
+        assert_eq!(frame.len(), 16); // entire remaining data
+    }
+
+    #[test]
+    fn box_frame_parse_uuid_box() {
+        // UUID box: type="uuid" + 16-byte usertype
+        let uuid_bytes: [u8; 16] = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10,
+        ];
+        let mut data = vec![0u8; 28];
+        data[0..4].copy_from_slice(&28u32.to_be_bytes()); // size = 28
+        data[4..8].copy_from_slice(b"uuid"); // type = "uuid"
+        data[8..24].copy_from_slice(&uuid_bytes); // usertype
+        data[24..28].copy_from_slice(b"test"); // payload
+
+        let frame = BoxFrame::parse(&data).unwrap();
+
+        assert_eq!(frame.header_len(), 24);
+        assert_eq!(frame.boxsize().value(), Some(28));
+        assert!(frame.boxtype().is_uuid());
+        assert_eq!(frame.boxtype().user_type().unwrap().as_bytes(), &uuid_bytes);
+        assert_eq!(frame.payload(), b"test");
+    }
+
+    #[test]
+    fn box_frame_parse_truncates_extra_data() {
+        // Data has extra bytes beyond declared size
+        let data: [u8; 16] = [
+            0x00, 0x00, 0x00, 0x0c, // size = 12
+            b'f', b'r', b'e', b'e', // type = "free"
+            b't', b'e', b's', b't', // payload (4 bytes)
+            0xDE, 0xAD, 0xBE, 0xEF, // extra data (not part of box)
+        ];
+
+        let frame = BoxFrame::parse(&data).unwrap();
+
+        assert_eq!(frame.len(), 12);
+        assert_eq!(frame.as_bytes().len(), 12);
+        assert_eq!(frame.payload(), b"test");
+    }
+
+    #[test]
+    fn box_frame_parse_error_insufficient_header() {
+        let data: [u8; 4] = [0x00, 0x00, 0x00, 0x10]; // Only 4 bytes, need at least 8
+
+        let result = BoxFrame::parse(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn box_frame_parse_error_size_exceeds_data() {
+        let data: [u8; 8] = [
+            0x00, 0x00, 0x00, 0x20, // size = 32 (but only 8 bytes available)
+            b'f', b'r', b'e', b'e',
+        ];
+
+        let result = BoxFrame::parse(&data);
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // BoxFrameMut tests
+    // ========================================================================
+
+    #[test]
+    fn box_frame_mut_new_basic() {
+        let mut buf = vec![0u8; 20];
+        let payload_len = 12;
+
+        let frame = BoxFrameMut::new(&mut buf, BoxType::FTYP, payload_len).unwrap();
+
+        assert_eq!(frame.header_len(), 8);
+        assert_eq!(frame.boxsize().value(), Some(20));
+        assert_eq!(frame.boxtype(), BoxType::FTYP);
+        assert_eq!(frame.payload().len(), 12);
+        assert_eq!(frame.len(), 20);
+
+        // Verify header bytes
+        assert_eq!(&buf[0..4], &20u32.to_be_bytes()); // size
+        assert_eq!(&buf[4..8], b"ftyp"); // type
+    }
+
+    #[test]
+    fn box_frame_mut_new_uuid() {
+        let uuid = Uuid::from([
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10,
+        ]);
+        let boxtype = BoxType::from_uuid(uuid);
+        let payload_len = 4;
+        let mut buf = vec![0u8; BoxFrameMut::required_len(boxtype, payload_len)];
+
+        let frame = BoxFrameMut::new(&mut buf, boxtype, payload_len).unwrap();
+
+        assert_eq!(frame.header_len(), 24); // 8 + 16 (uuid)
+        assert_eq!(frame.boxtype(), boxtype);
+        assert!(frame.boxtype().is_uuid());
+        assert_eq!(frame.payload().len(), 4);
+
+        // Verify header bytes
+        assert_eq!(&buf[4..8], b"uuid");
+        assert_eq!(&buf[8..24], uuid.as_bytes());
+    }
+
+    #[test]
+    fn box_frame_mut_write_payload() {
+        let mut buf = vec![0u8; 16];
+        let payload_len = 8;
+
+        let mut frame = BoxFrameMut::new(&mut buf, BoxType::FREE, payload_len).unwrap();
+
+        // Write to payload
+        frame.payload_mut().copy_from_slice(b"testdata");
+
+        assert_eq!(frame.payload(), b"testdata");
+        assert_eq!(&buf[8..16], b"testdata");
+    }
+
+    #[test]
+    fn box_frame_mut_error_buffer_too_small() {
+        let mut buf = vec![0u8; 10];
+        let payload_len = 12; // requires 20 bytes total
+
+        let result = BoxFrameMut::new(&mut buf, BoxType::FTYP, payload_len);
+        assert!(result.is_err());
+
+        if let Err(e) = result {
+            assert!(matches!(
+                e.kind(),
+                ErrorKind::NotEnoughBytes {
+                    expected: 20,
+                    remaining: 10
+                }
+            ));
+        }
+    }
+
+    #[test]
+    fn box_frame_mut_required_len_basic() {
+        assert_eq!(BoxFrameMut::required_len(BoxType::FTYP, 0), 8);
+        assert_eq!(BoxFrameMut::required_len(BoxType::FTYP, 12), 20);
+        assert_eq!(BoxFrameMut::required_len(BoxType::MDAT, 100), 108);
+    }
+
+    #[test]
+    fn box_frame_mut_required_len_uuid() {
+        let uuid = Uuid::from([0u8; 16]);
+        let boxtype = BoxType::from_uuid(uuid);
+
+        assert_eq!(BoxFrameMut::required_len(boxtype, 0), 24); // 8 + 16
+        assert_eq!(BoxFrameMut::required_len(boxtype, 10), 34); // 8 + 16 + 10
+    }
+
+    // ========================================================================
+    // Round-trip tests
+    // ========================================================================
+
+    #[test]
+    fn box_frame_round_trip() {
+        // Create with BoxFrameMut
+        let mut buf = vec![0u8; 20];
+        {
+            let mut frame = BoxFrameMut::new(&mut buf, BoxType::FTYP, 12).unwrap();
+            frame.payload_mut()[0..4].copy_from_slice(b"isom");
+            frame.payload_mut()[4..8].copy_from_slice(&512u32.to_be_bytes());
+            frame.payload_mut()[8..12].copy_from_slice(b"iso2");
+        }
+
+        // Parse with BoxFrame
+        let frame = BoxFrame::parse(&buf).unwrap();
+
+        assert_eq!(frame.boxtype(), BoxType::FTYP);
+        assert_eq!(frame.payload().len(), 12);
+        assert_eq!(&frame.payload()[0..4], b"isom");
+        assert_eq!(&frame.payload()[8..12], b"iso2");
+    }
+
+    #[test]
+    fn box_frame_round_trip_uuid() {
+        let uuid = Uuid::from([
+            0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18, 0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E,
+            0x8F, 0x90,
+        ]);
+        let boxtype = BoxType::from_uuid(uuid);
+
+        // Create with BoxFrameMut
+        let mut buf = vec![0u8; BoxFrameMut::required_len(boxtype, 8)];
+        {
+            let mut frame = BoxFrameMut::new(&mut buf, boxtype, 8).unwrap();
+            frame.payload_mut().copy_from_slice(b"uuiddata");
+        }
+
+        // Parse with BoxFrame
+        let frame = BoxFrame::parse(&buf).unwrap();
+
+        assert!(frame.boxtype().is_uuid());
+        assert_eq!(frame.boxtype().user_type().unwrap(), uuid);
+        assert_eq!(frame.payload(), b"uuiddata");
     }
 }
