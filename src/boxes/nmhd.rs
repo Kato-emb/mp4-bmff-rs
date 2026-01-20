@@ -30,13 +30,8 @@ impl Default for NmhdBox {
 
 impl NmhdBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<NmhdBox> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = NmhdFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = NmhdFlags::from_bytes(cur.read_array()?);
 
         if !cur.is_empty() {
             return Err(Error::in_box(
@@ -65,12 +60,10 @@ impl NmhdBox {
 
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         // Write version (1 byte)
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
 
         // Write flags (3 bytes)
-        cur.write_array(&self.flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.flags.to_bytes())?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(

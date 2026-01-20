@@ -25,15 +25,11 @@ impl<'a> FtypBoxView<'a> {
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<FtypBoxView<'a>> {
         // Read major_brand (4 bytes)
-        let major_brand = cur
-            .read_array::<4>()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let major_brand = cur.read_array::<4>()?;
         let major_brand = FourCC::new(major_brand);
 
         // Read minor_version (4 bytes)
-        let minor_version = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let minor_version = cur.read_u32_be()?;
 
         // The remaining bytes are compatible_brands
         let remaining = cur.remaining();
@@ -136,17 +132,14 @@ mod owned {
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             // Write major_brand (4 bytes)
-            cur.write_array(self.major_brand.as_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(self.major_brand.as_bytes())?;
 
             // Write minor_version (4 bytes)
-            cur.write_u32_be(self.minor_version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(self.minor_version)?;
 
             // Write compatible_brands
             for brand in &self.compatible_brands {
-                cur.write_array(brand.as_bytes())
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_array(brand.as_bytes())?;
             }
 
             if !cur.is_empty() {

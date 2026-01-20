@@ -43,36 +43,27 @@ impl<'a> Iterator for TrunSampleIter<'a> {
         let mut cursor = ReadCursor::new(chunk);
 
         let sample_duration = if self.flags.sample_duration_present() {
-            match cursor
-                .read_u32_be()
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))
-            {
+            match cursor.read_u32_be() {
                 Ok(v) => Some(v),
-                Err(e) => return Some(Err(e)),
+                Err(e) => return Some(Err(e.into())),
             }
         } else {
             None
         };
 
         let sample_size = if self.flags.sample_size_present() {
-            match cursor
-                .read_u32_be()
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))
-            {
+            match cursor.read_u32_be() {
                 Ok(v) => Some(v),
-                Err(e) => return Some(Err(e)),
+                Err(e) => return Some(Err(e.into())),
             }
         } else {
             None
         };
 
         let sample_flags = if self.flags.sample_flags_present() {
-            match cursor
-                .read_u32_be()
-                .map_err(|e| Error::at(e.into(), cursor.position() as u64))
-            {
+            match cursor.read_u32_be() {
                 Ok(v) => Some(v),
-                Err(e) => return Some(Err(e)),
+                Err(e) => return Some(Err(e.into())),
             }
         } else {
             None
@@ -81,20 +72,14 @@ impl<'a> Iterator for TrunSampleIter<'a> {
         let sample_composition_time_offset = if self.flags.sample_composition_time_offsets_present()
         {
             if self.version == 0 {
-                match cursor
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cursor.position() as u64))
-                {
+                match cursor.read_u32_be() {
                     Ok(v) => Some(v as i32),
-                    Err(e) => return Some(Err(e)),
+                    Err(e) => return Some(Err(e.into())),
                 }
             } else {
-                match cursor
-                    .read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cursor.position() as u64))
-                {
+                match cursor.read_i32_be() {
                     Ok(v) => Some(v),
-                    Err(e) => return Some(Err(e)),
+                    Err(e) => return Some(Err(e.into())),
                 }
             }
         } else {
@@ -152,13 +137,8 @@ impl<'a> TrunBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<TrunBoxView<'a>> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = TrunFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = TrunFlags::from_bytes(cur.read_array()?);
 
         if version > 1 {
             return Err(Error::in_box(
@@ -170,24 +150,16 @@ impl<'a> TrunBoxView<'a> {
             ));
         }
 
-        let sample_count = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let sample_count = cur.read_u32_be()?;
 
         let data_offset = if flags.data_offset_present() {
-            Some(
-                cur.read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_i32_be()?)
         } else {
             None
         };
 
         let first_sample_flags = if flags.first_sample_flags_present() {
-            Some(
-                cur.read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u32_be()?)
         } else {
             None
         };
@@ -395,27 +367,21 @@ mod owned {
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            cur.write_u8(self.version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_array(&self.flags.to_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
 
-            cur.write_u32_be(self.sample_count)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(self.sample_count)?;
 
             if let Some(data_offset) = self.data_offset {
-                cur.write_i32_be(data_offset)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_i32_be(data_offset)?;
             }
 
             if let Some(first_sample_flags) = self.first_sample_flags {
-                cur.write_u32_be(first_sample_flags)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(first_sample_flags)?;
             }
 
             // Write raw sample data
-            cur.write_slice(&self.samples)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_slice(&self.samples)?;
 
             if !cur.is_empty() {
                 return Err(Error::in_box(

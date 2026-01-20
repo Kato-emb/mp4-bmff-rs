@@ -32,33 +32,18 @@ pub struct TrexBox {
 
 impl TrexBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TrexBox> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = TrexFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = TrexFlags::from_bytes(cur.read_array()?);
 
-        let track_id = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let track_id = cur.read_u32_be()?;
 
-        let default_sample_description_index = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let default_sample_description_index = cur.read_u32_be()?;
 
-        let default_sample_duration = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let default_sample_duration = cur.read_u32_be()?;
 
-        let default_sample_size = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let default_sample_size = cur.read_u32_be()?;
 
-        let default_sample_flags = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let default_sample_flags = cur.read_u32_be()?;
 
         Ok(TrexBox {
             version,
@@ -96,20 +81,13 @@ impl TrexBox {
     }
 
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_array(&self.flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u32_be(self.track_id)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u32_be(self.default_sample_description_index)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u32_be(self.default_sample_duration)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u32_be(self.default_sample_size)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u32_be(self.default_sample_flags)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
+        cur.write_array(&self.flags.to_bytes())?;
+        cur.write_u32_be(self.track_id)?;
+        cur.write_u32_be(self.default_sample_description_index)?;
+        cur.write_u32_be(self.default_sample_duration)?;
+        cur.write_u32_be(self.default_sample_size)?;
+        cur.write_u32_be(self.default_sample_flags)?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(

@@ -30,26 +30,17 @@ impl<'a> HdlrBoxView<'a> {
     pub(crate) const RESERVED_SIZE: usize = 3 * mem::size_of::<u32>();
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<HdlrBoxView<'a>> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = HdlrFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = HdlrFlags::from_bytes(cur.read_array()?);
 
         // Skip pre_defined (4 bytes, should be 0)
-        cur.advance(Self::PRE_DEFINED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.advance(Self::PRE_DEFINED_SIZE)?;
 
-        let handler_type_bytes = cur
-            .read_array::<4>()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let handler_type_bytes = cur.read_array::<4>()?;
         let handler_type = FourCC::new(handler_type_bytes);
 
         // Skip reserved (12 bytes)
-        cur.advance(Self::RESERVED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.advance(Self::RESERVED_SIZE)?;
 
         // The rest is the name (null-terminated UTF-8 string)
         let name_bytes = cur.take(cur.remaining())?;
@@ -160,30 +151,23 @@ mod owned {
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             // Write version (1 byte)
-            cur.write_u8(self.version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.version)?;
 
             // Write flags (3 bytes)
-            cur.write_slice(&self.flags.to_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_slice(&self.flags.to_bytes())?;
 
             // Write pre_defined (4 bytes, should be 0)
-            cur.write_slice(&[0u8; HdlrBoxView::<'_>::PRE_DEFINED_SIZE])
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_slice(&[0u8; HdlrBoxView::<'_>::PRE_DEFINED_SIZE])?;
 
             // Write handler_type (4 bytes)
-            cur.write_array(self.handler_type.as_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(self.handler_type.as_bytes())?;
 
             // Write reserved (12 bytes)
-            cur.write_slice(&[0u8; HdlrBoxView::<'_>::RESERVED_SIZE])
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_slice(&[0u8; HdlrBoxView::<'_>::RESERVED_SIZE])?;
 
             // Write name (null-terminated string)
-            cur.write_slice(self.name.as_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_u8(0)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_slice(self.name.as_bytes())?;
+            cur.write_u8(0)?;
 
             if !cur.is_empty() {
                 return Err(Error::in_box(

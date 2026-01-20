@@ -57,13 +57,8 @@ impl<'a> SbgpBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<SbgpBoxView<'a>> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = SbgpFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = SbgpFlags::from_bytes(cur.read_array()?);
 
         if version > 1 {
             return Err(Error::in_box(
@@ -75,23 +70,16 @@ impl<'a> SbgpBoxView<'a> {
             ));
         }
 
-        let grouping_type_bytes = cur
-            .read_array::<4>()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let grouping_type_bytes = cur.read_array::<4>()?;
         let grouping_type = FourCC::new(grouping_type_bytes);
 
         let grouping_type_parameter = if version == 1 {
-            Some(
-                cur.read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u32_be()?)
         } else {
             None
         };
 
-        let entry_count = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let entry_count = cur.read_u32_be()?;
 
         let expected_size = entry_count as usize * Self::ENTRY_SIZE;
         if cur.remaining() != expected_size {
@@ -207,26 +195,19 @@ mod owned {
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            cur.write_u8(self.version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_array(&self.flags.to_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_array(self.grouping_type.as_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
+            cur.write_array(self.grouping_type.as_bytes())?;
 
             if self.version == 1 {
-                cur.write_u32_be(self.grouping_type_parameter.unwrap_or(0))
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(self.grouping_type_parameter.unwrap_or(0))?;
             }
 
-            cur.write_u32_be(self.entries.len() as u32)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(self.entries.len() as u32)?;
 
             for entry in &self.entries {
-                cur.write_u32_be(entry.sample_count)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u32_be(entry.group_description_index)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(entry.sample_count)?;
+                cur.write_u32_be(entry.group_description_index)?;
             }
 
             if !cur.is_empty() {

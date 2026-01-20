@@ -47,33 +47,16 @@ impl HmhdBox {
     const RESERVED_SIZE: usize = mem::size_of::<u32>();
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<HmhdBox> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = HmhdFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = HmhdFlags::from_bytes(cur.read_array()?);
 
-        let max_pdu_size = cur
-            .read_u16_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-
-        let avg_pdu_size = cur
-            .read_u16_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-
-        let max_bitrate = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-
-        let avg_bitrate = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let max_pdu_size = cur.read_u16_be()?;
+        let avg_pdu_size = cur.read_u16_be()?;
+        let max_bitrate = cur.read_u32_be()?;
+        let avg_bitrate = cur.read_u32_be()?;
 
         // Skip reserved (4 bytes)
-        cur.advance(Self::RESERVED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.advance(Self::RESERVED_SIZE)?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(
@@ -110,32 +93,25 @@ impl HmhdBox {
 
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         // Write version (1 byte)
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
 
         // Write flags (3 bytes)
-        cur.write_array(&self.flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.flags.to_bytes())?;
 
         // Write max_pdu_size (2 bytes)
-        cur.write_u16_be(self.max_pdu_size)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u16_be(self.max_pdu_size)?;
 
         // Write avg_pdu_size (2 bytes)
-        cur.write_u16_be(self.avg_pdu_size)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u16_be(self.avg_pdu_size)?;
 
         // Write max_bitrate (4 bytes)
-        cur.write_u32_be(self.max_bitrate)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.max_bitrate)?;
 
         // Write avg_bitrate (4 bytes)
-        cur.write_u32_be(self.avg_bitrate)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.avg_bitrate)?;
 
         // Write reserved (4 bytes)
-        cur.reserve_zeros(Self::RESERVED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.reserve_zeros(Self::RESERVED_SIZE)?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(

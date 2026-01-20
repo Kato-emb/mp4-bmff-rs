@@ -30,13 +30,8 @@ pub struct CslgBox {
 
 impl CslgBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = CslgFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = CslgFlags::from_bytes(cur.read_array()?);
 
         let (
             composition_to_dts_shift,
@@ -46,33 +41,18 @@ impl CslgBox {
             composition_end_time,
         ) = match version {
             0 => (
-                cur.read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as i64,
-                cur.read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as i64,
-                cur.read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as i64,
-                cur.read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as i64,
-                cur.read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as i64,
+                cur.read_i32_be()? as i64,
+                cur.read_i32_be()? as i64,
+                cur.read_i32_be()? as i64,
+                cur.read_i32_be()? as i64,
+                cur.read_i32_be()? as i64,
             ),
             1 => (
-                cur.read_i64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-                cur.read_i64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-                cur.read_i64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-                cur.read_i64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-                cur.read_i64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+                cur.read_i64_be()?,
+                cur.read_i64_be()?,
+                cur.read_i64_be()?,
+                cur.read_i64_be()?,
+                cur.read_i64_be()?,
             ),
             v => {
                 return Err(Error::in_box(
@@ -126,33 +106,21 @@ impl CslgBox {
     }
 
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_array(&self.flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
+        cur.write_array(&self.flags.to_bytes())?;
 
         if self.version == 0 {
-            cur.write_i32_be(self.composition_to_dts_shift as i32)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_i32_be(self.least_decode_to_display_delta as i32)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_i32_be(self.greatest_decode_to_display_delta as i32)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_i32_be(self.composition_start_time as i32)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_i32_be(self.composition_end_time as i32)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_i32_be(self.composition_to_dts_shift as i32)?;
+            cur.write_i32_be(self.least_decode_to_display_delta as i32)?;
+            cur.write_i32_be(self.greatest_decode_to_display_delta as i32)?;
+            cur.write_i32_be(self.composition_start_time as i32)?;
+            cur.write_i32_be(self.composition_end_time as i32)?;
         } else {
-            cur.write_u64_be(self.composition_to_dts_shift as u64)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_u64_be(self.least_decode_to_display_delta as u64)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_u64_be(self.greatest_decode_to_display_delta as u64)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_u64_be(self.composition_start_time as u64)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_u64_be(self.composition_end_time as u64)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u64_be(self.composition_to_dts_shift as u64)?;
+            cur.write_u64_be(self.least_decode_to_display_delta as u64)?;
+            cur.write_u64_be(self.greatest_decode_to_display_delta as u64)?;
+            cur.write_u64_be(self.composition_start_time as u64)?;
+            cur.write_u64_be(self.composition_end_time as u64)?;
         }
 
         if !cur.is_empty() {

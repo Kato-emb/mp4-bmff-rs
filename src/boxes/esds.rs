@@ -21,13 +21,9 @@ pub struct EsdsBoxView<'a> {
 
 impl<'a> EsdsBoxView<'a> {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = EsdsFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = EsdsFlags::from_bytes(cur.read_array()?);
+
         let es_descr = DescriptorView::parse_in(cur)?;
         let esd = if es_descr.tag == Tag::ES_DESCR_TAG {
             EsDescriptorView::parse(es_descr.instance)?
@@ -131,16 +127,13 @@ mod owned {
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             // Write version (1 byte)
-            cur.write_u8(self.version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.version)?;
 
             // Write flags (3 bytes)
-            cur.write_slice(&self.flags.to_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_slice(&self.flags.to_bytes())?;
 
             // Write descriptor data as-is
-            cur.write_slice(&self.descriptor_data)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_slice(&self.descriptor_data)?;
 
             if !cur.is_empty() {
                 return Err(Error::in_box(

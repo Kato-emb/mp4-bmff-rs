@@ -38,59 +38,37 @@ pub struct TfhdBox {
 
 impl TfhdBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TfhdBox> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = TfhdFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = TfhdFlags::from_bytes(cur.read_array()?);
 
-        let track_id = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let track_id = cur.read_u32_be()?;
 
         let base_data_offset = if flags.base_data_offset_present() {
-            Some(
-                cur.read_u64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u64_be()?)
         } else {
             None
         };
 
         let sample_description_index = if flags.sample_description_index_present() {
-            Some(
-                cur.read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u32_be()?)
         } else {
             None
         };
 
         let default_sample_duration = if flags.default_sample_duration_present() {
-            Some(
-                cur.read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u32_be()?)
         } else {
             None
         };
 
         let default_sample_size = if flags.default_sample_size_present() {
-            Some(
-                cur.read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u32_be()?)
         } else {
             None
         };
 
         let default_sample_flags = if flags.default_sample_flags_present() {
-            Some(
-                cur.read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u32_be()?)
         } else {
             None
         };
@@ -172,32 +150,24 @@ impl TfhdBox {
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         let flags = self.compute_flags();
 
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_array(&flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u32_be(self.track_id)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
+        cur.write_array(&flags.to_bytes())?;
+        cur.write_u32_be(self.track_id)?;
 
         if let Some(base_data_offset) = self.base_data_offset {
-            cur.write_u64_be(base_data_offset)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u64_be(base_data_offset)?;
         }
         if let Some(sample_description_index) = self.sample_description_index {
-            cur.write_u32_be(sample_description_index)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(sample_description_index)?;
         }
         if let Some(default_sample_duration) = self.default_sample_duration {
-            cur.write_u32_be(default_sample_duration)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(default_sample_duration)?;
         }
         if let Some(default_sample_size) = self.default_sample_size {
-            cur.write_u32_be(default_sample_size)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(default_sample_size)?;
         }
         if let Some(default_sample_flags) = self.default_sample_flags {
-            cur.write_u32_be(default_sample_flags)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(default_sample_flags)?;
         }
 
         if !cur.is_empty() {

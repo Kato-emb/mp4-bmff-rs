@@ -24,21 +24,12 @@ pub struct TfdtBox {
 
 impl TfdtBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TfdtBox> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = TfdtFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = TfdtFlags::from_bytes(cur.read_array()?);
 
         let base_media_decode_time = match version {
-            0 => cur
-                .read_u32_be()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))? as u64,
-            1 => cur
-                .read_u64_be()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+            0 => cur.read_u32_be()? as u64,
+            1 => cur.read_u64_be()?,
             v => {
                 return Err(Error::in_box(
                     ErrorKind::InvalidBoxVersion {
@@ -82,18 +73,12 @@ impl TfdtBox {
     }
 
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_array(&self.flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
+        cur.write_array(&self.flags.to_bytes())?;
 
         match self.version {
-            0 => cur
-                .write_u32_be(self.base_media_decode_time as u32)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            _ => cur
-                .write_u64_be(self.base_media_decode_time)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+            0 => cur.write_u32_be(self.base_media_decode_time as u32)?,
+            _ => cur.write_u64_be(self.base_media_decode_time)?,
         }
 
         if !cur.is_empty() {

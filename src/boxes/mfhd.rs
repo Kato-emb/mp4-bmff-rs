@@ -24,17 +24,10 @@ pub struct MfhdBox {
 
 impl MfhdBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MfhdBox> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = MfhdFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = MfhdFlags::from_bytes(cur.read_array()?);
 
-        let sequence_number = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let sequence_number = cur.read_u32_be()?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(
@@ -65,12 +58,9 @@ impl MfhdBox {
     }
 
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_array(&self.flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u32_be(self.sequence_number)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
+        cur.write_array(&self.flags.to_bytes())?;
+        cur.write_u32_be(self.sequence_number)?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(

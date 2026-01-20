@@ -183,13 +183,8 @@ impl<'a> TfraBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<TfraBoxView<'a>> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = TfraFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = TfraFlags::from_bytes(cur.read_array()?);
 
         if version > 1 {
             return Err(Error::in_box(
@@ -201,22 +196,16 @@ impl<'a> TfraBoxView<'a> {
             ));
         }
 
-        let track_id = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let track_id = cur.read_u32_be()?;
 
         // Read reserved (26 bits) and length_size fields (2 bits each)
-        let reserved_and_length = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let reserved_and_length = cur.read_u32_be()?;
 
         let length_size_of_traf_num = ((reserved_and_length >> 4) & 0x03) as u8;
         let length_size_of_trun_num = ((reserved_and_length >> 2) & 0x03) as u8;
         let length_size_of_sample_num = (reserved_and_length & 0x03) as u8;
 
-        let number_of_entry = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let number_of_entry = cur.read_u32_be()?;
 
         // Calculate expected entry size
         let time_size = if version == 1 { 8 } else { 4 };
@@ -366,27 +355,21 @@ mod owned {
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            cur.write_u8(self.version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_array(&self.flags.to_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
 
-            cur.write_u32_be(self.track_id)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(self.track_id)?;
 
             // Reserved (26 bits) and length_size fields (2 bits each)
             let reserved_and_length = ((self.length_size_of_traf_num as u32) << 4)
                 | ((self.length_size_of_trun_num as u32) << 2)
                 | (self.length_size_of_sample_num as u32);
-            cur.write_u32_be(reserved_and_length)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(reserved_and_length)?;
 
-            cur.write_u32_be(self.number_of_entry)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(self.number_of_entry)?;
 
             // Write raw entry data
-            cur.write_slice(&self.entries)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_slice(&self.entries)?;
 
             if !cur.is_empty() {
                 return Err(Error::in_box(

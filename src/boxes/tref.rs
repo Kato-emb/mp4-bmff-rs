@@ -144,8 +144,7 @@ mod owned {
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             for &track_id in &self.track_ids {
-                cur.write_u32_be(track_id)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(track_id)?;
             }
             Ok(())
         }

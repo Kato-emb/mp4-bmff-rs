@@ -64,30 +64,16 @@ impl TkhdBox {
     const RESERVED_3_SIZE: usize = mem::size_of::<u16>();
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TkhdBox> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = TkhdFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = TkhdFlags::from_bytes(cur.read_array()?);
 
         let (creation_time, modification_time, track_id, duration) = match version {
             1 => {
-                let creation_time = cur
-                    .read_u64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                let modification_time = cur
-                    .read_u64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                let track_id = cur
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.advance(Self::RESERVED_1_SIZE)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                let duration = cur
-                    .read_u64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                let creation_time = cur.read_u64_be()?;
+                let modification_time = cur.read_u64_be()?;
+                let track_id = cur.read_u32_be()?;
+                cur.advance(Self::RESERVED_1_SIZE)?;
+                let duration = cur.read_u64_be()?;
                 (
                     QuickTimeDateTime::from_quicktime_seconds(creation_time),
                     QuickTimeDateTime::from_quicktime_seconds(modification_time),
@@ -96,23 +82,11 @@ impl TkhdBox {
                 )
             }
             0 => {
-                let creation_time = cur
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as u64;
-                let modification_time = cur
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as u64;
-                let track_id = cur
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.advance(Self::RESERVED_1_SIZE)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                let duration = cur
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as u64;
+                let creation_time = cur.read_u32_be()? as u64;
+                let modification_time = cur.read_u32_be()? as u64;
+                let track_id = cur.read_u32_be()?;
+                cur.advance(Self::RESERVED_1_SIZE)?;
+                let duration = cur.read_u32_be()? as u64;
                 (
                     QuickTimeDateTime::from_quicktime_seconds(creation_time),
                     QuickTimeDateTime::from_quicktime_seconds(modification_time),
@@ -131,37 +105,23 @@ impl TkhdBox {
             }
         };
 
-        cur.advance(Self::RESERVED_2_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.advance(Self::RESERVED_2_SIZE)?;
 
-        let layer = cur
-            .read_i16_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let alternate_group = cur
-            .read_i16_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let volume = cur
-            .read_u16_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let layer = cur.read_i16_be()?;
+        let alternate_group = cur.read_i16_be()?;
+        let volume = cur.read_u16_be()?;
         let volume = U8F8::from_raw(volume);
 
-        cur.advance(Self::RESERVED_3_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.advance(Self::RESERVED_3_SIZE)?;
         let mut matrix = [0i32; 9];
         for m in &mut matrix {
-            *m = cur
-                .read_i32_be()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            *m = cur.read_i32_be()?;
         }
         let matrix = Matrix::from_raw(matrix);
 
-        let width = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let width = cur.read_u32_be()?;
         let width = U16F16::from_raw(width);
-        let height = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let height = cur.read_u32_be()?;
         let height = U16F16::from_raw(height);
 
         if !cur.is_empty() {
@@ -215,63 +175,43 @@ impl TkhdBox {
     }
 
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_array(&self.flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
+        cur.write_array(&self.flags.to_bytes())?;
 
         match self.version {
             1 => {
-                cur.write_u64_be(self.creation_time.to_quicktime_seconds())
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u64_be(self.modification_time.to_quicktime_seconds())
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u32_be(self.track_id)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.reserve_zeros(Self::RESERVED_1_SIZE)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u64_be(self.duration)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u64_be(self.creation_time.to_quicktime_seconds())?;
+                cur.write_u64_be(self.modification_time.to_quicktime_seconds())?;
+                cur.write_u32_be(self.track_id)?;
+                cur.reserve_zeros(Self::RESERVED_1_SIZE)?;
+                cur.write_u64_be(self.duration)?;
             }
             _ => {
-                cur.write_u32_be(self.creation_time.to_quicktime_seconds() as u32)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u32_be(self.modification_time.to_quicktime_seconds() as u32)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u32_be(self.track_id)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.reserve_zeros(Self::RESERVED_1_SIZE)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u32_be(self.duration as u32)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(self.creation_time.to_quicktime_seconds() as u32)?;
+                cur.write_u32_be(self.modification_time.to_quicktime_seconds() as u32)?;
+                cur.write_u32_be(self.track_id)?;
+                cur.reserve_zeros(Self::RESERVED_1_SIZE)?;
+                cur.write_u32_be(self.duration as u32)?;
             }
         }
 
         // reserved[2]
-        cur.reserve_zeros(Self::RESERVED_2_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.reserve_zeros(Self::RESERVED_2_SIZE)?;
 
-        cur.write_i16_be(self.layer)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_i16_be(self.alternate_group)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u16_be(self.volume.to_raw())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_i16_be(self.layer)?;
+        cur.write_i16_be(self.alternate_group)?;
+        cur.write_u16_be(self.volume.to_raw())?;
 
         // reserved
-        cur.reserve_zeros(Self::RESERVED_3_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.reserve_zeros(Self::RESERVED_3_SIZE)?;
 
         // matrix
         for &m in &self.matrix.to_raw() {
-            cur.write_i32_be(m)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_i32_be(m)?;
         }
 
-        cur.write_u32_be(self.width.to_raw())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u32_be(self.height.to_raw())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.width.to_raw())?;
+        cur.write_u32_be(self.height.to_raw())?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(

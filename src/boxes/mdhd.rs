@@ -51,28 +51,15 @@ impl MdhdBox {
     const PRE_DEFINED_SIZE: usize = mem::size_of::<u16>();
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MdhdBox> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = MdhdFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = MdhdFlags::from_bytes(cur.read_array()?);
 
         let (creation_time, modification_time, timescale, duration) = match version {
             1 => {
-                let creation_time = cur
-                    .read_u64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                let modification_time = cur
-                    .read_u64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                let timescale = cur
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                let duration = cur
-                    .read_u64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                let creation_time = cur.read_u64_be()?;
+                let modification_time = cur.read_u64_be()?;
+                let timescale = cur.read_u32_be()?;
+                let duration = cur.read_u64_be()?;
                 (
                     QuickTimeDateTime::from_quicktime_seconds(creation_time),
                     QuickTimeDateTime::from_quicktime_seconds(modification_time),
@@ -81,21 +68,10 @@ impl MdhdBox {
                 )
             }
             0 => {
-                let creation_time = cur
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as u64;
-                let modification_time = cur
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as u64;
-                let timescale = cur
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                let duration = cur
-                    .read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as u64;
+                let creation_time = cur.read_u32_be()? as u64;
+                let modification_time = cur.read_u32_be()? as u64;
+                let timescale = cur.read_u32_be()?;
+                let duration = cur.read_u32_be()? as u64;
                 (
                     QuickTimeDateTime::from_quicktime_seconds(creation_time),
                     QuickTimeDateTime::from_quicktime_seconds(modification_time),
@@ -114,9 +90,7 @@ impl MdhdBox {
             }
         };
 
-        let language_packed = cur
-            .read_u16_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let language_packed = cur.read_u16_be()?;
 
         let language = LanguageCode::from_packed(language_packed).ok_or_else(|| {
             Error::new(ErrorKind::InvalidBoxField {
@@ -127,8 +101,7 @@ impl MdhdBox {
         })?;
 
         // Skip pre_defined (2 bytes)
-        cur.advance(Self::PRE_DEFINED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.advance(Self::PRE_DEFINED_SIZE)?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(
@@ -170,40 +143,28 @@ impl MdhdBox {
     }
 
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_array(&self.flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
+        cur.write_array(&self.flags.to_bytes())?;
 
         match self.version {
             1 => {
-                cur.write_u64_be(self.creation_time.to_quicktime_seconds())
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u64_be(self.modification_time.to_quicktime_seconds())
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u32_be(self.timescale)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u64_be(self.duration)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u64_be(self.creation_time.to_quicktime_seconds())?;
+                cur.write_u64_be(self.modification_time.to_quicktime_seconds())?;
+                cur.write_u32_be(self.timescale)?;
+                cur.write_u64_be(self.duration)?;
             }
             _ => {
-                cur.write_u32_be(self.creation_time.to_quicktime_seconds() as u32)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u32_be(self.modification_time.to_quicktime_seconds() as u32)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u32_be(self.timescale)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u32_be(self.duration as u32)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(self.creation_time.to_quicktime_seconds() as u32)?;
+                cur.write_u32_be(self.modification_time.to_quicktime_seconds() as u32)?;
+                cur.write_u32_be(self.timescale)?;
+                cur.write_u32_be(self.duration as u32)?;
             }
         }
 
-        cur.write_u16_be(self.language.to_packed())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u16_be(self.language.to_packed())?;
 
         // pre_defined
-        cur.reserve_zeros(Self::PRE_DEFINED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.reserve_zeros(Self::PRE_DEFINED_SIZE)?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(

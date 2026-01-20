@@ -23,13 +23,8 @@ pub struct MfroBox {
 
 impl MfroBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MfroBox> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = MfroFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = MfroFlags::from_bytes(cur.read_array()?);
 
         if version != 0 {
             return Err(Error::in_box(
@@ -41,9 +36,7 @@ impl MfroBox {
             ));
         }
 
-        let mfra_size = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let mfra_size = cur.read_u32_be()?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(
@@ -75,12 +68,10 @@ impl MfroBox {
     }
 
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_array(&self.flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u32_be(self.size)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
+        cur.write_array(&self.flags.to_bytes())?;
+
+        cur.write_u32_be(self.size)?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(

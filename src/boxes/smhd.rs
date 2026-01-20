@@ -38,22 +38,14 @@ impl SmhdBox {
     const RESERVED_SIZE: usize = mem::size_of::<u16>();
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<SmhdBox> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = SmhdFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = SmhdFlags::from_bytes(cur.read_array()?);
 
-        let balance = cur
-            .read_i16_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let balance = cur.read_i16_be()?;
         let balance = I8F8::from_raw(balance);
 
         // Skip reserved (2 bytes)
-        cur.advance(Self::RESERVED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.advance(Self::RESERVED_SIZE)?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(
@@ -86,20 +78,16 @@ impl SmhdBox {
 
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         // Write version (1 byte)
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
 
         // Write flags (3 bytes)
-        cur.write_array(&self.flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.flags.to_bytes())?;
 
         // Write balance (2 bytes)
-        cur.write_i16_be(self.balance.to_raw())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_i16_be(self.balance.to_raw())?;
 
         // Write reserved (2 bytes)
-        cur.reserve_zeros(Self::RESERVED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.reserve_zeros(Self::RESERVED_SIZE)?;
 
         if !cur.is_empty() {
             return Err(Error::in_box(

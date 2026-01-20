@@ -36,10 +36,8 @@ impl SampleEntry {
     #[cfg(feature = "alloc")]
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         // Write reserved bytes (6 bytes of zeros)
-        cur.write_slice(&[0u8; Self::RESERVED_SIZE])
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u16_be(self.data_reference_index)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_slice(&[0u8; Self::RESERVED_SIZE])?;
+        cur.write_u16_be(self.data_reference_index)?;
         Ok(())
     }
 }
@@ -179,41 +177,29 @@ impl VisualSampleEntry {
         self.base.write_in(cur)?;
 
         // pre_defined (2 bytes)
-        cur.write_slice(&[0u8; Self::PRE_DEFINED_SIZE_1])
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_slice(&[0u8; Self::PRE_DEFINED_SIZE_1])?;
         // reserved (2 bytes)
-        cur.write_slice(&[0u8; Self::RESERVED_SIZE_1])
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_slice(&[0u8; Self::RESERVED_SIZE_1])?;
         // pre_defined (12 bytes)
-        cur.write_slice(&[0u8; Self::PRE_DEFINED_SIZE_2])
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_slice(&[0u8; Self::PRE_DEFINED_SIZE_2])?;
 
-        cur.write_u16_be(self.width)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u16_be(self.height)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u16_be(self.width)?;
+        cur.write_u16_be(self.height)?;
 
-        cur.write_u32_be(self.horizresolution.to_raw())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u32_be(self.vertresolution.to_raw())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.horizresolution.to_raw())?;
+        cur.write_u32_be(self.vertresolution.to_raw())?;
 
         // reserved (4 bytes)
-        cur.write_slice(&[0u8; Self::RESERVED_SIZE_2])
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_slice(&[0u8; Self::RESERVED_SIZE_2])?;
 
-        cur.write_u16_be(self.frame_count)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u16_be(self.frame_count)?;
 
-        cur.write_array(&self.compressorname)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.compressorname)?;
 
-        cur.write_u16_be(self.depth)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u16_be(self.depth)?;
 
         // pre_defined (2 bytes, -1)
-        cur.write_slice(&[0xFF, 0xFF])
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_slice(&[0xFF, 0xFF])?;
 
         Ok(())
     }
@@ -294,23 +280,17 @@ impl AudioSampleEntry {
         self.base.write_in(cur)?;
 
         // reserved (8 bytes)
-        cur.write_slice(&[0u8; Self::RESERVED_SIZE_1])
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_slice(&[0u8; Self::RESERVED_SIZE_1])?;
 
-        cur.write_u16_be(self.channelcount)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        cur.write_u16_be(self.samplesize)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u16_be(self.channelcount)?;
+        cur.write_u16_be(self.samplesize)?;
 
         // pre_defined (2 bytes)
-        cur.write_slice(&[0u8; Self::PRE_DEFINED_SIZE])
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_slice(&[0u8; Self::PRE_DEFINED_SIZE])?;
         // reserved (2 bytes)
-        cur.write_slice(&[0u8; Self::RESERVED_SIZE_2])
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_slice(&[0u8; Self::RESERVED_SIZE_2])?;
 
-        cur.write_u32_be(self.samplerate.to_raw())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.samplerate.to_raw())?;
 
         Ok(())
     }

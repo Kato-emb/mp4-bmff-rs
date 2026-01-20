@@ -60,13 +60,8 @@ impl<'a> CttsBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<CttsBoxView<'a>> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = CttsFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = CttsFlags::from_bytes(cur.read_array()?);
 
         if version > 1 {
             return Err(Error::in_box(
@@ -78,9 +73,7 @@ impl<'a> CttsBoxView<'a> {
             ));
         }
 
-        let entry_count = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let entry_count = cur.read_u32_be()?;
 
         let expected_size = entry_count as usize * Self::ENTRY_SIZE;
 
@@ -188,23 +181,17 @@ mod owned {
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            cur.write_u8(self.version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_array(&self.flags.to_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_u32_be(self.entries.len() as u32)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
+            cur.write_u32_be(self.entries.len() as u32)?;
 
             for entry in &self.entries {
-                cur.write_u32_be(entry.sample_count)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(entry.sample_count)?;
                 // Version 0: unsigned, Version 1: signed
                 if self.version == 0 {
-                    cur.write_u32_be(entry.sample_offset as u32)
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    cur.write_u32_be(entry.sample_offset as u32)?;
                 } else {
-                    cur.write_i32_be(entry.sample_offset)
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    cur.write_i32_be(entry.sample_offset)?;
                 }
             }
 

@@ -49,17 +49,10 @@ impl<'a> DrefBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<DrefBoxView<'a>> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = DrefFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = DrefFlags::from_bytes(cur.read_array()?);
 
-        let entry_count = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let entry_count = cur.read_u32_be()?;
 
         let entries = cur.remaining_slice();
         for _ in 0..entry_count {
@@ -112,20 +105,13 @@ pub struct UrlBoxView<'a> {
 
 impl<'a> UrlBoxView<'a> {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<UrlBoxView<'a>> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = UrlFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = UrlFlags::from_bytes(cur.read_array()?);
 
         let location = if flags.contains(UrlFlags::SELF_CONTAINED) {
             None
         } else {
-            let loc_bytes = cur
-                .take_until(0)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            let loc_bytes = cur.take_until(0)?;
             Some(str::from_utf8(loc_bytes).map_err(|_| {
                 Error::at(
                     ErrorKind::InvalidBoxField {
@@ -179,17 +165,10 @@ pub struct UrnBoxView<'a> {
 
 impl<'a> UrnBoxView<'a> {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<UrnBoxView<'a>> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = UrnFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = UrnFlags::from_bytes(cur.read_array()?);
 
-        let name_bytes = cur
-            .take_until(0)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let name_bytes = cur.take_until(0)?;
         let name = str::from_utf8(name_bytes).map_err(|_| {
             Error::at(
                 ErrorKind::InvalidBoxField {
@@ -200,9 +179,7 @@ impl<'a> UrnBoxView<'a> {
             )
         })?;
 
-        let location_bytes = cur
-            .take_until(0)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let location_bytes = cur.take_until(0)?;
         let location = str::from_utf8(location_bytes).map_err(|_| {
             Error::at(
                 ErrorKind::InvalidBoxField {
@@ -326,13 +303,10 @@ mod owned {
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            cur.write_u8(self.version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_array(&self.flags.to_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
 
-            cur.write_u32_be(self.entries.len() as u32)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(self.entries.len() as u32)?;
 
             for entry in &self.entries {
                 match entry {
@@ -415,16 +389,12 @@ mod owned {
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            cur.write_u8(self.version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_array(&self.flags.to_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
 
             if let Some(location) = &self.location {
-                cur.write_slice(location.as_bytes())
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_u8(0)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_slice(location.as_bytes())?;
+                cur.write_u8(0)?;
             }
 
             if !cur.is_empty() {
@@ -497,20 +467,14 @@ mod owned {
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            cur.write_u8(self.version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_array(&self.flags.to_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
 
-            cur.write_slice(self.name.as_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_u8(0)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_slice(self.name.as_bytes())?;
+            cur.write_u8(0)?;
 
-            cur.write_slice(self.location.as_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_u8(0)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_slice(self.location.as_bytes())?;
+            cur.write_u8(0)?;
 
             if !cur.is_empty() {
                 return Err(Error::in_box(

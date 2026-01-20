@@ -55,9 +55,7 @@ impl<'a> StszBoxView<'a> {
         }
 
         let mut cursor = ReadCursor::new(&self.entries[offset..offset + Self::ENTRY_SIZE]);
-        let entry_size = cursor
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), offset as u64))?;
+        let entry_size = cursor.read_u32_be()?;
 
         Ok(entry_size)
     }
@@ -87,21 +85,12 @@ impl<'a> StszBoxView<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StszBoxView<'a>> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = StszFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = StszFlags::from_bytes(cur.read_array()?);
 
-        let sample_size = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let sample_size = cur.read_u32_be()?;
 
-        let sample_count = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let sample_count = cur.read_u32_be()?;
 
         let entries = if sample_size == 0 {
             let expected_size = sample_count as usize * Self::ENTRY_SIZE;
@@ -251,26 +240,19 @@ mod owned {
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            cur.write_u8(self.version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_array(&self.flags.to_bytes())
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
 
             match &self.sample_sizes {
                 SampleSizes::Uniform(size) => {
-                    cur.write_u32_be(*size)
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    cur.write_u32_be(self.sample_count)
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    cur.write_u32_be(*size)?;
+                    cur.write_u32_be(self.sample_count)?;
                 }
                 SampleSizes::Variable(sizes) => {
-                    cur.write_u32_be(0)
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    cur.write_u32_be(sizes.len() as u32)
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    cur.write_u32_be(0)?;
+                    cur.write_u32_be(sizes.len() as u32)?;
                     for size in sizes {
-                        cur.write_u32_be(*size)
-                            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                        cur.write_u32_be(*size)?;
                     }
                 }
             }

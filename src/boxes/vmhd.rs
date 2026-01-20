@@ -33,23 +33,14 @@ impl Default for VmhdBox {
 
 impl VmhdBox {
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<VmhdBox> {
-        let version = cur
-            .read_u8()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let flags = VmhdFlags::from_bytes(
-            cur.read_array()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-        );
+        let version = cur.read_u8()?;
+        let flags = VmhdFlags::from_bytes(cur.read_array()?);
 
-        let graphicsmode = cur
-            .read_u16_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let graphicsmode = cur.read_u16_be()?;
 
         let mut opcolor = [0u16; 3];
         for color in &mut opcolor {
-            *color = cur
-                .read_u16_be()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            *color = cur.read_u16_be()?;
         }
 
         if !cur.is_empty() {
@@ -84,21 +75,17 @@ impl VmhdBox {
 
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         // Write version (1 byte)
-        cur.write_u8(self.version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u8(self.version)?;
 
         // Write flags (3 bytes)
-        cur.write_array(&self.flags.to_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.flags.to_bytes())?;
 
         // Write graphicsmode (2 bytes)
-        cur.write_u16_be(self.graphicsmode)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u16_be(self.graphicsmode)?;
 
         // Write opcolor (6 bytes = 3 x u16)
         for color in &self.opcolor {
-            cur.write_u16_be(*color)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u16_be(*color)?;
         }
 
         if !cur.is_empty() {

@@ -62,8 +62,7 @@ mod owned {
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            cur.write_slice(&self.data)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_slice(&self.data)?;
 
             if !cur.is_empty() {
                 return Err(Error::in_box(

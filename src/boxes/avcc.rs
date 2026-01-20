@@ -279,47 +279,34 @@ mod owned {
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            cur.write_u8(self.configuration_version)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_u8(self.avc_profile_indication)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_u8(self.avc_profile_compatibility)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-            cur.write_u8(self.avc_level_indication)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.configuration_version)?;
+            cur.write_u8(self.avc_profile_indication)?;
+            cur.write_u8(self.avc_profile_compatibility)?;
+            cur.write_u8(self.avc_level_indication)?;
 
             // reserved (6 bits) | lengthSizeMinusOne (2 bits)
-            cur.write_u8(0xFC | (self.length_size_minus_one & 0x03))
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(0xFC | (self.length_size_minus_one & 0x03))?;
 
             // reserved (3 bits) | numOfSequenceParameterSets (5 bits)
-            cur.write_u8(0xE0 | (self.sps.len() as u8 & 0x1F))
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-
+            cur.write_u8(0xE0 | (self.sps.len() as u8 & 0x1F))?;
             // SPS NAL units
             for sps in &self.sps {
-                cur.write_u16_be(sps.len() as u16)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_slice(sps)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u16_be(sps.len() as u16)?;
+                cur.write_slice(sps)?;
             }
 
             // numOfPictureParameterSets
-            cur.write_u8(self.pps.len() as u8)
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.pps.len() as u8)?;
 
             // PPS NAL units
             for pps in &self.pps {
-                cur.write_u16_be(pps.len() as u16)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                cur.write_slice(pps)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u16_be(pps.len() as u16)?;
+                cur.write_slice(pps)?;
             }
 
             // Extensions (optional)
             if let Some(ext) = &self.ext {
-                cur.write_slice(ext)
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_slice(ext)?;
             }
 
             if !cur.is_empty() {

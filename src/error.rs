@@ -3,7 +3,6 @@
 use core::error;
 use core::fmt;
 
-use crate::cursor::Error as CursorError;
 use crate::types::FourCC;
 
 use crate::header::boxsize::BoxSizeError;
@@ -234,31 +233,30 @@ impl From<ErrorKind> for Error {
     }
 }
 
-impl From<CursorError> for ErrorKind {
-    fn from(value: CursorError) -> Self {
-        match value {
-            CursorError::Overflow => ErrorKind::Overflow,
-            CursorError::UnexpectedEof {
-                expected,
-                remaining,
-            } => ErrorKind::NotEnoughBytes {
-                expected,
-                remaining,
-            },
-            CursorError::BufferTooSmall {
-                expected,
-                remaining,
-            } => ErrorKind::NotEnoughBytes {
-                expected,
-                remaining,
-            },
-        }
-    }
-}
+use crate::cursor::Error as CursorError;
+use crate::cursor::ErrorKind as CursorErrorKind;
 
 impl From<CursorError> for Error {
     fn from(value: CursorError) -> Self {
-        Self::new(ErrorKind::from(value))
+        let kind = match value.kind {
+            CursorErrorKind::Overflow => ErrorKind::Overflow,
+            CursorErrorKind::UnexpectedEof {
+                expected,
+                remaining,
+            } => ErrorKind::NotEnoughBytes {
+                expected,
+                remaining,
+            },
+            CursorErrorKind::BufferTooSmall {
+                expected,
+                remaining,
+            } => ErrorKind::NotEnoughBytes {
+                expected,
+                remaining,
+            },
+        };
+
+        Self::at(kind, value.offset as u64)
     }
 }
 

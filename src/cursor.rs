@@ -6,7 +6,7 @@ type Result<T> = core::result::Result<T, Error>;
 
 /// Kinds of errors that can occur while reading or writing with a cursor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Error {
+pub enum ErrorKind {
     /// An integer overflow occurred.
     Overflow,
     /// An unexpected end of file was encountered.
@@ -25,25 +25,37 @@ pub enum Error {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Error {
+    pub kind: ErrorKind,
+    pub offset: usize,
+}
+
+impl Error {
+    fn new(kind: ErrorKind, offset: usize) -> Self {
+        Self { kind, offset }
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Overflow => write!(f, "Integer overflow occurred"),
-            Error::UnexpectedEof {
+        match self.kind {
+            ErrorKind::Overflow => write!(f, "Integer overflow occurred at offset {}", self.offset),
+            ErrorKind::UnexpectedEof {
                 expected,
                 remaining,
             } => write!(
                 f,
-                "Unexpected end of file: needed {} bytes but only {} remaining",
-                expected, remaining
+                "Unexpected end of file: needed {} bytes but only {} remaining at offset {}",
+                expected, remaining, self.offset
             ),
-            Error::BufferTooSmall {
+            ErrorKind::BufferTooSmall {
                 expected,
                 remaining,
             } => write!(
                 f,
-                "Buffer too small: needed {} bytes but only {} remaining",
-                expected, remaining
+                "Buffer too small: needed {} bytes but only {} remaining at offset {}",
+                expected, remaining, self.offset
             ),
         }
     }
@@ -52,7 +64,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {}
 
 /// A cursor for reading from a byte slice.
-pub struct ReadCursor<'a> {
+pub(crate) struct ReadCursor<'a> {
     inner: &'a [u8],
     pos: usize,
 }
@@ -118,12 +130,16 @@ impl<'a> ReadCursor<'a> {
     #[track_caller]
     pub fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let start = self.pos;
-        let end = start.checked_add(n).ok_or(Error::Overflow)?;
-        let bytes = self.inner.get(start..end).ok_or(Error::UnexpectedEof {
-            expected: n,
-            remaining: self.remaining(),
-        })?;
-
+        let end = start
+            .checked_add(n)
+            .ok_or(Error::new(ErrorKind::Overflow, self.pos))?;
+        let bytes = self.inner.get(start..end).ok_or(Error::new(
+            ErrorKind::UnexpectedEof {
+                expected: n,
+                remaining: self.remaining(),
+            },
+            self.pos,
+        ))?;
         self.pos = end;
         Ok(bytes)
     }
@@ -136,10 +152,13 @@ impl<'a> ReadCursor<'a> {
         let rem = self.remaining_slice();
 
         let Some(i) = rem.iter().position(|&b| b == byte) else {
-            return Err(Error::UnexpectedEof {
-                expected: 1,
-                remaining: self.remaining(),
-            });
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof {
+                    expected: 1,
+                    remaining: self.remaining(),
+                },
+                self.pos,
+            ));
         };
 
         let end = start + i;
@@ -284,12 +303,17 @@ impl<'a> WriteCursor<'a> {
     #[track_caller]
     pub fn take_mut(&mut self, n: usize) -> Result<&mut [u8]> {
         let start = self.pos;
-        let end = start.checked_add(n).ok_or(Error::Overflow)?;
+        let end = start
+            .checked_add(n)
+            .ok_or(Error::new(ErrorKind::Overflow, self.pos))?;
         if end > self.inner.len() {
-            return Err(Error::BufferTooSmall {
-                expected: n,
-                remaining: self.remaining(),
-            });
+            return Err(Error::new(
+                ErrorKind::BufferTooSmall {
+                    expected: n,
+                    remaining: self.remaining(),
+                },
+                self.pos,
+            ));
         }
 
         self.pos = end;
