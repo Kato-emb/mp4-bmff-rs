@@ -1,5 +1,6 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxType;
 use crate::error::*;
 
 /// A reference to a Free Space Box (`free`).
@@ -30,6 +31,8 @@ pub use owned::FreeBox;
 mod owned {
     use crate::lib::Vec;
 
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned Free Space Box (`free`).
@@ -51,6 +54,34 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<Self> {
             let free_view = FreeBoxView::parse(payload)?;
             Ok(Self::from_view(&free_view))
+        }
+
+        /// Returns the size of the `FreeBox` data.
+        pub fn size(&self) -> usize {
+            self.data.len()
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_slice(&self.data)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::FREE,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `FreeBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 
@@ -77,5 +108,20 @@ mod tests {
         let data = b"example free space data";
         let free_box_view = FreeBoxView::parse(data).unwrap();
         assert_eq!(free_box_view.data, data);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_free_box_owned_write() {
+        let free_box = FreeBox {
+            data: b"example free space data".to_vec(),
+        };
+
+        let mut buffer = vec![0u8; free_box.size()];
+        free_box.write(&mut buffer).unwrap();
+
+        let expected = b"example free space data";
+
+        assert_eq!(buffer, expected);
     }
 }

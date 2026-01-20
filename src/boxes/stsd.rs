@@ -106,8 +106,10 @@ pub use owned::{
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::BoxFrameMut;
     use crate::boxes::Avc1Box;
     use crate::boxes::Mp4aBox;
+    use crate::cursor::WriteCursor;
 
     use super::*;
 
@@ -139,6 +141,50 @@ mod owned {
                     payload: view.payload().to_vec(),
                 }),
             }
+        }
+    }
+
+    impl StsdEntry {
+        /// Returns the box type for this entry.
+        pub fn boxtype(&self) -> BoxType {
+            match self {
+                StsdEntry::Mp4a(_) => BoxType::MP4A,
+                StsdEntry::Avc1(_) => BoxType::AVC1,
+                StsdEntry::Other { boxtype, .. } => *boxtype,
+            }
+        }
+
+        /// Returns the size of the payload in bytes (not including box header).
+        pub fn payload_size(&self) -> usize {
+            match self {
+                StsdEntry::Mp4a(box_) => box_.size(),
+                StsdEntry::Avc1(box_) => box_.size(),
+                StsdEntry::Other { payload, .. } => payload.len(),
+            }
+        }
+
+        /// Returns the total frame size (including box header).
+        pub fn frame_size(&self) -> usize {
+            BoxFrameMut::required_len(self.boxtype(), self.payload_size())
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            let boxtype = self.boxtype();
+            let payload_size = self.payload_size();
+            let frame_size = self.frame_size();
+
+            let buf = cur.take_mut(frame_size)?;
+            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
+
+            match self {
+                StsdEntry::Mp4a(box_) => box_.write(frame.payload_mut())?,
+                StsdEntry::Avc1(box_) => box_.write(frame.payload_mut())?,
+                StsdEntry::Other { payload, .. } => {
+                    frame.payload_mut().copy_from_slice(payload);
+                }
+            }
+
+            Ok(())
         }
     }
 
@@ -177,6 +223,44 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<Self> {
             let view = StsdBoxView::parse(payload)?;
             Self::from_view(&view)
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            // version(1) + flags(3) + entry_count(4) + entries
+            let entries_size: usize = self.entries.iter().map(|e| e.frame_size()).sum();
+            1 + 3 + 4 + entries_size
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(&self.flags.to_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(self.entries.len() as u32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            for entry in &self.entries {
+                entry.write_in(cur)?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::STSD,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `StsdBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 

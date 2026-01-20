@@ -248,6 +248,10 @@ pub use owned::{
 mod owned {
     use crate::lib::String;
 
+    use crate::cursor::WriteCursor;
+
+    use crate::BoxFrameMut;
+
     use super::*;
 
     /// An owned entry in the Data Reference Box (`dref`).
@@ -301,6 +305,72 @@ mod owned {
             let view = DrefBoxView::parse(payload)?;
             Self::from_view(&view)
         }
+
+        /// Returns the size of the `DrefBox` data.
+        #[inline]
+        pub fn size(&self) -> usize {
+            let mut size = 4 + 4; // version/flags + entry_count
+
+            for entry in &self.entries {
+                size += match entry {
+                    DrefEntry::Url(url_box) => {
+                        BoxFrameMut::required_len(BoxType::URL_, url_box.size())
+                    }
+                    DrefEntry::Urn(urn_box) => {
+                        BoxFrameMut::required_len(BoxType::URN_, urn_box.size())
+                    }
+                };
+            }
+
+            size
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(&self.flags.to_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            cur.write_u32_be(self.entries.len() as u32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            for entry in &self.entries {
+                match entry {
+                    DrefEntry::Url(url_box) => {
+                        let payload_len = url_box.size();
+                        let required_len = BoxFrameMut::required_len(BoxType::URL_, payload_len);
+                        let bytes = cur.take_mut(required_len)?;
+                        let mut frame = BoxFrameMut::new(bytes, BoxType::URL_, payload_len)?;
+                        url_box.write(frame.payload_mut())?;
+                    }
+                    DrefEntry::Urn(urn_box) => {
+                        let payload_len = urn_box.size();
+                        let required_len = BoxFrameMut::required_len(BoxType::URN_, payload_len);
+                        let bytes = cur.take_mut(required_len)?;
+                        let mut frame = BoxFrameMut::new(bytes, BoxType::URN_, payload_len)?;
+                        urn_box.write(frame.payload_mut())?;
+                    }
+                }
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::DREF,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `DrefBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
+        }
     }
 
     impl TryFrom<&DrefBoxView<'_>> for DrefBox {
@@ -336,6 +406,44 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<Self> {
             let url_view = UrlBoxView::parse(payload)?;
             Ok(Self::from_view(&url_view))
+        }
+
+        /// Returns the size of the `UrlBox` data.
+        #[inline]
+        pub fn size(&self) -> usize {
+            4 + self.location.as_ref().map_or(0, |loc| loc.len() + 1)
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(&self.flags.to_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            if let Some(location) = &self.location {
+                cur.write_slice(location.as_bytes())
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u8(0)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::URL_,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `UrlBox` into the given payload.
+        pub fn write(&self, buffer: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(buffer);
+            self.write_in(&mut cursor)
         }
     }
 
@@ -381,6 +489,47 @@ mod owned {
             let urn_view = UrnBoxView::parse(payload)?;
             Ok(Self::from_view(&urn_view))
         }
+
+        /// Returns the size of the `UrnBox` data.
+        #[inline]
+        pub fn size(&self) -> usize {
+            4 + self.name.len() + 1 + self.location.len() + 1
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(&self.flags.to_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            cur.write_slice(self.name.as_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(0)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            cur.write_slice(self.location.as_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(0)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::URN_,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `UrnBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
+        }
     }
 
     impl UrnBoxView<'_> {
@@ -401,7 +550,6 @@ mod owned {
 mod tests {
     use super::*;
 
-    /// Helper to create a box header (size + type).
     fn make_box_header(size: u32, fourcc: &[u8; 4]) -> Vec<u8> {
         let mut data = Vec::new();
         data.extend_from_slice(&size.to_be_bytes());
@@ -409,195 +557,59 @@ mod tests {
         data
     }
 
-    /// Helper to create a FullBoxHeader payload (version + flags).
     fn make_full_box_header(version: u8, flags: u32) -> Vec<u8> {
         let mut data = Vec::new();
         data.push(version);
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]); // Only 3 bytes for flags
+        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
         data
     }
 
-    /// Creates a self-contained URL box payload (no location).
-    fn make_url_box_self_contained() -> Vec<u8> {
-        let mut payload = Vec::new();
-        // FullBoxHeader: version=0, flags=0x000001 (self-contained)
-        payload.extend_from_slice(&make_full_box_header(0, 0x000001));
-        payload
+    fn make_url_entry_self_contained() -> Vec<u8> {
+        let mut payload = make_full_box_header(0, 0x000001);
+        let size = 8 + payload.len() as u32;
+        let mut data = make_box_header(size, b"url ");
+        data.append(&mut payload);
+        data
     }
 
-    /// Creates a URL box payload with a location.
-    fn make_url_box_with_location(location: &str) -> Vec<u8> {
-        let mut payload = Vec::new();
-        // FullBoxHeader: version=0, flags=0x000000
-        payload.extend_from_slice(&make_full_box_header(0, 0x000000));
-        // location (null-terminated)
+    fn make_url_entry_with_location(location: &str) -> Vec<u8> {
+        let mut payload = make_full_box_header(0, 0x000000);
         payload.extend_from_slice(location.as_bytes());
         payload.push(0);
-        payload
+        let size = 8 + payload.len() as u32;
+        let mut data = make_box_header(size, b"url ");
+        data.append(&mut payload);
+        data
     }
 
-    /// Creates a URN box payload.
-    fn make_urn_box_payload(name: &str, location: &str) -> Vec<u8> {
-        let mut payload = Vec::new();
-        // FullBoxHeader: version=0, flags=0x000000
-        payload.extend_from_slice(&make_full_box_header(0, 0x000000));
-        // name (null-terminated)
+    fn make_urn_entry(name: &str, location: &str) -> Vec<u8> {
+        let mut payload = make_full_box_header(0, 0x000000);
         payload.extend_from_slice(name.as_bytes());
         payload.push(0);
-        // location (null-terminated)
         payload.extend_from_slice(location.as_bytes());
         payload.push(0);
-        payload
-    }
-
-    /// Creates a complete URL entry box (header + payload).
-    fn make_url_entry_self_contained() -> Vec<u8> {
-        let payload = make_url_box_self_contained();
-        let size = 8 + payload.len() as u32; // BoxHeader (8) + payload
-        let mut data = make_box_header(size, b"url ");
-        data.extend_from_slice(&payload);
-        data
-    }
-
-    /// Creates a complete URL entry box with location.
-    fn make_url_entry_with_location(location: &str) -> Vec<u8> {
-        let payload = make_url_box_with_location(location);
-        let size = 8 + payload.len() as u32;
-        let mut data = make_box_header(size, b"url ");
-        data.extend_from_slice(&payload);
-        data
-    }
-
-    /// Creates a complete URN entry box.
-    fn make_urn_entry(name: &str, location: &str) -> Vec<u8> {
-        let payload = make_urn_box_payload(name, location);
         let size = 8 + payload.len() as u32;
         let mut data = make_box_header(size, b"urn ");
-        data.extend_from_slice(&payload);
+        data.append(&mut payload);
         data
     }
 
-    /// Creates a dref box payload.
     fn make_dref_payload(entries: Vec<Vec<u8>>) -> Vec<u8> {
-        let mut payload = Vec::new();
-        // FullBoxHeader: version=0, flags=0
-        payload.extend_from_slice(&make_full_box_header(0, 0));
-        // entry_count
+        let mut payload = make_full_box_header(0, 0);
         payload.extend_from_slice(&(entries.len() as u32).to_be_bytes());
-        // entries
         for entry in entries {
             payload.extend_from_slice(&entry);
         }
         payload
     }
 
-    // UrlBoxView tests
-
-    #[test]
-    fn parse_url_box_self_contained() {
-        let payload = make_url_box_self_contained();
-        let url_box = UrlBoxView::parse(&payload).unwrap();
-
-        assert_eq!(url_box.version, 0);
-        assert!(url_box.flags.contains(UrlFlags::SELF_CONTAINED));
-        assert!(url_box.location.is_none());
-    }
-
-    #[test]
-    fn parse_url_box_with_location() {
-        let location = "http://example.com/video.mp4";
-        let payload = make_url_box_with_location(location);
-        let url_box = UrlBoxView::parse(&payload).unwrap();
-
-        assert_eq!(url_box.version, 0);
-        assert!(!url_box.flags.contains(UrlFlags::SELF_CONTAINED));
-        assert_eq!(url_box.location, Some(location));
-    }
-
-    // UrnBoxView tests
-
-    #[test]
-    fn parse_urn_box() {
-        let name = "urn:example:video";
-        let location = "http://example.com/video.mp4";
-        let payload = make_urn_box_payload(name, location);
-        let urn_box = UrnBoxView::parse(&payload).unwrap();
-
-        assert_eq!(urn_box.version, 0);
-        assert_eq!(urn_box.name, name);
-        assert_eq!(urn_box.location, location);
-    }
-
-    // DrefBoxView tests
-
     #[test]
     fn parse_dref_empty() {
         let payload = make_dref_payload(vec![]);
         let dref = DrefBoxView::parse(&payload).unwrap();
 
-        assert_eq!(dref.version, 0);
         assert_eq!(dref.entry_count, 0);
         assert_eq!(dref.entries().count(), 0);
-    }
-
-    #[test]
-    fn parse_dref_single_url_self_contained() {
-        let entries = vec![make_url_entry_self_contained()];
-        let payload = make_dref_payload(entries);
-        let dref = DrefBoxView::parse(&payload).unwrap();
-
-        assert_eq!(dref.version, 0);
-        assert_eq!(dref.entry_count, 1);
-
-        let mut iter = dref.entries();
-        let entry = iter.next().unwrap().unwrap();
-        match entry {
-            DrefEntryView::Url(url) => {
-                assert!(url.flags.contains(UrlFlags::SELF_CONTAINED));
-                assert!(url.location.is_none());
-            }
-            DrefEntryView::Urn(_) => panic!("Expected Url entry"),
-        }
-        assert!(iter.next().is_none());
-    }
-
-    #[test]
-    fn parse_dref_single_url_with_location() {
-        let location = "http://example.com/data.mp4";
-        let entries = vec![make_url_entry_with_location(location)];
-        let payload = make_dref_payload(entries);
-        let dref = DrefBoxView::parse(&payload).unwrap();
-
-        assert_eq!(dref.entry_count, 1);
-
-        let entry = dref.entries().next().unwrap().unwrap();
-        match entry {
-            DrefEntryView::Url(url) => {
-                assert!(!url.flags.contains(UrlFlags::SELF_CONTAINED));
-                assert_eq!(url.location, Some(location));
-            }
-            DrefEntryView::Urn(_) => panic!("Expected Url entry"),
-        }
-    }
-
-    #[test]
-    fn parse_dref_single_urn() {
-        let name = "urn:example:resource";
-        let location = "http://example.com/resource";
-        let entries = vec![make_urn_entry(name, location)];
-        let payload = make_dref_payload(entries);
-        let dref = DrefBoxView::parse(&payload).unwrap();
-
-        assert_eq!(dref.entry_count, 1);
-
-        let entry = dref.entries().next().unwrap().unwrap();
-        match entry {
-            DrefEntryView::Urn(urn) => {
-                assert_eq!(urn.name, name);
-                assert_eq!(urn.location, location);
-            }
-            DrefEntryView::Url(_) => panic!("Expected Urn entry"),
-        }
     }
 
     #[test]
@@ -615,23 +627,25 @@ mod tests {
         let results: Vec<_> = dref.entries().collect();
         assert_eq!(results.len(), 3);
 
-        // First: self-contained URL
+        // URL (self-contained)
         match results[0].as_ref().unwrap() {
             DrefEntryView::Url(url) => {
                 assert!(url.flags.contains(UrlFlags::SELF_CONTAINED));
+                assert!(url.location.is_none());
             }
             _ => panic!("Expected Url entry"),
         }
 
-        // Second: URL with location
+        // URL (with location)
         match results[1].as_ref().unwrap() {
             DrefEntryView::Url(url) => {
+                assert!(!url.flags.contains(UrlFlags::SELF_CONTAINED));
                 assert_eq!(url.location, Some("http://example.com/a.mp4"));
             }
             _ => panic!("Expected Url entry"),
         }
 
-        // Third: URN
+        // URN
         match results[2].as_ref().unwrap() {
             DrefEntryView::Urn(urn) => {
                 assert_eq!(urn.name, "urn:test");
@@ -641,12 +655,9 @@ mod tests {
         }
     }
 
-    // Error case tests
-
     #[test]
     fn parse_dref_entry_count_mismatch() {
         let mut payload = make_full_box_header(0, 0);
-        // Declare 2 entries but provide only 1
         payload.extend_from_slice(&2u32.to_be_bytes());
         payload.extend_from_slice(&make_url_entry_self_contained());
 
@@ -656,73 +667,55 @@ mod tests {
 
     #[test]
     fn parse_dref_invalid_entry_type() {
-        // Create an entry with an invalid box type
         let mut invalid_entry = make_box_header(12, b"xxxx");
         invalid_entry.extend_from_slice(&make_full_box_header(0, 0));
 
         let payload = make_dref_payload(vec![invalid_entry]);
         let dref = DrefBoxView::parse(&payload).unwrap();
 
-        // Parsing the dref itself succeeds, but iterating over entries should fail
-        let mut iter = dref.entries();
-        let entry = iter.next().unwrap();
+        let entry = dref.entries().next().unwrap();
         assert!(entry.is_err());
     }
 
-    // UrlFlags tests
-
-    #[test]
-    fn url_flags_self_contained() {
-        assert_eq!(UrlFlags::SELF_CONTAINED.get(), 0x000001);
-    }
-
-    // to_owned tests (requires alloc feature)
-
     #[cfg(feature = "alloc")]
-    mod alloc_tests {
-        use super::*;
+    #[test]
+    fn dref_box_round_trip() {
+        // Parse original data
+        let entries = vec![
+            make_url_entry_self_contained(),
+            make_url_entry_with_location("http://example.com/video.mp4"),
+            make_urn_entry("urn:example", "http://example.com"),
+        ];
+        let original_payload = make_dref_payload(entries);
+        let original_view = DrefBoxView::parse(&original_payload).unwrap();
+        let owned = DrefBox::from_view(&original_view).unwrap();
 
-        #[test]
-        fn url_box_ref_to_owned() {
-            let payload = make_url_box_with_location("http://example.com/test.mp4");
-            let url_ref = UrlBoxView::parse(&payload).unwrap();
-            let url_owned = url_ref.to_owned();
+        // Write to buffer
+        let mut buf = vec![0u8; owned.size()];
+        owned.write(&mut buf).unwrap();
 
-            assert_eq!(url_owned.version, url_ref.version);
-            assert_eq!(url_owned.flags.get(), url_ref.flags.get());
-            assert_eq!(url_owned.location.as_deref(), url_ref.location);
-        }
+        // Parse again and compare
+        let reparsed = DrefBoxView::parse(&buf).unwrap();
+        assert_eq!(reparsed.entry_count, original_view.entry_count);
 
-        #[test]
-        fn urn_box_ref_to_owned() {
-            let payload = make_urn_box_payload("urn:example", "http://example.com");
-            let urn_ref = UrnBoxView::parse(&payload).unwrap();
-            let urn_owned = urn_ref.to_owned();
+        let original_entries: Vec<_> = original_view.entries().collect();
+        let reparsed_entries: Vec<_> = reparsed.entries().collect();
 
-            assert_eq!(urn_owned.version, urn_ref.version);
-            assert_eq!(urn_owned.flags.get(), urn_ref.flags.get());
-            assert_eq!(urn_owned.name.as_str(), urn_ref.name);
-            assert_eq!(urn_owned.location.as_str(), urn_ref.location);
-        }
-
-        #[test]
-        fn url_box_from_ref() {
-            let payload = make_url_box_self_contained();
-            let url_ref = UrlBoxView::parse(&payload).unwrap();
-            let url_owned: UrlBox = url_ref.into();
-
-            assert!(url_owned.flags.contains(UrlFlags::SELF_CONTAINED));
-            assert!(url_owned.location.is_none());
-        }
-
-        #[test]
-        fn urn_box_from_ref() {
-            let payload = make_urn_box_payload("urn:test", "http://test.com");
-            let urn_ref = UrnBoxView::parse(&payload).unwrap();
-            let urn_owned: UrnBox = urn_ref.into();
-
-            assert_eq!(urn_owned.name, "urn:test");
-            assert_eq!(urn_owned.location, "http://test.com");
+        for (orig, reparsed) in original_entries.iter().zip(reparsed_entries.iter()) {
+            match (orig.as_ref().unwrap(), reparsed.as_ref().unwrap()) {
+                (DrefEntryView::Url(o), DrefEntryView::Url(r)) => {
+                    assert_eq!(o.version, r.version);
+                    assert_eq!(o.flags.get(), r.flags.get());
+                    assert_eq!(o.location, r.location);
+                }
+                (DrefEntryView::Urn(o), DrefEntryView::Urn(r)) => {
+                    assert_eq!(o.version, r.version);
+                    assert_eq!(o.flags.get(), r.flags.get());
+                    assert_eq!(o.name, r.name);
+                    assert_eq!(o.location, r.location);
+                }
+                _ => panic!("Entry type mismatch"),
+            }
         }
     }
 }

@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::Co64BoxView;
@@ -237,6 +237,7 @@ pub use owned::StblBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::BoxFrameMut;
     use crate::boxes::Co64Box;
     use crate::boxes::CttsBox;
     use crate::boxes::StcoBox;
@@ -245,6 +246,7 @@ mod owned {
     use crate::boxes::StssBox;
     use crate::boxes::StszBox;
     use crate::boxes::SttsBox;
+    use crate::cursor::WriteCursor;
 
     use super::*;
 
@@ -252,6 +254,45 @@ mod owned {
     pub enum ChunkOffsets {
         Stco(StcoBox),
         Co64(Co64Box),
+    }
+
+    impl ChunkOffsets {
+        /// Returns the box type for this chunk offsets box.
+        pub fn boxtype(&self) -> BoxType {
+            match self {
+                ChunkOffsets::Stco(_) => BoxType::STCO,
+                ChunkOffsets::Co64(_) => BoxType::CO64,
+            }
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            match self {
+                ChunkOffsets::Stco(stco) => stco.size(),
+                ChunkOffsets::Co64(co64) => co64.size(),
+            }
+        }
+
+        /// Returns the total frame size (including box header).
+        pub fn frame_size(&self) -> usize {
+            BoxFrameMut::required_len(self.boxtype(), self.size())
+        }
+
+        fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            let boxtype = self.boxtype();
+            let payload_size = self.size();
+            let frame_size = self.frame_size();
+
+            let buf = cur.take_mut(frame_size)?;
+            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
+
+            match self {
+                ChunkOffsets::Stco(stco) => stco.write(frame.payload_mut())?,
+                ChunkOffsets::Co64(co64) => co64.write(frame.payload_mut())?,
+            }
+
+            Ok(())
+        }
     }
 
     /// An owned Sample Table Box (`stbl`).
@@ -383,6 +424,113 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<StblBox> {
             let view = StblBoxView::parse(payload)?;
             StblBox::from_view(&view)
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            let mut size = 0;
+
+            // stsd (required)
+            size += BoxFrameMut::required_len(BoxType::STSD, self.stsd.size());
+
+            // stts (required)
+            size += BoxFrameMut::required_len(BoxType::STTS, self.stts.size());
+
+            // ctts (optional)
+            if let Some(ref ctts) = self.ctts {
+                size += BoxFrameMut::required_len(BoxType::CTTS, ctts.size());
+            }
+
+            // cslg (optional)
+            if let Some(ref cslg) = self.cslg {
+                size += BoxFrameMut::required_len(BoxType::CSLG, cslg.size());
+            }
+
+            // stsc (required)
+            size += BoxFrameMut::required_len(BoxType::STSC, self.stsc.size());
+
+            // stsz (optional)
+            if let Some(ref stsz) = self.stsz {
+                size += BoxFrameMut::required_len(BoxType::STSZ, stsz.size());
+            }
+
+            // stss (optional)
+            if let Some(ref stss) = self.stss {
+                size += BoxFrameMut::required_len(BoxType::STSS, stss.size());
+            }
+
+            // chunk_offsets (required)
+            size += self.chunk_offsets.frame_size();
+
+            size
+        }
+
+        fn write_box<F>(
+            cur: &mut WriteCursor<'_>,
+            boxtype: BoxType,
+            payload_size: usize,
+            write_payload: F,
+        ) -> Result<()>
+        where
+            F: FnOnce(&mut [u8]) -> Result<()>,
+        {
+            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
+            let buf = cur.take_mut(frame_size)?;
+            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
+            write_payload(frame.payload_mut())?;
+            Ok(())
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            // stsd
+            Self::write_box(cur, BoxType::STSD, self.stsd.size(), |p| self.stsd.write(p))?;
+
+            // stts
+            Self::write_box(cur, BoxType::STTS, self.stts.size(), |p| self.stts.write(p))?;
+
+            // ctts (optional)
+            if let Some(ref ctts) = self.ctts {
+                Self::write_box(cur, BoxType::CTTS, ctts.size(), |p| ctts.write(p))?;
+            }
+
+            // cslg (optional)
+            if let Some(ref cslg) = self.cslg {
+                Self::write_box(cur, BoxType::CSLG, cslg.size(), |p| cslg.write(p))?;
+            }
+
+            // stsc
+            Self::write_box(cur, BoxType::STSC, self.stsc.size(), |p| self.stsc.write(p))?;
+
+            // stsz (optional)
+            if let Some(ref stsz) = self.stsz {
+                Self::write_box(cur, BoxType::STSZ, stsz.size(), |p| stsz.write(p))?;
+            }
+
+            // stss (optional)
+            if let Some(ref stss) = self.stss {
+                Self::write_box(cur, BoxType::STSS, stss.size(), |p| stss.write(p))?;
+            }
+
+            // chunk_offsets
+            self.chunk_offsets.write_in(cur)?;
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::STBL,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `StblBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 

@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::HdlrBoxView;
@@ -112,8 +112,10 @@ pub use owned::MdiaBox;
 mod owned {
     use super::*;
 
+    use crate::BoxFrameMut;
     use crate::boxes::HdlrBox;
     use crate::boxes::MinfBox;
+    use crate::cursor::WriteCursor;
 
     /// An owned Media Box (`mdia`).
     pub struct MdiaBox {
@@ -204,6 +206,55 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<MdiaBox> {
             let view = MdiaBoxView::parse(payload)?;
             MdiaBox::from_view(&view)
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            let mut size = 0;
+            size += BoxFrameMut::required_len(BoxType::MDHD, self.mdhd.size());
+            size += BoxFrameMut::required_len(BoxType::HDLR, self.hdlr.size());
+            size += BoxFrameMut::required_len(BoxType::MINF, self.minf.size());
+            size
+        }
+
+        fn write_box<F>(
+            cur: &mut WriteCursor<'_>,
+            boxtype: BoxType,
+            payload_size: usize,
+            write_payload: F,
+        ) -> Result<()>
+        where
+            F: FnOnce(&mut [u8]) -> Result<()>,
+        {
+            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
+            let buf = cur.take_mut(frame_size)?;
+            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
+            write_payload(frame.payload_mut())?;
+            Ok(())
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            Self::write_box(cur, BoxType::MDHD, self.mdhd.size(), |p| self.mdhd.write(p))?;
+            Self::write_box(cur, BoxType::HDLR, self.hdlr.size(), |p| self.hdlr.write(p))?;
+            Self::write_box(cur, BoxType::MINF, self.minf.size(), |p| self.minf.write(p))?;
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::MDIA,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `MdiaBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 

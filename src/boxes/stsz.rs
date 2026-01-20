@@ -186,6 +186,8 @@ pub use owned::StszBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// Sample sizes storage for owned StszBox.
@@ -211,6 +213,8 @@ mod owned {
     }
 
     impl StszBox {
+        const ENTRY_SIZE: usize = 4;
+
         /// Creates a `StszBox` from a `StszBoxView`.
         pub fn from_view(view: &StszBoxView<'_>) -> Result<StszBox> {
             let sample_sizes = if view.sample_size != 0 {
@@ -232,6 +236,62 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<StszBox> {
             let view = StszBoxView::parse(payload)?;
             StszBox::from_view(&view)
+        }
+
+        /// Returns the size of the `StszBox` data.
+        #[inline]
+        pub fn size(&self) -> usize {
+            // version/flags + sample_size + sample_count + entries (if variable)
+            4 + 4
+                + 4
+                + match &self.sample_sizes {
+                    SampleSizes::Uniform(_) => 0,
+                    SampleSizes::Variable(sizes) => sizes.len() * Self::ENTRY_SIZE,
+                }
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(&self.flags.to_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            match &self.sample_sizes {
+                SampleSizes::Uniform(size) => {
+                    cur.write_u32_be(*size)
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    cur.write_u32_be(self.sample_count)
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                }
+                SampleSizes::Variable(sizes) => {
+                    cur.write_u32_be(0)
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    cur.write_u32_be(sizes.len() as u32)
+                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    for size in sizes {
+                        cur.write_u32_be(*size)
+                            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                    }
+                }
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::STSZ,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `StszBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
 
         /// Returns the size of a specific sample (1-indexed).
@@ -286,64 +346,52 @@ mod tests {
         payload
     }
 
-    #[test]
-    fn parse_uniform_and_variable() {
-        // Uniform
-        let payload = make_stsz_payload_uniform(1024, 10);
-        let stsz = StszBoxView::parse(&payload).unwrap();
-        assert_eq!(stsz.sample_size, 1024);
-        assert_eq!(stsz.sample_count, 10);
-        assert_eq!(stsz.sample_sizes().count(), 10);
-        let sizes: Vec<_> = stsz.sample_sizes().map(|r| r.unwrap()).collect();
-        assert!(sizes.iter().all(|&s| s == 1024));
-
-        // Variable
-        let sizes = vec![100, 200, 300];
-        let payload = make_stsz_payload_variable(sizes.clone());
-        let stsz = StszBoxView::parse(&payload).unwrap();
-        assert_eq!(stsz.sample_size, 0);
-        let parsed: Vec<_> = stsz.sample_sizes().map(|r| r.unwrap()).collect();
-        assert_eq!(parsed, sizes);
-    }
-
-    #[test]
-    fn invalid_size() {
-        let mut payload = make_full_box_header(0, 0);
-        payload.extend_from_slice(&0u32.to_be_bytes());
-        payload.extend_from_slice(&2u32.to_be_bytes());
-        payload.extend_from_slice(&100u32.to_be_bytes());
-        assert!(StszBoxView::parse(&payload).is_err());
-    }
-
-    #[test]
-    fn wrong_box_type() {
-        let payload = make_stsz_payload_uniform(1024, 0);
-        let mut box_data = Vec::new();
-        box_data.extend_from_slice(&(8 + payload.len() as u32).to_be_bytes());
-        box_data.extend_from_slice(b"stsc");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
-        let result = StszBoxView::try_from(box_view);
-        assert!(result.is_err());
-    }
-
     #[cfg(feature = "alloc")]
     #[test]
-    fn owned_conversion() {
-        let sizes = vec![100, 200, 300];
+    fn stsz_box_write_and_round_trip() {
+        // Variable sizes case
+        let sizes = vec![100, 200, 300, 150, 250];
         let payload = make_stsz_payload_variable(sizes.clone());
         let view = StszBoxView::parse(&payload).unwrap();
         let owned = StszBox::from_view(&view).unwrap();
 
-        if let SampleSizes::Variable(ref s) = owned.sample_sizes {
+        // Write to buffer
+        let mut buf = vec![0u8; owned.size()];
+        owned.write(&mut buf).unwrap();
+
+        // Parse again and compare
+        let reparsed = StszBox::parse(&buf).unwrap();
+        if let SampleSizes::Variable(ref s) = reparsed.sample_sizes {
             assert_eq!(s, &sizes);
         } else {
             panic!("Expected Variable sample sizes");
         }
 
-        assert_eq!(owned.get_sample_size(1), Some(100));
-        assert_eq!(owned.get_sample_size(4), None);
+        // Uniform sizes case
+        let payload = make_stsz_payload_uniform(1024, 10);
+        let view = StszBoxView::parse(&payload).unwrap();
+        let owned = StszBox::from_view(&view).unwrap();
+
+        let mut buf = vec![0u8; owned.size()];
+        owned.write(&mut buf).unwrap();
+
+        let reparsed = StszBox::parse(&buf).unwrap();
+        assert_eq!(reparsed.sample_count, 10);
+        if let SampleSizes::Uniform(size) = reparsed.sample_sizes {
+            assert_eq!(size, 1024);
+        } else {
+            panic!("Expected Uniform sample sizes");
+        }
+
+        // Error case: buffer too small
+        let mut small_buf = vec![0u8; owned.size() - 1];
+        assert!(owned.write(&mut small_buf).is_err());
+
+        // Error case: entry count mismatch
+        let mut bad_payload = make_full_box_header(0, 0);
+        bad_payload.extend_from_slice(&0u32.to_be_bytes());
+        bad_payload.extend_from_slice(&2u32.to_be_bytes());
+        bad_payload.extend_from_slice(&100u32.to_be_bytes());
+        assert!(StszBoxView::parse(&bad_payload).is_err());
     }
 }

@@ -143,6 +143,8 @@ pub use owned::StssBox;
 mod owned {
     use super::*;
 
+    use crate::cursor::WriteCursor;
+
     /// An owned Sync Sample Box (`stss`).
     #[derive(Debug, Clone)]
     pub struct StssBox {
@@ -169,6 +171,44 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<StssBox> {
             let view = StssBoxView::parse(payload)?;
             StssBox::from_view(&view)
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            // version(1) + flags(3) + entry_count(4) + entries(4 * n)
+            1 + 3 + 4 + self.entries.len() * 4
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(&self.flags.to_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(self.entries.len() as u32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            for entry in &self.entries {
+                cur.write_u32_be(entry.sample_number)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::STSS,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `StssBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
 
         /// Checks if a given sample number is a sync sample.

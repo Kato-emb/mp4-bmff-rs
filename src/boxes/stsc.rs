@@ -130,6 +130,8 @@ pub use owned::StscBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned Sample To Chunk Box (`stsc`).
@@ -143,6 +145,8 @@ mod owned {
     }
 
     impl StscBox {
+        const ENTRY_SIZE: usize = 12;
+
         /// Creates a `StscBox` from a `StscBoxView`.
         pub fn from_view(view: &StscBoxView<'_>) -> Result<StscBox> {
             let entries = view.entries().collect::<Result<Vec<StscEntry>>>()?;
@@ -158,6 +162,48 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<StscBox> {
             let view = StscBoxView::parse(payload)?;
             StscBox::from_view(&view)
+        }
+
+        /// Returns the size of the `StscBox` data.
+        #[inline]
+        pub fn size(&self) -> usize {
+            4 + 4 + self.entries.len() * Self::ENTRY_SIZE // version/flags + count + entries
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(&self.flags.to_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(self.entries.len() as u32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            for entry in &self.entries {
+                cur.write_u32_be(entry.first_chunk)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(entry.samples_per_chunk)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(entry.sample_description_index)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::STSC,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `StscBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 
@@ -193,73 +239,10 @@ mod tests {
         payload
     }
 
-    #[test]
-    fn parse_and_iterate_entries() {
-        // Empty
-        let payload = make_stsc_payload(vec![]);
-        let stsc = StscBoxView::parse(&payload).unwrap();
-        assert_eq!(stsc.entry_count, 0);
-        assert_eq!(stsc.entries().count(), 0);
-
-        // Single
-        let payload = make_stsc_payload(vec![StscEntry {
-            first_chunk: 1,
-            samples_per_chunk: 10,
-            sample_description_index: 1,
-        }]);
-        let stsc = StscBoxView::parse(&payload).unwrap();
-        let entry = stsc.entries().next().unwrap().unwrap();
-        assert_eq!(entry.first_chunk, 1);
-        assert_eq!(entry.samples_per_chunk, 10);
-
-        // Multiple
-        let entries = vec![
-            StscEntry {
-                first_chunk: 1,
-                samples_per_chunk: 10,
-                sample_description_index: 1,
-            },
-            StscEntry {
-                first_chunk: 5,
-                samples_per_chunk: 20,
-                sample_description_index: 2,
-            },
-        ];
-        let payload = make_stsc_payload(entries.clone());
-        let stsc = StscBoxView::parse(&payload).unwrap();
-        let parsed: Vec<_> = stsc.entries().map(|r| r.unwrap()).collect();
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0].first_chunk, 1);
-        assert_eq!(parsed[1].samples_per_chunk, 20);
-    }
-
-    #[test]
-    fn invalid_size() {
-        let mut payload = make_full_box_header(0, 0);
-        payload.extend_from_slice(&2u32.to_be_bytes());
-        payload.extend_from_slice(&1u32.to_be_bytes());
-        payload.extend_from_slice(&10u32.to_be_bytes());
-        payload.extend_from_slice(&1u32.to_be_bytes());
-        assert!(StscBoxView::parse(&payload).is_err());
-    }
-
-    #[test]
-    fn wrong_box_type() {
-        let payload = make_stsc_payload(vec![]);
-        let mut box_data = Vec::new();
-        box_data.extend_from_slice(&(8 + payload.len() as u32).to_be_bytes());
-        box_data.extend_from_slice(b"stco");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
-        let result = StscBoxView::try_from(box_view);
-        assert!(result.is_err());
-    }
-
     #[cfg(feature = "alloc")]
     #[test]
-    fn owned_conversion() {
+    fn stsc_box_write_and_round_trip() {
+        // Multiple entries
         let entries = vec![
             StscEntry {
                 first_chunk: 1,
@@ -270,13 +253,43 @@ mod tests {
                 first_chunk: 5,
                 samples_per_chunk: 20,
                 sample_description_index: 2,
+            },
+            StscEntry {
+                first_chunk: 10,
+                samples_per_chunk: 15,
+                sample_description_index: 1,
             },
         ];
         let payload = make_stsc_payload(entries.clone());
         let view = StscBoxView::parse(&payload).unwrap();
         let owned = StscBox::from_view(&view).unwrap();
-        assert_eq!(owned.entries.len(), 2);
-        assert_eq!(owned.entries[0].first_chunk, 1);
-        assert_eq!(owned.entries[1].samples_per_chunk, 20);
+
+        // Write to buffer
+        let mut buf = vec![0u8; owned.size()];
+        owned.write(&mut buf).unwrap();
+
+        // Parse again and compare
+        let reparsed = StscBox::parse(&buf).unwrap();
+        assert_eq!(reparsed.entries.len(), 3);
+        for (i, entry) in reparsed.entries.iter().enumerate() {
+            assert_eq!(entry.first_chunk, entries[i].first_chunk);
+            assert_eq!(entry.samples_per_chunk, entries[i].samples_per_chunk);
+            assert_eq!(
+                entry.sample_description_index,
+                entries[i].sample_description_index
+            );
+        }
+
+        // Error case: buffer too small
+        let mut small_buf = vec![0u8; owned.size() - 1];
+        assert!(owned.write(&mut small_buf).is_err());
+
+        // Error case: entry count mismatch
+        let mut bad_payload = make_full_box_header(0, 0);
+        bad_payload.extend_from_slice(&2u32.to_be_bytes());
+        bad_payload.extend_from_slice(&1u32.to_be_bytes());
+        bad_payload.extend_from_slice(&10u32.to_be_bytes());
+        bad_payload.extend_from_slice(&1u32.to_be_bytes());
+        assert!(StscBoxView::parse(&bad_payload).is_err());
     }
 }

@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::MdiaBoxView;
@@ -104,8 +104,10 @@ pub use owned::TrakBox;
 mod owned {
     use super::*;
 
+    use crate::BoxFrameMut;
     use crate::boxes::MdiaBox;
     use crate::boxes::TrefBox;
+    use crate::cursor::WriteCursor;
 
     /// An owned Track Box (`trak`).
     pub struct TrakBox {
@@ -191,6 +193,61 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<TrakBox> {
             let view = TrakBoxView::parse(payload)?;
             TrakBox::from_view(&view)
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            let mut size = 0;
+            size += BoxFrameMut::required_len(BoxType::TKHD, self.tkhd.size());
+            if let Some(ref tref) = self.tref {
+                size += BoxFrameMut::required_len(BoxType::TREF, tref.size());
+            }
+            size += BoxFrameMut::required_len(BoxType::MDIA, self.mdia.size());
+            size
+        }
+
+        fn write_box<F>(
+            cur: &mut WriteCursor<'_>,
+            boxtype: BoxType,
+            payload_size: usize,
+            write_payload: F,
+        ) -> Result<()>
+        where
+            F: FnOnce(&mut [u8]) -> Result<()>,
+        {
+            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
+            let buf = cur.take_mut(frame_size)?;
+            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
+            write_payload(frame.payload_mut())?;
+            Ok(())
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            Self::write_box(cur, BoxType::TKHD, self.tkhd.size(), |p| self.tkhd.write(p))?;
+
+            if let Some(ref tref) = self.tref {
+                Self::write_box(cur, BoxType::TREF, tref.size(), |p| tref.write(p))?;
+            }
+
+            Self::write_box(cur, BoxType::MDIA, self.mdia.size(), |p| self.mdia.write(p))?;
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::TRAK,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `TrakBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 

@@ -77,6 +77,16 @@ impl<T> FullBoxFlags<T> {
         }
     }
 
+    /// Returns the flags as a 3-byte array (big-endian).
+    #[inline]
+    pub const fn to_bytes(&self) -> [u8; 3] {
+        [
+            ((self.mask >> 16) & 0xFF) as u8,
+            ((self.mask >> 8) & 0xFF) as u8,
+            (self.mask & 0xFF) as u8,
+        ]
+    }
+
     /// Creates a `FullBoxFlags` from the given raw bits, truncating to 24 bits.
     #[inline]
     pub const fn from_bits_truncate(bits: u32) -> Self {

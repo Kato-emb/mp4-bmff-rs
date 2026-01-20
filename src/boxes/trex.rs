@@ -1,4 +1,5 @@
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
 use crate::BoxFrame;
 use crate::BoxType;
@@ -87,6 +88,46 @@ impl TrexBox {
         }
 
         Ok(this)
+    }
+
+    /// Returns the size of the payload in bytes.
+    pub fn size(&self) -> usize {
+        4 + 4 + 4 + 4 + 4 + 4 // version(1) + flags(3) + track_id(4) + 4 x u32 fields
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        cur.write_u8(self.version)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.flags.to_bytes())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.track_id)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.default_sample_description_index)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.default_sample_duration)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.default_sample_size)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.default_sample_flags)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        if !cur.is_empty() {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Buffer larger than expected",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::TREX,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Writes this `TrexBox` into the given payload.
+    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+        let mut cur = WriteCursor::new(payload);
+        self.write_in(&mut cur)
     }
 }
 

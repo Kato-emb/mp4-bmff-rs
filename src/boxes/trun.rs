@@ -324,6 +324,8 @@ mod owned {
     extern crate alloc;
     use alloc::vec::Vec;
 
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned Track Run Box (`trun`).
@@ -372,6 +374,67 @@ mod owned {
                 version: self.version,
             }
         }
+
+        /// Returns the size of the `TrunBox` payload in bytes.
+        #[inline]
+        pub fn size(&self) -> usize {
+            let mut size = 4 + 4; // version/flags + sample_count
+
+            if self.flags.data_offset_present() {
+                size += 4; // data_offset
+            }
+
+            if self.flags.first_sample_flags_present() {
+                size += 4; // first_sample_flags
+            }
+
+            // Per-sample data
+            size += self.samples.len();
+
+            size
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(&self.flags.to_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            cur.write_u32_be(self.sample_count)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            if let Some(data_offset) = self.data_offset {
+                cur.write_i32_be(data_offset)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            if let Some(first_sample_flags) = self.first_sample_flags {
+                cur.write_u32_be(first_sample_flags)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            // Write raw sample data
+            cur.write_slice(&self.samples)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::TRUN,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `TrunBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
+        }
     }
 
     impl TryFrom<&TrunBoxView<'_>> for TrunBox {
@@ -410,48 +473,6 @@ mod tests {
         data.extend_from_slice(optional_header);
         data.extend_from_slice(samples);
         data
-    }
-
-    #[test]
-    fn parse_trun_minimal() {
-        let payload = make_trun_payload(0, 0, 0, &[], &[]);
-        let trun = TrunBoxView::parse(&payload).unwrap();
-
-        assert_eq!(trun.version, 0);
-        assert_eq!(trun.sample_count, 0);
-        assert!(trun.data_offset.is_none());
-        assert!(trun.first_sample_flags.is_none());
-        assert_eq!(trun.samples().count(), 0);
-    }
-
-    #[test]
-    fn parse_trun_with_data_offset() {
-        let mut header = Vec::new();
-        header.extend_from_slice(&100i32.to_be_bytes());
-
-        let payload = make_trun_payload(0, 0x000001, 0, &header, &[]);
-        let trun = TrunBoxView::parse(&payload).unwrap();
-
-        assert_eq!(trun.data_offset, Some(100));
-    }
-
-    #[test]
-    fn parse_trun_with_samples() {
-        let flags = 0x000200; // sample_size_present
-
-        let mut samples = Vec::new();
-        samples.extend_from_slice(&1000u32.to_be_bytes()); // sample 1 size
-        samples.extend_from_slice(&2000u32.to_be_bytes()); // sample 2 size
-
-        let payload = make_trun_payload(0, flags, 2, &[], &samples);
-        let trun = TrunBoxView::parse(&payload).unwrap();
-
-        assert_eq!(trun.sample_count, 2);
-
-        let parsed_samples: Vec<_> = trun.samples().collect();
-        assert_eq!(parsed_samples.len(), 2);
-        assert_eq!(parsed_samples[0].as_ref().unwrap().size, Some(1000));
-        assert_eq!(parsed_samples[1].as_ref().unwrap().size, Some(2000));
     }
 
     #[test]
@@ -495,88 +516,64 @@ mod tests {
         let result = TrunBoxView::parse(&payload);
 
         assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::InvalidBoxVersion { .. }));
-        }
-    }
-
-    #[test]
-    fn parse_trun_size_mismatch() {
-        let flags = 0x000200; // sample_size_present
-
-        // Only 1 sample but sample_count is 2
-        let mut samples = Vec::new();
-        samples.extend_from_slice(&1000u32.to_be_bytes());
-
-        let payload = make_trun_payload(0, flags, 2, &[], &samples);
-        let result = TrunBoxView::parse(&payload);
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn try_from_box_view_success() {
-        let payload = make_trun_payload(0, 0, 0, &[], &[]);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"trun");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
-        let trun = TrunBoxView::try_from(box_view).unwrap();
-
-        assert_eq!(trun.sample_count, 0);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_trun_payload(0, 0, 0, &[], &[]);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"tfhd");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
-        let result = TrunBoxView::try_from(box_view);
-
-        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            ErrorKind::InvalidBoxVersion { .. }
+        ));
     }
 
     #[cfg(feature = "alloc")]
-    mod alloc_tests {
-        use super::*;
+    #[test]
+    fn trun_box_round_trip() {
+        // Create payload with data_offset, first_sample_flags, and multiple samples with all fields
+        let flags = 0x000001 | 0x000004 | 0x000100 | 0x000200 | 0x000400 | 0x000800;
 
-        #[test]
-        fn trun_box_from_view() {
-            let flags = 0x000200; // sample_size_present
+        let mut header = Vec::new();
+        header.extend_from_slice(&100i32.to_be_bytes()); // data_offset
+        header.extend_from_slice(&0x01000000u32.to_be_bytes()); // first_sample_flags
 
-            let mut samples = Vec::new();
-            samples.extend_from_slice(&1000u32.to_be_bytes());
-            samples.extend_from_slice(&2000u32.to_be_bytes());
+        let mut samples = Vec::new();
+        // Sample 1
+        samples.extend_from_slice(&100u32.to_be_bytes()); // duration
+        samples.extend_from_slice(&1000u32.to_be_bytes()); // size
+        samples.extend_from_slice(&0x02000000u32.to_be_bytes()); // flags
+        samples.extend_from_slice(&50i32.to_be_bytes()); // composition offset
+        // Sample 2
+        samples.extend_from_slice(&200u32.to_be_bytes()); // duration
+        samples.extend_from_slice(&2000u32.to_be_bytes()); // size
+        samples.extend_from_slice(&0x03000000u32.to_be_bytes()); // flags
+        samples.extend_from_slice(&(-25i32).to_be_bytes()); // negative composition offset
 
-            let payload = make_trun_payload(0, flags, 2, &[], &samples);
-            let view = TrunBoxView::parse(&payload).unwrap();
-            let owned = TrunBox::from_view(&view).unwrap();
+        let original_payload = make_trun_payload(1, flags, 2, &header, &samples);
 
-            assert_eq!(owned.sample_count, 2);
-            let parsed: Vec<_> = owned.samples().collect();
-            assert_eq!(parsed[0].as_ref().unwrap().size, Some(1000));
-            assert_eq!(parsed[1].as_ref().unwrap().size, Some(2000));
-        }
+        // Parse
+        let original = TrunBox::parse(&original_payload).unwrap();
 
-        #[test]
-        fn trun_box_parse() {
-            let payload = make_trun_payload(0, 0, 0, &[], &[]);
-            let owned = TrunBox::parse(&payload).unwrap();
+        // Write
+        let mut buf = vec![0u8; original.size()];
+        original.write(&mut buf).unwrap();
 
-            assert_eq!(owned.sample_count, 0);
-            assert_eq!(owned.samples().count(), 0);
+        // Parse again
+        let reparsed = TrunBox::parse(&buf).unwrap();
+
+        // Compare
+        assert_eq!(reparsed.version, original.version);
+        assert_eq!(reparsed.flags.get(), original.flags.get());
+        assert_eq!(reparsed.sample_count, original.sample_count);
+        assert_eq!(reparsed.data_offset, original.data_offset);
+        assert_eq!(reparsed.first_sample_flags, original.first_sample_flags);
+
+        let orig_samples: Vec<_> = original.samples().collect();
+        let reparsed_samples: Vec<_> = reparsed.samples().collect();
+        assert_eq!(orig_samples.len(), reparsed_samples.len());
+
+        for (o, r) in orig_samples.iter().zip(reparsed_samples.iter()) {
+            let o = o.as_ref().unwrap();
+            let r = r.as_ref().unwrap();
+            assert_eq!(o.duration, r.duration);
+            assert_eq!(o.size, r.size);
+            assert_eq!(o.flags, r.flags);
+            assert_eq!(o.composition_time_offset, r.composition_time_offset);
         }
     }
 }

@@ -1,5 +1,4 @@
 use crate::cursor::ReadCursor;
-use crate::cursor::WriteCursor;
 use crate::types::FourCC;
 
 use crate::BoxFrame;
@@ -65,44 +64,6 @@ impl<'a> FtypBoxView<'a> {
 
         Ok(this)
     }
-
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-        if self.size() > cur.remaining() {
-            // return Err(Error::at(
-            //     ErrorKind::InsufficientBuffer {
-            //         needed: self.size() as u64,
-            //         available: cur.remaining() as u64,
-            //     },
-            //     cur.position() as u64,
-            // ));
-        }
-
-        // Write major_brand (4 bytes)
-        cur.write_array(self.major_brand.as_bytes())
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-
-        // Write minor_version (4 bytes)
-        cur.write_u32_be(self.minor_version)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-
-        // Write compatible_brands
-        cur.write_slice(self.compatible_brands)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-
-        Ok(())
-    }
-
-    /// Writes this `FtypBoxView` into the given payload.
-    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-        let mut cursor = WriteCursor::new(payload);
-        self.write_in(&mut cursor)
-    }
-
-    /// Returns the size of this `FtypBoxView` when serialized.
-    #[inline]
-    pub fn size(&self) -> usize {
-        4 + 4 + self.compatible_brands.len()
-    }
 }
 
 impl<'a> TryFrom<&'a [u8]> for FtypBoxView<'a> {
@@ -135,6 +96,8 @@ pub use owned::FtypBox;
 mod owned {
     use crate::lib::Vec;
 
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned File Type Box (`ftyp`).
@@ -164,6 +127,45 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<Self> {
             let ftyp_view = FtypBoxView::parse(payload)?;
             Ok(Self::from_view(&ftyp_view))
+        }
+
+        /// Writes this `FtypBox` into the given buffer.
+        pub fn size(&self) -> usize {
+            4 + 4 + self.compatible_brands.len() * 4
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            // Write major_brand (4 bytes)
+            cur.write_array(self.major_brand.as_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // Write minor_version (4 bytes)
+            cur.write_u32_be(self.minor_version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // Write compatible_brands
+            for brand in &self.compatible_brands {
+                cur.write_array(brand.as_bytes())
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::FTYP,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `FtypBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 
@@ -209,5 +211,32 @@ mod tests {
                 FourCC::new(*b"avc1"),
             ]
         );
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_ftyp_box_write() {
+        let ftyp_view = FtypBox {
+            major_brand: FourCC::new(*b"isom"),
+            minor_version: 512,
+            compatible_brands: vec![
+                FourCC::new(*b"isom"),
+                FourCC::new(*b"iso2"),
+                FourCC::new(*b"avc1"),
+            ],
+        };
+
+        let mut buffer = vec![0u8; ftyp_view.size()];
+        ftyp_view.write(&mut buffer).unwrap();
+
+        let expected: [u8; 20] = [
+            b'i', b's', b'o', b'm', // major_brand
+            0x00, 0x00, 0x02, 0x00, // minor_version (512)
+            b'i', b's', b'o', b'm', // compatible_brand 1
+            b'i', b's', b'o', b'2', // compatible_brand 2
+            b'a', b'v', b'c', b'1', // compatible_brand 3
+        ];
+
+        assert_eq!(buffer, expected);
     }
 }

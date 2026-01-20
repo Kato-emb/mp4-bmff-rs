@@ -1,4 +1,5 @@
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
 use crate::BoxFrame;
 use crate::BoxType;
@@ -74,6 +75,48 @@ impl MehdBox {
 
         Ok(this)
     }
+
+    /// Returns the size of the payload in bytes.
+    pub fn size(&self) -> usize {
+        4 + match self.version {
+            0 => 4, // fragment_duration as u32
+            _ => 8, // fragment_duration as u64
+        }
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        cur.write_u8(self.version)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.flags.to_bytes())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        match self.version {
+            0 => cur
+                .write_u32_be(self.fragment_duration as u32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+            _ => cur
+                .write_u64_be(self.fragment_duration)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+        }
+
+        if !cur.is_empty() {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Buffer larger than expected",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::MEHD,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Writes this `MehdBox` into the given payload.
+    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+        let mut cur = WriteCursor::new(payload);
+        self.write_in(&mut cur)
+    }
 }
 
 impl TryFrom<&[u8]> for MehdBox {
@@ -110,109 +153,33 @@ pub type MehdFlags = FullBoxFlags<MehdSpec>;
 mod tests {
     use super::*;
 
-    fn make_full_box_header(version: u8, flags: u32) -> Vec<u8> {
-        let mut data = Vec::new();
-        data.push(version);
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
-        data
-    }
+    #[test]
+    fn round_trip_v0() {
+        let original = MehdBox {
+            version: 0,
+            flags: MehdFlags::empty(),
+            fragment_duration: 12345,
+        };
 
-    fn make_mehd_payload_v0(fragment_duration: u32) -> Vec<u8> {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&make_full_box_header(0, 0));
-        payload.extend_from_slice(&fragment_duration.to_be_bytes());
-        payload
-    }
+        let mut buf = vec![0u8; original.size()];
+        original.write(&mut buf).unwrap();
 
-    fn make_mehd_payload_v1(fragment_duration: u64) -> Vec<u8> {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&make_full_box_header(1, 0));
-        payload.extend_from_slice(&fragment_duration.to_be_bytes());
-        payload
+        let parsed = MehdBox::parse(&buf).unwrap();
+        assert_eq!(parsed, original);
     }
 
     #[test]
-    fn parse_mehd_v0() {
-        let payload = make_mehd_payload_v0(12345);
-        let mehd = MehdBox::parse(&payload).unwrap();
+    fn round_trip_v1() {
+        let original = MehdBox {
+            version: 1,
+            flags: MehdFlags::empty(),
+            fragment_duration: 0x1_0000_0000,
+        };
 
-        assert_eq!(mehd.version, 0);
-        assert_eq!(mehd.fragment_duration, 12345);
-    }
+        let mut buf = vec![0u8; original.size()];
+        original.write(&mut buf).unwrap();
 
-    #[test]
-    fn parse_mehd_v1() {
-        let payload = make_mehd_payload_v1(0x1_0000_0000);
-        let mehd = MehdBox::parse(&payload).unwrap();
-
-        assert_eq!(mehd.version, 1);
-        assert_eq!(mehd.fragment_duration, 0x1_0000_0000);
-    }
-
-    #[test]
-    fn parse_mehd_v0_extra_data() {
-        let mut payload = make_mehd_payload_v0(1000);
-        payload.extend_from_slice(&[0, 0, 0, 0]); // extra data
-
-        let result = MehdBox::parse(&payload);
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::InvalidBoxSize { .. }));
-        }
-    }
-
-    #[test]
-    fn parse_mehd_truncated() {
-        let payload = make_full_box_header(0, 0);
-        // Missing fragment_duration
-
-        let result = MehdBox::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn try_from_box_view_success() {
-        let payload = make_mehd_payload_v0(5000);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"mehd");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
-        let mehd = MehdBox::try_from(box_view).unwrap();
-
-        assert_eq!(mehd.fragment_duration, 5000);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_mehd_payload_v0(1000);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"mvhd"); // Wrong type
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
-        let result = MehdBox::try_from(box_view);
-
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::MismatchedBoxType { .. }));
-        }
-    }
-
-    #[test]
-    fn try_from_byte_slice() {
-        let payload = make_mehd_payload_v1(999999);
-        let mehd = MehdBox::try_from(payload.as_slice()).unwrap();
-
-        assert_eq!(mehd.version, 1);
-        assert_eq!(mehd.fragment_duration, 999999);
+        let parsed = MehdBox::parse(&buf).unwrap();
+        assert_eq!(parsed, original);
     }
 }

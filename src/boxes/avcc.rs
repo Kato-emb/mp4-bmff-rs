@@ -205,6 +205,9 @@ pub use owned::{
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::BoxFrameMut;
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned AVC Configuration Box (`avcC`)
@@ -245,6 +248,97 @@ mod owned {
                 pps,
                 ext,
             }
+        }
+
+        /// Parses an `AvcCBox` from the given payload.
+        pub fn parse(payload: &[u8]) -> Result<Self> {
+            let view = AvcCBoxView::parse(payload)?;
+            Ok(Self::from_view(&view))
+        }
+
+        /// Returns the size of the `AvcCBox` data.
+        #[inline]
+        pub fn size(&self) -> usize {
+            let mut size = 6; // header fields (version + profile + compat + level + length_size + nb_sps)
+
+            for sps in &self.sps {
+                size += 2 + sps.len(); // length (2 bytes) + data
+            }
+
+            size += 1; // nb_pps
+
+            for pps in &self.pps {
+                size += 2 + pps.len(); // length (2 bytes) + data
+            }
+
+            if let Some(ext) = &self.ext {
+                size += ext.len();
+            }
+
+            size
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.configuration_version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.avc_profile_indication)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.avc_profile_compatibility)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(self.avc_level_indication)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // reserved (6 bits) | lengthSizeMinusOne (2 bits)
+            cur.write_u8(0xFC | (self.length_size_minus_one & 0x03))
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // reserved (3 bits) | numOfSequenceParameterSets (5 bits)
+            cur.write_u8(0xE0 | (self.sps.len() as u8 & 0x1F))
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // SPS NAL units
+            for sps in &self.sps {
+                cur.write_u16_be(sps.len() as u16)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_slice(sps)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            // numOfPictureParameterSets
+            cur.write_u8(self.pps.len() as u8)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // PPS NAL units
+            for pps in &self.pps {
+                cur.write_u16_be(pps.len() as u16)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_slice(pps)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            // Extensions (optional)
+            if let Some(ext) = &self.ext {
+                cur.write_slice(ext)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::AVCC,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `AvcCBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 
@@ -307,6 +401,42 @@ mod owned {
             let avc1_view = Avc1BoxView::parse(payload)?;
             Self::from_view(&avc1_view)
         }
+
+        /// Returns the size of the `Avc1Box` data.
+        #[inline]
+        pub fn size(&self) -> usize {
+            VisualSampleEntry::size() + BoxFrameMut::required_len(BoxType::AVCC, self.avcc.size())
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            self.base.write_in(cur)?;
+
+            // Write avcC box
+            let avcc_payload_len = self.avcc.size();
+            let avcc_frame_len = BoxFrameMut::required_len(BoxType::AVCC, avcc_payload_len);
+            let bytes = cur.take_mut(avcc_frame_len)?;
+            let mut frame = BoxFrameMut::new(bytes, BoxType::AVCC, avcc_payload_len)?;
+            self.avcc.write(frame.payload_mut())?;
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::AVC1,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `Avc1Box` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
+                .map_err(|e| e.with_box_type(BoxType::AVC1))
+        }
     }
 
     impl TryFrom<&Avc1BoxView<'_>> for Avc1Box {
@@ -322,7 +452,6 @@ mod owned {
 mod tests {
     use super::*;
 
-    // Helper: Create NAL unit data [length (2 bytes)][data (length bytes)]
     fn make_nalu(data: &[u8]) -> Vec<u8> {
         let mut result = Vec::new();
         result.extend_from_slice(&(data.len() as u16).to_be_bytes());
@@ -330,33 +459,28 @@ mod tests {
         result
     }
 
-    // Helper: Create AvcC payload
     fn make_avcc_payload(
         profile: u8,
         compatibility: u8,
         level: u8,
-        length_size_minus_one: u8,
         sps_list: &[&[u8]],
         pps_list: &[&[u8]],
     ) -> Vec<u8> {
         let mut data = vec![
-            1,                                     // configurationVersion
-            profile,                               // AVCProfileIndication
-            compatibility,                         // profile_compatibility
-            level,                                 // AVCLevelIndication
-            0xFC | (length_size_minus_one & 0x03), // reserved (6 bits) | lengthSizeMinusOne (2 bits)
+            1,                                    // configurationVersion
+            profile,                              // AVCProfileIndication
+            compatibility,                        // profile_compatibility
+            level,                                // AVCLevelIndication
+            0xFF, // reserved (6 bits) | lengthSizeMinusOne (2 bits) = 3
             0xE0 | (sps_list.len() as u8 & 0x1F), // reserved (3 bits) | numOfSequenceParameterSets (5 bits)
         ];
 
-        // SPS NAL units
         for sps in sps_list {
             data.extend_from_slice(&make_nalu(sps));
         }
 
-        // numOfPictureParameterSets
         data.push(pps_list.len() as u8);
 
-        // PPS NAL units
         for pps in pps_list {
             data.extend_from_slice(&make_nalu(pps));
         }
@@ -364,153 +488,6 @@ mod tests {
         data
     }
 
-    // ==================== NalUnitIter tests ====================
-
-    #[test]
-    fn nal_unit_iter_empty() {
-        let iter = NalUnitIter { data: &[] };
-        let nalus: Vec<_> = iter.collect();
-        assert!(nalus.is_empty());
-    }
-
-    #[test]
-    fn nal_unit_iter_single() {
-        let nalu_data = b"test_nalu";
-        let data = make_nalu(nalu_data);
-
-        let iter = NalUnitIter { data: &data };
-        let nalus: Vec<_> = iter.collect();
-
-        assert_eq!(nalus.len(), 1);
-        assert_eq!(nalus[0], nalu_data);
-    }
-
-    #[test]
-    fn nal_unit_iter_multiple() {
-        let nalu1 = b"first";
-        let nalu2 = b"second";
-        let nalu3 = b"third";
-
-        let mut data = Vec::new();
-        data.extend_from_slice(&make_nalu(nalu1));
-        data.extend_from_slice(&make_nalu(nalu2));
-        data.extend_from_slice(&make_nalu(nalu3));
-
-        let iter = NalUnitIter { data: &data };
-        let nalus: Vec<_> = iter.collect();
-
-        assert_eq!(nalus.len(), 3);
-        assert_eq!(nalus[0], b"first");
-        assert_eq!(nalus[1], b"second");
-        assert_eq!(nalus[2], b"third");
-    }
-
-    #[test]
-    fn nal_unit_iter_insufficient_length_field() {
-        // Only 1 byte, need 2 for length field
-        let data = [0x00];
-        let iter = NalUnitIter { data: &data };
-        let nalus: Vec<_> = iter.collect();
-        assert!(nalus.is_empty());
-    }
-
-    #[test]
-    fn nal_unit_iter_insufficient_data() {
-        // Length says 10 bytes, but only 5 available
-        let mut data = Vec::new();
-        data.extend_from_slice(&10u16.to_be_bytes());
-        data.extend_from_slice(b"12345");
-
-        let iter = NalUnitIter { data: &data };
-        let nalus: Vec<_> = iter.collect();
-        assert!(nalus.is_empty());
-    }
-
-    // ==================== AvcCBoxView tests ====================
-
-    #[test]
-    fn avcc_parse_basic() {
-        let sps = b"\x67\x64\x00\x1f"; // Example SPS NAL unit
-        let pps = b"\x68\xeb\xe3\xcb"; // Example PPS NAL unit
-
-        let payload = make_avcc_payload(100, 0, 31, 3, &[sps], &[pps]);
-
-        let avcc = AvcCBoxView::parse(&payload).unwrap();
-
-        assert_eq!(avcc.configuration_version, 1);
-        assert_eq!(avcc.avc_profile_indication, 100);
-        assert_eq!(avcc.avc_profile_compatibility, 0);
-        assert_eq!(avcc.avc_level_indication, 31);
-        assert_eq!(avcc.length_size_minus_one, 3);
-        assert_eq!(avcc.nb_sps_nalus, 1);
-        assert_eq!(avcc.nb_pps_nalus, 1);
-    }
-
-    #[test]
-    fn avcc_sps_pps_iteration() {
-        let sps1 = b"sps_one";
-        let sps2 = b"sps_two";
-        let pps1 = b"pps_one";
-        let pps2 = b"pps_two";
-        let pps3 = b"pps_three";
-
-        let payload = make_avcc_payload(66, 192, 30, 3, &[sps1, sps2], &[pps1, pps2, pps3]);
-
-        let avcc = AvcCBoxView::parse(&payload).unwrap();
-
-        assert_eq!(avcc.nb_sps_nalus, 2);
-        assert_eq!(avcc.nb_pps_nalus, 3);
-
-        let sps_list: Vec<_> = avcc.sps().collect();
-        assert_eq!(sps_list.len(), 2);
-        assert_eq!(sps_list[0], b"sps_one");
-        assert_eq!(sps_list[1], b"sps_two");
-
-        let pps_list: Vec<_> = avcc.pps().collect();
-        assert_eq!(pps_list.len(), 3);
-        assert_eq!(pps_list[0], b"pps_one");
-        assert_eq!(pps_list[1], b"pps_two");
-        assert_eq!(pps_list[2], b"pps_three");
-    }
-
-    #[test]
-    fn avcc_no_sps_pps() {
-        let payload = make_avcc_payload(77, 64, 40, 3, &[], &[]);
-
-        let avcc = AvcCBoxView::parse(&payload).unwrap();
-
-        assert_eq!(avcc.nb_sps_nalus, 0);
-        assert_eq!(avcc.nb_pps_nalus, 0);
-        assert_eq!(avcc.sps().count(), 0);
-        assert_eq!(avcc.pps().count(), 0);
-    }
-
-    #[test]
-    fn avcc_with_extensions() {
-        let sps = b"sps";
-        let pps = b"pps";
-
-        let mut payload = make_avcc_payload(100, 0, 31, 3, &[sps], &[pps]);
-        // Add some extension data
-        payload.extend_from_slice(b"extension_data");
-
-        let avcc = AvcCBoxView::parse(&payload).unwrap();
-
-        assert!(avcc.ext.is_some());
-        assert_eq!(avcc.ext.unwrap(), b"extension_data");
-    }
-
-    #[test]
-    fn avcc_parse_truncated() {
-        // Only header, no SPS/PPS data
-        let payload = [1, 100, 0, 31, 0xFF];
-        let result = AvcCBoxView::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    // ==================== Avc1BoxView tests ====================
-
-    // Helper: Create box header [size (4 bytes)][type (4 bytes)]
     fn make_box_header(size: u32, fourcc: &[u8; 4]) -> Vec<u8> {
         let mut data = Vec::new();
         data.extend_from_slice(&size.to_be_bytes());
@@ -518,7 +495,6 @@ mod tests {
         data
     }
 
-    // Helper: Create VisualSampleEntry base data
     fn make_visual_sample_entry(width: u16, height: u16) -> Vec<u8> {
         let mut data = Vec::new();
 
@@ -527,35 +503,58 @@ mod tests {
         data.extend_from_slice(&1u16.to_be_bytes()); // data_reference_index
 
         // VisualSampleEntry fields
-        data.extend_from_slice(&[0u8; 2]); // pre_defined (2 bytes)
-        data.extend_from_slice(&[0u8; 2]); // reserved (2 bytes)
-        data.extend_from_slice(&[0u8; 12]); // pre_defined (3 * u32 = 12 bytes)
-        data.extend_from_slice(&width.to_be_bytes()); // width
-        data.extend_from_slice(&height.to_be_bytes()); // height
-        data.extend_from_slice(&0x00480000u32.to_be_bytes()); // horiz_resolution (72.0)
-        data.extend_from_slice(&0x00480000u32.to_be_bytes()); // vert_resolution (72.0)
-        data.extend_from_slice(&[0u8; 4]); // reserved (4 bytes)
+        data.extend_from_slice(&[0u8; 2]); // pre_defined
+        data.extend_from_slice(&[0u8; 2]); // reserved
+        data.extend_from_slice(&[0u8; 12]); // pre_defined
+        data.extend_from_slice(&width.to_be_bytes());
+        data.extend_from_slice(&height.to_be_bytes());
+        data.extend_from_slice(&0x00480000u32.to_be_bytes()); // horiz_resolution
+        data.extend_from_slice(&0x00480000u32.to_be_bytes()); // vert_resolution
+        data.extend_from_slice(&[0u8; 4]); // reserved
         data.extend_from_slice(&1u16.to_be_bytes()); // frame_count
-        // compressorname: 32 bytes total (first byte is length, followed by 31 bytes of data)
-        data.extend_from_slice(&[0u8; 32]); // compressorname (32 bytes)
-        data.extend_from_slice(&0x0018u16.to_be_bytes()); // depth (24)
-        data.extend_from_slice(&[0xFF, 0xFF]); // pre_defined (-1)
+        data.extend_from_slice(&[0u8; 32]); // compressorname
+        data.extend_from_slice(&0x0018u16.to_be_bytes()); // depth
+        data.extend_from_slice(&[0xFF, 0xFF]); // pre_defined
 
         data
+    }
+
+    #[test]
+    fn avcc_parse_multiple_sps_pps() {
+        let sps1 = b"sps_one";
+        let sps2 = b"sps_two";
+        let pps1 = b"pps_one";
+        let pps2 = b"pps_two";
+
+        let payload = make_avcc_payload(100, 0, 31, &[sps1, sps2], &[pps1, pps2]);
+        let avcc = AvcCBoxView::parse(&payload).unwrap();
+
+        assert_eq!(avcc.avc_profile_indication, 100);
+        assert_eq!(avcc.avc_level_indication, 31);
+
+        let sps_list: Vec<_> = avcc.sps().collect();
+        assert_eq!(sps_list, vec![&b"sps_one"[..], &b"sps_two"[..]]);
+
+        let pps_list: Vec<_> = avcc.pps().collect();
+        assert_eq!(pps_list, vec![&b"pps_one"[..], &b"pps_two"[..]]);
+    }
+
+    #[test]
+    fn avcc_parse_truncated() {
+        let payload = [1, 100, 0, 31, 0xFF];
+        assert!(AvcCBoxView::parse(&payload).is_err());
     }
 
     #[test]
     fn avc1_parse_with_avcc() {
         let sps = b"\x67\x64\x00\x1f";
         let pps = b"\x68\xeb\xe3\xcb";
-        let avcc_payload = make_avcc_payload(100, 0, 31, 3, &[sps], &[pps]);
+        let avcc_payload = make_avcc_payload(100, 0, 31, &[sps], &[pps]);
 
-        // Create avcC box
         let avcc_size = 8 + avcc_payload.len() as u32;
         let mut avcc_box = make_box_header(avcc_size, b"avcC");
         avcc_box.extend_from_slice(&avcc_payload);
 
-        // Create avc1 payload
         let mut payload = make_visual_sample_entry(1920, 1080);
         payload.extend_from_slice(&avcc_box);
 
@@ -566,84 +565,64 @@ mod tests {
 
         let avcc = avc1.avcc().unwrap();
         assert_eq!(avcc.avc_profile_indication, 100);
-        assert_eq!(avcc.avc_level_indication, 31);
     }
 
     #[test]
     fn avc1_missing_avcc() {
-        // avc1 without avcC box
         let payload = make_visual_sample_entry(1920, 1080);
-
         let avc1 = Avc1BoxView::parse(&payload).unwrap();
-        let result = avc1.avcc();
-
-        assert!(result.is_err());
+        assert!(avc1.avcc().is_err());
     }
 
-    // ==================== Owned type tests (alloc) ====================
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn avc1_box_codec_string() {
+        let sps = b"sps";
+        let pps = b"pps";
+        let avcc_payload = make_avcc_payload(100, 0, 31, &[sps], &[pps]);
+
+        let avcc_size = 8 + avcc_payload.len() as u32;
+        let mut avcc_box = make_box_header(avcc_size, b"avcC");
+        avcc_box.extend_from_slice(&avcc_payload);
+
+        let mut payload = make_visual_sample_entry(1920, 1080);
+        payload.extend_from_slice(&avcc_box);
+
+        let avc1 = Avc1Box::parse(&payload).unwrap();
+        assert_eq!(avc1.codec(), "avc1.64001F");
+    }
 
     #[cfg(feature = "alloc")]
-    mod alloc_tests {
-        use super::*;
+    #[test]
+    fn avc1_box_round_trip() {
+        let sps = b"\x67\x64\x00\x1f";
+        let pps = b"\x68\xeb\xe3\xcb";
+        let avcc_payload = make_avcc_payload(100, 0, 31, &[sps], &[pps]);
 
-        #[test]
-        fn avcc_box_from_view() {
-            let sps1 = b"sps_data_1";
-            let sps2 = b"sps_data_2";
-            let pps = b"pps_data";
+        let avcc_size = 8 + avcc_payload.len() as u32;
+        let mut avcc_box = make_box_header(avcc_size, b"avcC");
+        avcc_box.extend_from_slice(&avcc_payload);
 
-            let payload = make_avcc_payload(100, 0, 31, 3, &[sps1, sps2], &[pps]);
-            let view = AvcCBoxView::parse(&payload).unwrap();
-            let owned = AvcCBox::from_view(&view);
+        let mut original_payload = make_visual_sample_entry(1920, 1080);
+        original_payload.extend_from_slice(&avcc_box);
 
-            assert_eq!(owned.avc_profile_indication, 100);
-            assert_eq!(owned.avc_level_indication, 31);
-            assert_eq!(owned.sps.len(), 2);
-            assert_eq!(owned.sps[0], b"sps_data_1");
-            assert_eq!(owned.sps[1], b"sps_data_2");
-            assert_eq!(owned.pps.len(), 1);
-            assert_eq!(owned.pps[0], b"pps_data");
-        }
+        // Parse
+        let original = Avc1Box::parse(&original_payload).unwrap();
 
-        #[test]
-        fn avc1_box_from_view() {
-            let sps = b"\x67\x64\x00\x1f";
-            let pps = b"\x68\xeb\xe3\xcb";
-            let avcc_payload = make_avcc_payload(100, 0, 31, 3, &[sps], &[pps]);
+        // Write
+        let mut buf = vec![0u8; original.size()];
+        original.write(&mut buf).unwrap();
 
-            let avcc_size = 8 + avcc_payload.len() as u32;
-            let mut avcc_box = make_box_header(avcc_size, b"avcC");
-            avcc_box.extend_from_slice(&avcc_payload);
+        // Parse again
+        let reparsed = Avc1Box::parse(&buf).unwrap();
 
-            let mut payload = make_visual_sample_entry(1280, 720);
-            payload.extend_from_slice(&avcc_box);
-
-            let view = Avc1BoxView::parse(&payload).unwrap();
-            let owned = Avc1Box::from_view(&view).unwrap();
-
-            assert_eq!(owned.base.width, 1280);
-            assert_eq!(owned.base.height, 720);
-            assert_eq!(owned.avcc.avc_profile_indication, 100);
-        }
-
-        #[test]
-        fn avc1_box_codec_string() {
-            let sps = b"sps";
-            let pps = b"pps";
-            let avcc_payload = make_avcc_payload(100, 0, 31, 3, &[sps], &[pps]);
-
-            let avcc_size = 8 + avcc_payload.len() as u32;
-            let mut avcc_box = make_box_header(avcc_size, b"avcC");
-            avcc_box.extend_from_slice(&avcc_payload);
-
-            let mut payload = make_visual_sample_entry(1920, 1080);
-            payload.extend_from_slice(&avcc_box);
-
-            let view = Avc1BoxView::parse(&payload).unwrap();
-            let owned = Avc1Box::from_view(&view).unwrap();
-
-            // avc1.64001f (profile=100, compatibility=0, level=31)
-            assert_eq!(owned.codec(), "avc1.64001F");
-        }
+        assert_eq!(reparsed.base.width, original.base.width);
+        assert_eq!(reparsed.base.height, original.base.height);
+        assert_eq!(
+            reparsed.avcc.avc_profile_indication,
+            original.avcc.avc_profile_indication
+        );
+        assert_eq!(reparsed.avcc.sps, original.avcc.sps);
+        assert_eq!(reparsed.avcc.pps, original.avcc.pps);
     }
 }

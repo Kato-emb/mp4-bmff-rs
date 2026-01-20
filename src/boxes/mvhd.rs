@@ -1,6 +1,7 @@
 use core::mem;
 
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 use crate::types::*;
 
 use crate::error::*;
@@ -177,6 +178,91 @@ impl MvhdBox {
 
         Ok(this)
     }
+
+    /// Returns the size of the `MvhdBox` payload in bytes.
+    pub fn size(&self) -> usize {
+        let base = 4; // version + flags
+        let version_dependent = match self.version {
+            1 => 8 + 8 + 4 + 8, // u64 creation_time + u64 modification_time + u32 timescale + u64 duration
+            _ => 4 + 4 + 4 + 4, // u32 creation_time + u32 modification_time + u32 timescale + u32 duration
+        };
+        let common = 4 + 2 // rate + volume
+            + Self::RESERVED_SIZE
+            + 9 * 4 // matrix
+            + Self::PRE_DEFINED_SIZE
+            + 4; // next_track_id
+        base + version_dependent + common
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        cur.write_u8(self.version)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.flags.to_bytes())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        match self.version {
+            1 => {
+                cur.write_u64_be(self.creation_time.to_quicktime_seconds())
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u64_be(self.modification_time.to_quicktime_seconds())
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(self.timescale)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u64_be(self.duration)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+            _ => {
+                cur.write_u32_be(self.creation_time.to_quicktime_seconds() as u32)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(self.modification_time.to_quicktime_seconds() as u32)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(self.timescale)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(self.duration as u32)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+        }
+
+        cur.write_i32_be(self.rate.to_raw())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u16_be(self.volume.to_raw())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // reserved
+        cur.reserve_zeros(Self::RESERVED_SIZE)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // matrix
+        for &m in &self.matrix.to_raw() {
+            cur.write_i32_be(m)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        }
+
+        // pre_defined
+        cur.reserve_zeros(Self::PRE_DEFINED_SIZE)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        cur.write_u32_be(self.next_track_id)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        if !cur.is_empty() {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Buffer larger than expected",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::MVHD,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Writes this `MvhdBox` into the given payload.
+    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+        let mut cursor = WriteCursor::new(payload);
+        self.write_in(&mut cursor)
+    }
 }
 
 /// The specification for the Movie Header Box (`mvhd`).
@@ -189,137 +275,75 @@ pub type MvhdFlags = FullBoxFlags<MvhdSpec>;
 mod tests {
     use super::*;
 
-    fn make_v0_payload() -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // FullBoxHeader: version=0, flags=0
-        data.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-
-        // creation_time (u32): 0x12345678
-        data.extend_from_slice(&0x12345678u32.to_be_bytes());
-        // modification_time (u32): 0x23456789
-        data.extend_from_slice(&0x23456789u32.to_be_bytes());
-        // timescale (u32): 1000
-        data.extend_from_slice(&1000u32.to_be_bytes());
-        // duration (u32): 5000
-        data.extend_from_slice(&5000u32.to_be_bytes());
-
-        // rate (i32): 0x00010000 = 1.0
-        data.extend_from_slice(&0x00010000i32.to_be_bytes());
-        // volume (u16): 0x0100 = 1.0
-        data.extend_from_slice(&0x0100u16.to_be_bytes());
-
-        // reserved: 2 bytes + 2 * 4 bytes = 10 bytes
-        data.extend_from_slice(&[0u8; 10]);
-
-        // matrix: identity matrix (9 * i32)
-        // [0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000]
-        data.extend_from_slice(&0x00010000i32.to_be_bytes()); // a
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // b
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // u
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // c
-        data.extend_from_slice(&0x00010000i32.to_be_bytes()); // d
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // v
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // x
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // y
-        data.extend_from_slice(&0x40000000i32.to_be_bytes()); // w
-
-        // pre_defined: 6 * 4 bytes = 24 bytes
-        data.extend_from_slice(&[0u8; 24]);
-
-        // next_track_id (u32): 2
-        data.extend_from_slice(&2u32.to_be_bytes());
-
-        data
-    }
-
-    fn make_v1_payload() -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // FullBoxHeader: version=1, flags=0
-        data.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]);
-
-        // creation_time (u64): 0x0000000112345678
-        data.extend_from_slice(&0x0000000112345678u64.to_be_bytes());
-        // modification_time (u64): 0x0000000123456789
-        data.extend_from_slice(&0x0000000123456789u64.to_be_bytes());
-        // timescale (u32): 90000
-        data.extend_from_slice(&90000u32.to_be_bytes());
-        // duration (u64): 0x0000000200000000 (exceeds u32::MAX)
-        data.extend_from_slice(&0x0000000200000000u64.to_be_bytes());
-
-        // rate (i32): 0x00020000 = 2.0
-        data.extend_from_slice(&0x00020000i32.to_be_bytes());
-        // volume (u16): 0x0080 = 0.5
-        data.extend_from_slice(&0x0080u16.to_be_bytes());
-
-        // reserved: 10 bytes
-        data.extend_from_slice(&[0u8; 10]);
-
-        // matrix: identity matrix
-        data.extend_from_slice(&0x00010000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x00010000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x40000000i32.to_be_bytes());
-
-        // pre_defined: 24 bytes
-        data.extend_from_slice(&[0u8; 24]);
-
-        // next_track_id (u32): 5
-        data.extend_from_slice(&5u32.to_be_bytes());
-
-        data
-    }
-
     #[test]
-    fn parse_v0() {
-        let payload = make_v0_payload();
-        let mvhd = MvhdBox::parse(&payload).unwrap();
+    fn round_trip_v0() {
+        let mvhd = MvhdBox {
+            version: 0,
+            flags: MvhdFlags::empty(),
+            creation_time: QuickTimeDateTime::from_quicktime_seconds(0x12345678),
+            modification_time: QuickTimeDateTime::from_quicktime_seconds(0x23456789),
+            timescale: 1000,
+            duration: 5000,
+            rate: I16F16::from_raw(0x00010000),
+            volume: U8F8::from_raw(0x0100),
+            matrix: Matrix::identity(),
+            next_track_id: 2,
+        };
 
-        assert_eq!(mvhd.creation_time.to_quicktime_seconds(), 0x12345678);
-        assert_eq!(mvhd.modification_time.to_quicktime_seconds(), 0x23456789);
-        assert_eq!(mvhd.timescale, 1000);
-        assert_eq!(mvhd.duration, 5000);
-        assert_eq!(mvhd.rate.to_raw(), 0x00010000);
-        assert_eq!(mvhd.volume.to_raw(), 0x0100);
-        assert_eq!(mvhd.matrix, Matrix::identity());
-        assert_eq!(mvhd.next_track_id, 2);
-        assert_eq!(mvhd.version, 0);
-    }
+        let mut buf = vec![0u8; mvhd.size()];
+        mvhd.write(&mut buf).unwrap();
 
-    #[test]
-    fn parse_v1() {
-        let payload = make_v1_payload();
-        let mvhd = MvhdBox::parse(&payload).unwrap();
-
+        let parsed = MvhdBox::parse(&buf).unwrap();
+        assert_eq!(parsed.version, mvhd.version);
         assert_eq!(
-            mvhd.creation_time.to_quicktime_seconds(),
-            0x0000000112345678
+            parsed.creation_time.to_quicktime_seconds(),
+            mvhd.creation_time.to_quicktime_seconds()
         );
         assert_eq!(
-            mvhd.modification_time.to_quicktime_seconds(),
-            0x0000000123456789
+            parsed.modification_time.to_quicktime_seconds(),
+            mvhd.modification_time.to_quicktime_seconds()
         );
-        assert_eq!(mvhd.timescale, 90000);
-        assert_eq!(mvhd.duration, 0x0000000200000000);
-        assert_eq!(mvhd.rate.to_raw(), 0x00020000);
-        assert_eq!(mvhd.volume.to_raw(), 0x0080);
-        assert_eq!(mvhd.matrix, Matrix::identity());
-        assert_eq!(mvhd.next_track_id, 5);
-        assert_eq!(mvhd.version, 1);
+        assert_eq!(parsed.timescale, mvhd.timescale);
+        assert_eq!(parsed.duration, mvhd.duration);
+        assert_eq!(parsed.rate.to_raw(), mvhd.rate.to_raw());
+        assert_eq!(parsed.volume.to_raw(), mvhd.volume.to_raw());
+        assert_eq!(parsed.matrix, mvhd.matrix);
+        assert_eq!(parsed.next_track_id, mvhd.next_track_id);
     }
 
     #[test]
-    fn default_values() {
-        let mvhd = MvhdBox::default();
+    fn round_trip_v1() {
+        let mvhd = MvhdBox {
+            version: 1,
+            flags: MvhdFlags::empty(),
+            creation_time: QuickTimeDateTime::from_quicktime_seconds(0x0000000112345678),
+            modification_time: QuickTimeDateTime::from_quicktime_seconds(0x0000000123456789),
+            timescale: 90000,
+            duration: 0x0000000200000000, // exceeds u32::MAX
+            rate: I16F16::from_raw(0x00020000),
+            volume: U8F8::from_raw(0x0080),
+            matrix: Matrix::identity(),
+            next_track_id: 5,
+        };
 
-        assert_eq!(mvhd.rate.to_raw(), 0x00010000); // 1.0
-        assert_eq!(mvhd.volume.to_raw(), 0x0100); // 1.0
-        assert_eq!(mvhd.matrix, Matrix::identity());
+        let mut buf = vec![0u8; mvhd.size()];
+        mvhd.write(&mut buf).unwrap();
+
+        let parsed = MvhdBox::parse(&buf).unwrap();
+        assert_eq!(parsed.version, mvhd.version);
+        assert_eq!(
+            parsed.creation_time.to_quicktime_seconds(),
+            mvhd.creation_time.to_quicktime_seconds()
+        );
+        assert_eq!(
+            parsed.modification_time.to_quicktime_seconds(),
+            mvhd.modification_time.to_quicktime_seconds()
+        );
+        assert_eq!(parsed.timescale, mvhd.timescale);
+        assert_eq!(parsed.duration, mvhd.duration);
+        assert_eq!(parsed.rate.to_raw(), mvhd.rate.to_raw());
+        assert_eq!(parsed.volume.to_raw(), mvhd.volume.to_raw());
+        assert_eq!(parsed.matrix, mvhd.matrix);
+        assert_eq!(parsed.next_track_id, mvhd.next_track_id);
     }
 }

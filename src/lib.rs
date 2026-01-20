@@ -42,10 +42,9 @@ pub mod types;
 // Layer 1 - ISO BMFF Common types and Box Framing (no_std, no_alloc)
 // =============================================================================
 pub mod error;
+pub mod framing;
 pub mod header;
 pub mod iter;
-
-pub mod framing;
 
 // Re-export for convenience
 pub use error::{

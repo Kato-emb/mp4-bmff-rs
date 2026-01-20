@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::MehdBox;
@@ -90,6 +90,9 @@ mod owned {
     extern crate alloc;
     use alloc::vec::Vec;
 
+    use crate::BoxFrameMut;
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned Movie Extends Box (`mvex`).
@@ -142,6 +145,62 @@ mod owned {
         /// Finds a `TrexBox` by track ID.
         pub fn find_trex(&self, track_id: u32) -> Option<&TrexBox> {
             self.trexs.iter().find(|trex| trex.track_id == track_id)
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            let mut size = 0;
+            if let Some(ref mehd) = self.mehd {
+                size += BoxFrameMut::required_len(BoxType::MEHD, mehd.size());
+            }
+            for trex in &self.trexs {
+                size += BoxFrameMut::required_len(BoxType::TREX, trex.size());
+            }
+            size
+        }
+
+        fn write_box<F>(
+            cur: &mut WriteCursor<'_>,
+            boxtype: BoxType,
+            payload_size: usize,
+            write_payload: F,
+        ) -> Result<()>
+        where
+            F: FnOnce(&mut [u8]) -> Result<()>,
+        {
+            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
+            let buf = cur.take_mut(frame_size)?;
+            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
+            write_payload(frame.payload_mut())?;
+            Ok(())
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            if let Some(ref mehd) = self.mehd {
+                Self::write_box(cur, BoxType::MEHD, mehd.size(), |p| mehd.write(p))?;
+            }
+
+            for trex in &self.trexs {
+                Self::write_box(cur, BoxType::TREX, trex.size(), |p| trex.write(p))?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::MVEX,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `MvexBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 

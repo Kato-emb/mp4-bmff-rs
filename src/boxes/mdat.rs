@@ -1,5 +1,6 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxType;
 use crate::error::*;
 
 /// A reference to a Media Data Box (`mdat`).
@@ -30,6 +31,8 @@ pub use owned::MdatBox;
 mod owned {
     use crate::lib::Vec;
 
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned Media Data Box (`mdat`).
@@ -51,6 +54,35 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<Self> {
             let mdat_view = MdatBoxView::parse(payload)?;
             Ok(Self::from_view(&mdat_view))
+        }
+
+        /// Returns the size of the `MdatBox` data.
+        #[inline]
+        pub fn size(&self) -> usize {
+            self.data.len()
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_slice(&self.data)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::MDAT,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `MdatBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 
@@ -77,5 +109,16 @@ mod tests {
         let data = b"example media data";
         let mdat_box_view = MdatBoxView::parse(data).unwrap();
         assert_eq!(mdat_box_view.data, data);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_mdat_box_owned_write() {
+        let mdat_box = MdatBox {
+            data: b"example media data".to_vec(),
+        };
+        let mut buffer = vec![0u8; mdat_box.size()];
+        mdat_box.write(&mut buffer).unwrap();
+        assert_eq!(&buffer, b"example media data");
     }
 }

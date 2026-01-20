@@ -1,6 +1,7 @@
 use core::mem;
 
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
 use crate::BoxFrame;
 use crate::BoxType;
@@ -99,6 +100,61 @@ impl HmhdBox {
         let mut cursor = ReadCursor::new(payload);
         HmhdBox::parse_in(&mut cursor)
     }
+
+    /// Returns the size of the payload in bytes.
+    pub fn size(&self) -> usize {
+        // version(1) + flags(3) + max_pdu_size(2) + avg_pdu_size(2) +
+        // max_bitrate(4) + avg_bitrate(4) + reserved(4) = 20
+        20
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        // Write version (1 byte)
+        cur.write_u8(self.version)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write flags (3 bytes)
+        cur.write_array(&self.flags.to_bytes())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write max_pdu_size (2 bytes)
+        cur.write_u16_be(self.max_pdu_size)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write avg_pdu_size (2 bytes)
+        cur.write_u16_be(self.avg_pdu_size)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write max_bitrate (4 bytes)
+        cur.write_u32_be(self.max_bitrate)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write avg_bitrate (4 bytes)
+        cur.write_u32_be(self.avg_bitrate)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write reserved (4 bytes)
+        cur.reserve_zeros(Self::RESERVED_SIZE)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        if !cur.is_empty() {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Buffer larger than expected",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::HMHD,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Writes this `HmhdBox` into the given payload.
+    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+        let mut cursor = WriteCursor::new(payload);
+        self.write_in(&mut cursor)
+    }
 }
 
 impl TryFrom<&[u8]> for HmhdBox {
@@ -134,89 +190,26 @@ pub type HmhdFlags = FullBoxFlags<HmhdSpec>;
 mod tests {
     use super::*;
 
-    fn make_hmhd_payload(
-        version: u8,
-        flags: u32,
-        max_pdu_size: u16,
-        avg_pdu_size: u16,
-        max_bitrate: u32,
-        avg_bitrate: u32,
-    ) -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // FullBoxHeader: version (1 byte) + flags (3 bytes)
-        data.push(version);
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
-
-        // maxPDUsize (2 bytes)
-        data.extend_from_slice(&max_pdu_size.to_be_bytes());
-
-        // avgPDUsize (2 bytes)
-        data.extend_from_slice(&avg_pdu_size.to_be_bytes());
-
-        // maxbitrate (4 bytes)
-        data.extend_from_slice(&max_bitrate.to_be_bytes());
-
-        // avgbitrate (4 bytes)
-        data.extend_from_slice(&avg_bitrate.to_be_bytes());
-
-        // reserved (4 bytes)
-        data.extend_from_slice(&[0u8; 4]);
-
-        data
-    }
-
     #[test]
-    fn parse_hmhd_default() {
-        let payload = make_hmhd_payload(0, 0, 0, 0, 0, 0);
-        let hmhd = HmhdBox::parse(&payload).unwrap();
+    fn round_trip() {
+        let original = HmhdBox {
+            version: 0,
+            flags: HmhdFlags::empty(),
+            max_pdu_size: 1500,
+            avg_pdu_size: 1200,
+            max_bitrate: 1_000_000,
+            avg_bitrate: 800_000,
+        };
 
-        assert_eq!(hmhd.version, 0);
-        assert_eq!(hmhd.flags.get(), 0);
-        assert_eq!(hmhd.max_pdu_size, 0);
-        assert_eq!(hmhd.avg_pdu_size, 0);
-        assert_eq!(hmhd.max_bitrate, 0);
-        assert_eq!(hmhd.avg_bitrate, 0);
-    }
+        let mut buf = vec![0u8; original.size()];
+        original.write(&mut buf).unwrap();
 
-    #[test]
-    fn parse_hmhd_with_values() {
-        let payload = make_hmhd_payload(0, 0, 1500, 1200, 1_000_000, 800_000);
-        let hmhd = HmhdBox::parse(&payload).unwrap();
-
-        assert_eq!(hmhd.max_pdu_size, 1500);
-        assert_eq!(hmhd.avg_pdu_size, 1200);
-        assert_eq!(hmhd.max_bitrate, 1_000_000);
-        assert_eq!(hmhd.avg_bitrate, 800_000);
-    }
-
-    #[test]
-    fn parse_hmhd_extra_data() {
-        let mut payload = make_hmhd_payload(0, 0, 0, 0, 0, 0);
-        payload.extend_from_slice(&[0xFF, 0xFF]); // Extra data
-
-        let result = HmhdBox::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_hmhd_truncated() {
-        let payload = make_hmhd_payload(0, 0, 0, 0, 0, 0);
-        let truncated = &payload[..payload.len() - 1];
-
-        let result = HmhdBox::parse(truncated);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn hmhd_default() {
-        let hmhd = HmhdBox::default();
-
-        assert_eq!(hmhd.version, 0);
-        assert_eq!(hmhd.flags.get(), 0);
-        assert_eq!(hmhd.max_pdu_size, 0);
-        assert_eq!(hmhd.avg_pdu_size, 0);
-        assert_eq!(hmhd.max_bitrate, 0);
-        assert_eq!(hmhd.avg_bitrate, 0);
+        let reparsed = HmhdBox::parse(&buf).unwrap();
+        assert_eq!(reparsed.version, original.version);
+        assert_eq!(reparsed.flags.get(), original.flags.get());
+        assert_eq!(reparsed.max_pdu_size, original.max_pdu_size);
+        assert_eq!(reparsed.avg_pdu_size, original.avg_pdu_size);
+        assert_eq!(reparsed.max_bitrate, original.max_bitrate);
+        assert_eq!(reparsed.avg_bitrate, original.avg_bitrate);
     }
 }

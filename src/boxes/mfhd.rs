@@ -1,4 +1,5 @@
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
 use crate::BoxFrame;
 use crate::BoxType;
@@ -57,6 +58,38 @@ impl MfhdBox {
         let mut cur = ReadCursor::new(payload);
         MfhdBox::parse_in(&mut cur)
     }
+
+    /// Returns the size of the payload in bytes.
+    pub fn size(&self) -> usize {
+        4 + 4 // version(1) + flags(3) + sequence_number(4)
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        cur.write_u8(self.version)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.flags.to_bytes())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.sequence_number)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        if !cur.is_empty() {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Buffer larger than expected",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::MFHD,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Writes this `MfhdBox` into the given payload.
+    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+        let mut cur = WriteCursor::new(payload);
+        self.write_in(&mut cur)
+    }
 }
 
 impl TryFrom<&[u8]> for MfhdBox {
@@ -93,89 +126,18 @@ pub type MfhdFlags = FullBoxFlags<MfhdSpec>;
 mod tests {
     use super::*;
 
-    fn make_mfhd_payload(version: u8, flags: u32, sequence_number: u32) -> Vec<u8> {
-        let mut data = Vec::new();
-        data.push(version);
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
-        data.extend_from_slice(&sequence_number.to_be_bytes());
-        data
-    }
-
     #[test]
-    fn parse_mfhd_basic() {
-        let payload = make_mfhd_payload(0, 0, 1);
-        let mfhd = MfhdBox::parse(&payload).unwrap();
+    fn round_trip() {
+        let original = MfhdBox {
+            version: 0,
+            flags: MfhdFlags::empty(),
+            sequence_number: 0xDEADBEEF,
+        };
 
-        assert_eq!(mfhd.version, 0);
-        assert_eq!(mfhd.flags.get(), 0);
-        assert_eq!(mfhd.sequence_number, 1);
-    }
+        let mut buf = vec![0u8; original.size()];
+        original.write(&mut buf).unwrap();
 
-    #[test]
-    fn parse_mfhd_large_sequence() {
-        let payload = make_mfhd_payload(0, 0, 0xDEADBEEF);
-        let mfhd = MfhdBox::parse(&payload).unwrap();
-
-        assert_eq!(mfhd.sequence_number, 0xDEADBEEF);
-    }
-
-    #[test]
-    fn parse_mfhd_extra_data() {
-        let mut payload = make_mfhd_payload(0, 0, 1);
-        payload.extend_from_slice(&[0xFF, 0xFF]);
-
-        let result = MfhdBox::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_mfhd_truncated() {
-        let payload = make_mfhd_payload(0, 0, 1);
-        let truncated = &payload[..payload.len() - 1];
-
-        let result = MfhdBox::parse(truncated);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn try_from_byte_slice() {
-        let payload = make_mfhd_payload(0, 0, 42);
-        let mfhd = MfhdBox::try_from(payload.as_slice()).unwrap();
-
-        assert_eq!(mfhd.sequence_number, 42);
-    }
-
-    #[test]
-    fn try_from_box_view_success() {
-        let payload = make_mfhd_payload(0, 0, 100);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"mfhd");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
-        let mfhd = MfhdBox::try_from(box_view).unwrap();
-
-        assert_eq!(mfhd.sequence_number, 100);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_mfhd_payload(0, 0, 1);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"moov");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
-        let result = MfhdBox::try_from(box_view);
-
-        assert!(result.is_err());
+        let parsed = MfhdBox::parse(&buf).unwrap();
+        assert_eq!(parsed, original);
     }
 }

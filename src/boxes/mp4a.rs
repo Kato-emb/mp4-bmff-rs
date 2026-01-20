@@ -1,5 +1,5 @@
-use crate::BoxType;
 use crate::BoxFrame;
+use crate::BoxType;
 use crate::cursor::ReadCursor;
 
 use crate::error::*;
@@ -53,7 +53,9 @@ pub use owned::Mp4aBox;
 #[cfg(feature = "alloc")]
 mod owned {
     use super::*;
+    use crate::BoxFrameMut;
     use crate::boxes::EsdsBox;
+    use crate::cursor::WriteCursor;
 
     /// An owned Mp4a Box (`mp4a`).
     #[derive(Debug, Clone)]
@@ -71,6 +73,41 @@ mod owned {
                 base: view.base,
                 esds: EsdsBox::from_view(&view.esds)?,
             })
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            let esds_payload_size = self.esds.size();
+            let esds_frame_size = BoxFrameMut::required_len(BoxType::ESDS, esds_payload_size);
+            AudioSampleEntry::size() + esds_frame_size
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            self.base.write_in(cur)?;
+
+            let esds_payload_size = self.esds.size();
+            let esds_frame_size = BoxFrameMut::required_len(BoxType::ESDS, esds_payload_size);
+            let esds_buf = cur.take_mut(esds_frame_size)?;
+            let mut frame = BoxFrameMut::new(esds_buf, BoxType::ESDS, esds_payload_size)?;
+            self.esds.write(frame.payload_mut())?;
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::MP4A,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `Mp4aBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 

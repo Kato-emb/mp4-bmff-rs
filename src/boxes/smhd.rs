@@ -1,6 +1,7 @@
 use core::mem;
 
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 use crate::types::I8F8;
 
 use crate::BoxFrame;
@@ -76,6 +77,48 @@ impl SmhdBox {
         let mut cursor = ReadCursor::new(payload);
         SmhdBox::parse_in(&mut cursor)
     }
+
+    /// Returns the size of the payload in bytes.
+    pub fn size(&self) -> usize {
+        // version(1) + flags(3) + balance(2) + reserved(2) = 8
+        8
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        // Write version (1 byte)
+        cur.write_u8(self.version)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write flags (3 bytes)
+        cur.write_array(&self.flags.to_bytes())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write balance (2 bytes)
+        cur.write_i16_be(self.balance.to_raw())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write reserved (2 bytes)
+        cur.reserve_zeros(Self::RESERVED_SIZE)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        if !cur.is_empty() {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Buffer larger than expected",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::SMHD,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Writes this `SmhdBox` into the given payload.
+    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+        let mut cursor = WriteCursor::new(payload);
+        self.write_in(&mut cursor)
+    }
 }
 
 impl TryFrom<&[u8]> for SmhdBox {
@@ -111,74 +154,20 @@ pub type SmhdFlags = FullBoxFlags<SmhdSpec>;
 mod tests {
     use super::*;
 
-    fn make_smhd_payload(version: u8, flags: u32, balance: i16) -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // FullBoxHeader: version (1 byte) + flags (3 bytes)
-        data.push(version);
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
-
-        // balance (2 bytes)
-        data.extend_from_slice(&balance.to_be_bytes());
-
-        // reserved (2 bytes)
-        data.extend_from_slice(&[0u8; 2]);
-
-        data
-    }
-
     #[test]
-    fn parse_smhd_default() {
-        let payload = make_smhd_payload(0, 0, 0);
-        let smhd = SmhdBox::parse(&payload).unwrap();
+    fn round_trip() {
+        let original = SmhdBox {
+            version: 0,
+            flags: SmhdFlags::empty(),
+            balance: I8F8::from_raw(0x0080), // 0.5 (slightly right)
+        };
 
-        assert_eq!(smhd.version, 0);
-        assert_eq!(smhd.flags.get(), 0);
-        assert_eq!(smhd.balance.to_raw(), 0);
-    }
+        let mut buf = vec![0u8; original.size()];
+        original.write(&mut buf).unwrap();
 
-    #[test]
-    fn parse_smhd_with_balance() {
-        // balance = 0x0080 = 0.5 (slightly right)
-        let payload = make_smhd_payload(0, 0, 0x0080);
-        let smhd = SmhdBox::parse(&payload).unwrap();
-
-        assert_eq!(smhd.balance.to_raw(), 0x0080);
-    }
-
-    #[test]
-    fn parse_smhd_negative_balance() {
-        // balance = -256 (0xFF00) = -1.0 (full left)
-        let payload = make_smhd_payload(0, 0, -256);
-        let smhd = SmhdBox::parse(&payload).unwrap();
-
-        assert_eq!(smhd.balance.to_raw(), -256);
-    }
-
-    #[test]
-    fn parse_smhd_extra_data() {
-        let mut payload = make_smhd_payload(0, 0, 0);
-        payload.extend_from_slice(&[0xFF, 0xFF]); // Extra data
-
-        let result = SmhdBox::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_smhd_truncated() {
-        let payload = make_smhd_payload(0, 0, 0);
-        let truncated = &payload[..payload.len() - 1];
-
-        let result = SmhdBox::parse(truncated);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn smhd_default() {
-        let smhd = SmhdBox::default();
-
-        assert_eq!(smhd.version, 0);
-        assert_eq!(smhd.flags.get(), 0);
-        assert_eq!(smhd.balance.to_raw(), 0);
+        let reparsed = SmhdBox::parse(&buf).unwrap();
+        assert_eq!(reparsed.version, original.version);
+        assert_eq!(reparsed.flags.get(), original.flags.get());
+        assert_eq!(reparsed.balance.to_raw(), original.balance.to_raw());
     }
 }

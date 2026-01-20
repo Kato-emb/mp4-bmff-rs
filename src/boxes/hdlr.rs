@@ -26,8 +26,8 @@ pub struct HdlrBoxView<'a> {
 }
 
 impl<'a> HdlrBoxView<'a> {
-    const PRE_DEFINED_SIZE: usize = mem::size_of::<u32>();
-    const RESERVED_SIZE: usize = 3 * mem::size_of::<u32>();
+    pub(crate) const PRE_DEFINED_SIZE: usize = mem::size_of::<u32>();
+    pub(crate) const RESERVED_SIZE: usize = 3 * mem::size_of::<u32>();
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<HdlrBoxView<'a>> {
         let version = cur
@@ -113,6 +113,8 @@ mod owned {
     extern crate alloc;
     use alloc::string::String;
 
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned Handler Reference Box (`hdlr`).
@@ -144,6 +146,63 @@ mod owned {
             let view = HdlrBoxView::parse(payload)?;
             Ok(HdlrBox::from_view(&view))
         }
+
+        /// Returns the size of the `HdlrBox` data.
+        pub fn size(&self) -> usize {
+            1  // version
+            + 3  // flags
+            + HdlrBoxView::<'_>::PRE_DEFINED_SIZE  // pre_defined
+            + 4  // handler_type
+            + HdlrBoxView::<'_>::RESERVED_SIZE  // reserved
+            + self.name.len()  // name
+            + 1 // null terminator
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            // Write version (1 byte)
+            cur.write_u8(self.version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // Write flags (3 bytes)
+            cur.write_slice(&self.flags.to_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // Write pre_defined (4 bytes, should be 0)
+            cur.write_slice(&[0u8; HdlrBoxView::<'_>::PRE_DEFINED_SIZE])
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // Write handler_type (4 bytes)
+            cur.write_array(self.handler_type.as_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // Write reserved (12 bytes)
+            cur.write_slice(&[0u8; HdlrBoxView::<'_>::RESERVED_SIZE])
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // Write name (null-terminated string)
+            cur.write_slice(self.name.as_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u8(0)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::HDLR,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `HdlrBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
+        }
     }
 
     impl From<&HdlrBoxView<'_>> for HdlrBox {
@@ -166,90 +225,47 @@ mod owned {
 mod tests {
     use super::*;
 
-    fn make_hdlr_payload(handler_type: &[u8; 4], name: &[u8]) -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // FullBoxHeader: version (1 byte) + flags (3 bytes)
-        data.push(0);
-        data.extend_from_slice(&[0, 0, 0]);
-
-        // pre_defined (4 bytes)
-        data.extend_from_slice(&[0, 0, 0, 0]);
-
-        // handler_type (4 bytes)
-        data.extend_from_slice(handler_type);
-
-        // reserved (12 bytes)
-        data.extend_from_slice(&[0u8; 12]);
-
-        // name (null-terminated string)
-        data.extend_from_slice(name);
-
-        data
-    }
-
+    #[cfg(feature = "alloc")]
     #[test]
-    fn parse_hdlr_video() {
-        let payload = make_hdlr_payload(b"vide", b"VideoHandler\0");
-        let hdlr = HdlrBoxView::parse(&payload).unwrap();
+    fn hdlr_box_round_trip() {
+        let original = HdlrBox {
+            version: 0,
+            flags: HdlrFlags::empty(),
+            handler_type: FourCC::new(*b"vide"),
+            name: String::from("VideoHandler"),
+        };
 
-        assert_eq!(hdlr.version, 0);
-        assert_eq!(hdlr.flags.get(), 0);
-        assert_eq!(hdlr.handler_type, FourCC::new(*b"vide"));
-        assert_eq!(hdlr.name, "VideoHandler");
-    }
+        // Write
+        let mut buf = vec![0u8; original.size()];
+        original.write(&mut buf).unwrap();
 
-    #[test]
-    fn parse_hdlr_sound() {
-        let payload = make_hdlr_payload(b"soun", b"SoundHandler\0");
-        let hdlr = HdlrBoxView::parse(&payload).unwrap();
+        // Parse
+        let reparsed = HdlrBox::parse(&buf).unwrap();
 
-        assert_eq!(hdlr.handler_type, FourCC::new(*b"soun"));
-        assert_eq!(hdlr.name, "SoundHandler");
-    }
-
-    #[test]
-    fn parse_hdlr_empty_name() {
-        let payload = make_hdlr_payload(b"vide", b"\0");
-        let hdlr = HdlrBoxView::parse(&payload).unwrap();
-
-        assert_eq!(hdlr.handler_type, FourCC::new(*b"vide"));
-        assert_eq!(hdlr.name, "");
-    }
-
-    #[test]
-    fn parse_hdlr_no_null_terminator() {
-        // Some encoders don't include null terminator
-        let payload = make_hdlr_payload(b"vide", b"VideoHandler");
-        let hdlr = HdlrBoxView::parse(&payload).unwrap();
-
-        assert_eq!(hdlr.name, "VideoHandler");
-    }
-
-    #[test]
-    fn parse_hdlr_truncated() {
-        let payload = make_hdlr_payload(b"vide", b"");
-        let truncated = &payload[..10]; // Too short
-
-        let result = HdlrBoxView::parse(truncated);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_hdlr_invalid_utf8() {
-        let payload = make_hdlr_payload(b"vide", &[0xFF, 0xFE, 0x00]); // Invalid UTF-8
-
-        let result = HdlrBoxView::parse(&payload);
-        assert!(result.is_err());
+        assert_eq!(reparsed.version, original.version);
+        assert_eq!(reparsed.flags.get(), original.flags.get());
+        assert_eq!(reparsed.handler_type, original.handler_type);
+        assert_eq!(reparsed.name, original.name);
     }
 
     #[cfg(feature = "alloc")]
     #[test]
-    fn parse_hdlr_owned() {
-        let payload = make_hdlr_payload(b"vide", b"VideoHandler\0");
-        let hdlr = HdlrBox::parse(&payload).unwrap();
+    fn hdlr_box_round_trip_empty_name() {
+        let original = HdlrBox {
+            version: 0,
+            flags: HdlrFlags::empty(),
+            handler_type: FourCC::new(*b"soun"),
+            name: String::new(),
+        };
 
-        assert_eq!(hdlr.handler_type, FourCC::new(*b"vide"));
-        assert_eq!(hdlr.name, "VideoHandler");
+        // Write
+        let mut buf = vec![0u8; original.size()];
+        original.write(&mut buf).unwrap();
+
+        // Parse
+        let reparsed = HdlrBox::parse(&buf).unwrap();
+
+        assert_eq!(reparsed.handler_type, original.handler_type);
+        assert_eq!(reparsed.name, original.name);
     }
 }

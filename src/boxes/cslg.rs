@@ -1,4 +1,5 @@
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
 use crate::BoxFrame;
 use crate::BoxType;
@@ -110,6 +111,67 @@ impl CslgBox {
     pub fn parse(payload: &[u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(payload);
         Self::parse_in(&mut cur)
+    }
+
+    /// Returns the size of the payload in bytes.
+    pub fn size(&self) -> usize {
+        // version(1) + flags(3) + 5 fields
+        // v0: 5 * i32(4) = 20, total = 24
+        // v1: 5 * i64(8) = 40, total = 44
+        if self.version == 0 {
+            1 + 3 + 5 * 4
+        } else {
+            1 + 3 + 5 * 8
+        }
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        cur.write_u8(self.version)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.flags.to_bytes())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        if self.version == 0 {
+            cur.write_i32_be(self.composition_to_dts_shift as i32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_i32_be(self.least_decode_to_display_delta as i32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_i32_be(self.greatest_decode_to_display_delta as i32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_i32_be(self.composition_start_time as i32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_i32_be(self.composition_end_time as i32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        } else {
+            cur.write_u64_be(self.composition_to_dts_shift as u64)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u64_be(self.least_decode_to_display_delta as u64)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u64_be(self.greatest_decode_to_display_delta as u64)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u64_be(self.composition_start_time as u64)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u64_be(self.composition_end_time as u64)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        }
+
+        if !cur.is_empty() {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Buffer larger than expected",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::CSLG,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Writes this `CslgBox` into the given payload.
+    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+        let mut cursor = WriteCursor::new(payload);
+        self.write_in(&mut cursor)
     }
 }
 

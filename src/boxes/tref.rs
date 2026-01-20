@@ -103,6 +103,8 @@ pub use owned::*;
 #[cfg(feature = "alloc")]
 mod owned {
     use super::*;
+    use crate::BoxFrameMut;
+    use crate::cursor::WriteCursor;
 
     /// An owned Track Reference Type Box.
     #[derive(Debug, Clone)]
@@ -121,6 +123,36 @@ mod owned {
                 reference_type: view.reference_type,
                 track_ids,
             })
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            self.track_ids.len() * 4
+        }
+
+        /// Returns the box type for this track reference.
+        pub fn boxtype(&self) -> BoxType {
+            // Track reference types are always valid FourCC values
+            BoxType::from_fourcc(self.reference_type).unwrap()
+        }
+
+        /// Returns the total frame size (including box header).
+        pub fn frame_size(&self) -> usize {
+            BoxFrameMut::required_len(self.boxtype(), self.size())
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            for &track_id in &self.track_ids {
+                cur.write_u32_be(track_id)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+            Ok(())
+        }
+
+        /// Writes this `TrackReferenceTypeBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 
@@ -160,6 +192,41 @@ mod owned {
             self.references
                 .iter()
                 .find(|r| r.reference_type == reference_type)
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            self.references.iter().map(|r| r.frame_size()).sum()
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            for reference in &self.references {
+                let boxtype = reference.boxtype();
+                let payload_size = reference.size();
+                let frame_size = reference.frame_size();
+
+                let buf = cur.take_mut(frame_size)?;
+                let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
+                reference.write(frame.payload_mut())?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::TREF,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `TrefBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 

@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::DinfBoxView;
@@ -25,6 +25,28 @@ pub enum MediaHeader {
     Hmhd(HmhdBox),
     /// Null Media Header Box (`nmhd`) - for other tracks (e.g., metadata).
     Nmhd(NmhdBox),
+}
+
+impl MediaHeader {
+    /// Returns the box type for this media header.
+    pub fn boxtype(&self) -> BoxType {
+        match self {
+            MediaHeader::Vmhd(_) => BoxType::VMHD,
+            MediaHeader::Smhd(_) => BoxType::SMHD,
+            MediaHeader::Hmhd(_) => BoxType::HMHD,
+            MediaHeader::Nmhd(_) => BoxType::NMHD,
+        }
+    }
+
+    /// Returns the size of the payload in bytes.
+    pub fn size(&self) -> usize {
+        match self {
+            MediaHeader::Vmhd(vmhd) => vmhd.size(),
+            MediaHeader::Smhd(smhd) => smhd.size(),
+            MediaHeader::Hmhd(hmhd) => hmhd.size(),
+            MediaHeader::Nmhd(nmhd) => nmhd.size(),
+        }
+    }
 }
 
 /// A reference to a Media Information Box (`minf`).
@@ -208,8 +230,10 @@ pub use owned::MinfBox;
 mod owned {
     use super::*;
 
+    use crate::BoxFrameMut;
     use crate::boxes::DinfBox;
     use crate::boxes::StblBox;
+    use crate::cursor::WriteCursor;
 
     /// An owned Media Information Box (`minf`).
     pub struct MinfBox {
@@ -314,6 +338,75 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<MinfBox> {
             let view = MinfBoxView::parse(payload)?;
             MinfBox::from_view(&view)
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            let mut size = 0;
+
+            // media header (vmhd, smhd, hmhd, or nmhd)
+            size +=
+                BoxFrameMut::required_len(self.media_header.boxtype(), self.media_header.size());
+
+            // dinf
+            size += BoxFrameMut::required_len(BoxType::DINF, self.dinf.size());
+
+            // stbl
+            size += BoxFrameMut::required_len(BoxType::STBL, self.stbl.size());
+
+            size
+        }
+
+        fn write_box<F>(
+            cur: &mut WriteCursor<'_>,
+            boxtype: BoxType,
+            payload_size: usize,
+            write_payload: F,
+        ) -> Result<()>
+        where
+            F: FnOnce(&mut [u8]) -> Result<()>,
+        {
+            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
+            let buf = cur.take_mut(frame_size)?;
+            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
+            write_payload(frame.payload_mut())?;
+            Ok(())
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            // media header
+            let mhdr_boxtype = self.media_header.boxtype();
+            let mhdr_size = self.media_header.size();
+            Self::write_box(cur, mhdr_boxtype, mhdr_size, |p| match &self.media_header {
+                MediaHeader::Vmhd(vmhd) => vmhd.write(p),
+                MediaHeader::Smhd(smhd) => smhd.write(p),
+                MediaHeader::Hmhd(hmhd) => hmhd.write(p),
+                MediaHeader::Nmhd(nmhd) => nmhd.write(p),
+            })?;
+
+            // dinf
+            Self::write_box(cur, BoxType::DINF, self.dinf.size(), |p| self.dinf.write(p))?;
+
+            // stbl
+            Self::write_box(cur, BoxType::STBL, self.stbl.size(), |p| self.stbl.write(p))?;
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::MINF,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `MinfBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 

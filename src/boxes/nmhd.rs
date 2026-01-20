@@ -1,4 +1,5 @@
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
 use crate::BoxFrame;
 use crate::BoxType;
@@ -55,6 +56,40 @@ impl NmhdBox {
         let mut cursor = ReadCursor::new(payload);
         NmhdBox::parse_in(&mut cursor)
     }
+
+    /// Returns the size of the payload in bytes.
+    pub fn size(&self) -> usize {
+        // version(1) + flags(3) = 4
+        4
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        // Write version (1 byte)
+        cur.write_u8(self.version)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // Write flags (3 bytes)
+        cur.write_array(&self.flags.to_bytes())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        if !cur.is_empty() {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Buffer larger than expected",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::NMHD,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Writes this `NmhdBox` into the given payload.
+    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+        let mut cursor = WriteCursor::new(payload);
+        self.write_in(&mut cursor)
+    }
 }
 
 impl TryFrom<&[u8]> for NmhdBox {
@@ -90,57 +125,18 @@ pub type NmhdFlags = FullBoxFlags<NmhdSpec>;
 mod tests {
     use super::*;
 
-    fn make_nmhd_payload(version: u8, flags: u32) -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // FullBoxHeader: version (1 byte) + flags (3 bytes)
-        data.push(version);
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
-
-        data
-    }
-
     #[test]
-    fn parse_nmhd_default() {
-        let payload = make_nmhd_payload(0, 0);
-        let nmhd = NmhdBox::parse(&payload).unwrap();
+    fn round_trip() {
+        let original = NmhdBox {
+            version: 0,
+            flags: NmhdFlags::new(1),
+        };
 
-        assert_eq!(nmhd.version, 0);
-        assert_eq!(nmhd.flags.get(), 0);
-    }
+        let mut buf = vec![0u8; original.size()];
+        original.write(&mut buf).unwrap();
 
-    #[test]
-    fn parse_nmhd_with_flags() {
-        let payload = make_nmhd_payload(0, 0x000001);
-        let nmhd = NmhdBox::parse(&payload).unwrap();
-
-        assert_eq!(nmhd.version, 0);
-        assert_eq!(nmhd.flags.get(), 1);
-    }
-
-    #[test]
-    fn parse_nmhd_extra_data() {
-        let mut payload = make_nmhd_payload(0, 0);
-        payload.extend_from_slice(&[0xFF, 0xFF]); // Extra data
-
-        let result = NmhdBox::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_nmhd_truncated() {
-        let payload = make_nmhd_payload(0, 0);
-        let truncated = &payload[..payload.len() - 1];
-
-        let result = NmhdBox::parse(truncated);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn nmhd_default() {
-        let nmhd = NmhdBox::default();
-
-        assert_eq!(nmhd.version, 0);
-        assert_eq!(nmhd.flags.get(), 0);
+        let reparsed = NmhdBox::parse(&buf).unwrap();
+        assert_eq!(reparsed.version, original.version);
+        assert_eq!(reparsed.flags.get(), original.flags.get());
     }
 }

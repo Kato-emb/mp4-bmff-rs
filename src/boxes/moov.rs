@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::MvexBoxView;
@@ -95,6 +95,9 @@ mod owned {
     extern crate alloc;
     use alloc::vec::Vec;
 
+    use crate::BoxFrameMut;
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     use crate::boxes::MvexBox;
@@ -170,6 +173,65 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<MoovBox> {
             let view = MoovBoxView::parse(payload)?;
             MoovBox::from_view(&view)
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            let mut size = 0;
+            size += BoxFrameMut::required_len(BoxType::MVHD, self.mvhd.size());
+            if let Some(ref mvex) = self.mvex {
+                size += BoxFrameMut::required_len(BoxType::MVEX, mvex.size());
+            }
+            for trak in &self.traks {
+                size += BoxFrameMut::required_len(BoxType::TRAK, trak.size());
+            }
+            size
+        }
+
+        fn write_box<F>(
+            cur: &mut WriteCursor<'_>,
+            boxtype: BoxType,
+            payload_size: usize,
+            write_payload: F,
+        ) -> Result<()>
+        where
+            F: FnOnce(&mut [u8]) -> Result<()>,
+        {
+            let frame_size = BoxFrameMut::required_len(boxtype, payload_size);
+            let buf = cur.take_mut(frame_size)?;
+            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
+            write_payload(frame.payload_mut())?;
+            Ok(())
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            Self::write_box(cur, BoxType::MVHD, self.mvhd.size(), |p| self.mvhd.write(p))?;
+
+            if let Some(ref mvex) = self.mvex {
+                Self::write_box(cur, BoxType::MVEX, mvex.size(), |p| mvex.write(p))?;
+            }
+
+            for trak in &self.traks {
+                Self::write_box(cur, BoxType::TRAK, trak.size(), |p| trak.write(p))?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::MOOV,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `MoovBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 

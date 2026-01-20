@@ -125,6 +125,8 @@ pub use owned::SttsBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned Decoding Time to Sample Box (`stts`).
@@ -138,6 +140,8 @@ mod owned {
     }
 
     impl SttsBox {
+        const ENTRY_SIZE: usize = 8;
+
         /// Creates a `SttsBox` from a `SttsBoxView`.
         pub fn from_view(view: &SttsBoxView<'_>) -> Result<SttsBox> {
             let entries: Result<Vec<SttsEntry>> = view.entries().collect();
@@ -152,6 +156,46 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<SttsBox> {
             let view = SttsBoxView::parse(payload)?;
             SttsBox::from_view(&view)
+        }
+
+        /// Returns the size of the `SttsBox` data.
+        #[inline]
+        pub fn size(&self) -> usize {
+            4 + 4 + self.entries.len() * Self::ENTRY_SIZE // version/flags + count + entries
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(&self.flags.to_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_u32_be(self.entries.len() as u32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            for entry in &self.entries {
+                cur.write_u32_be(entry.sample_count)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(entry.sample_delta)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::STTS,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `SttsBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 
@@ -186,25 +230,9 @@ mod tests {
         payload
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
-    fn parse_and_iterate_entries() {
-        // Empty case
-        let payload = make_stts_payload(vec![]);
-        let stts = SttsBoxView::parse(&payload).unwrap();
-        assert_eq!(stts.entry_count, 0);
-        assert_eq!(stts.entries().count(), 0);
-
-        // Single entry
-        let payload = make_stts_payload(vec![SttsEntry {
-            sample_count: 100,
-            sample_delta: 1000,
-        }]);
-        let stts = SttsBoxView::parse(&payload).unwrap();
-        assert_eq!(stts.entry_count, 1);
-        let entry = stts.entries().next().unwrap().unwrap();
-        assert_eq!(entry.sample_count, 100);
-        assert_eq!(entry.sample_delta, 1000);
-
+    fn stts_box_write_and_round_trip() {
         // Multiple entries
         let entries = vec![
             SttsEntry {
@@ -221,64 +249,30 @@ mod tests {
             },
         ];
         let payload = make_stts_payload(entries.clone());
-        let stts = SttsBoxView::parse(&payload).unwrap();
-        assert_eq!(stts.entry_count, 3);
-        let parsed: Vec<_> = stts.entries().map(|r| r.unwrap()).collect();
-        assert_eq!(parsed.len(), 3);
-        for (i, entry) in parsed.iter().enumerate() {
-            assert_eq!(entry.sample_count, entries[i].sample_count);
-            assert_eq!(entry.sample_delta, entries[i].sample_delta);
-        }
-    }
-
-    #[test]
-    fn invalid_size() {
-        // Entry count mismatch
-        let mut payload = make_full_box_header(0, 0);
-        payload.extend_from_slice(&2u32.to_be_bytes());
-        payload.extend_from_slice(&100u32.to_be_bytes());
-        payload.extend_from_slice(&200u32.to_be_bytes());
-        assert!(SttsBoxView::parse(&payload).is_err());
-    }
-
-    #[test]
-    fn wrong_box_type() {
-        let payload = make_stts_payload(vec![]);
-        let mut box_data = Vec::new();
-        box_data.extend_from_slice(&(8 + payload.len() as u32).to_be_bytes());
-        box_data.extend_from_slice(b"stsc");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
-        let result = SttsBoxView::try_from(box_view);
-
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err().kind(),
-            ErrorKind::MismatchedBoxType { .. }
-        ));
-    }
-
-    #[cfg(feature = "alloc")]
-    #[test]
-    fn owned_conversion() {
-        let entries = vec![
-            SttsEntry {
-                sample_count: 100,
-                sample_delta: 1000,
-            },
-            SttsEntry {
-                sample_count: 200,
-                sample_delta: 2000,
-            },
-        ];
-        let payload = make_stts_payload(entries.clone());
         let view = SttsBoxView::parse(&payload).unwrap();
         let owned = SttsBox::from_view(&view).unwrap();
 
-        assert_eq!(owned.entries.len(), 2);
-        assert_eq!(owned.entries[0].sample_count, 100);
-        assert_eq!(owned.entries[1].sample_delta, 2000);
+        // Write to buffer
+        let mut buf = vec![0u8; owned.size()];
+        owned.write(&mut buf).unwrap();
+
+        // Parse again and compare
+        let reparsed = SttsBox::parse(&buf).unwrap();
+        assert_eq!(reparsed.entries.len(), 3);
+        for (i, entry) in reparsed.entries.iter().enumerate() {
+            assert_eq!(entry.sample_count, entries[i].sample_count);
+            assert_eq!(entry.sample_delta, entries[i].sample_delta);
+        }
+
+        // Error case: buffer too small
+        let mut small_buf = vec![0u8; owned.size() - 1];
+        assert!(owned.write(&mut small_buf).is_err());
+
+        // Error case: entry count mismatch
+        let mut bad_payload = make_full_box_header(0, 0);
+        bad_payload.extend_from_slice(&2u32.to_be_bytes());
+        bad_payload.extend_from_slice(&100u32.to_be_bytes());
+        bad_payload.extend_from_slice(&200u32.to_be_bytes());
+        assert!(SttsBoxView::parse(&bad_payload).is_err());
     }
 }

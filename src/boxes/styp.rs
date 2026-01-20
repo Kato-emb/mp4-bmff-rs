@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
-use crate::BoxType;
 use crate::BoxFrame;
+use crate::BoxType;
 use crate::error::*;
 
 /// A reference to a Segment Type Box (`styp`).
@@ -96,6 +96,8 @@ pub use owned::StypBox;
 mod owned {
     use crate::lib::Vec;
 
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned Segment Type Box (`styp`).
@@ -126,6 +128,45 @@ mod owned {
             let styp_view = StypBoxView::parse(payload)?;
             Ok(Self::from_view(&styp_view))
         }
+
+        /// Returns the size of the `StypBox` data.
+        pub fn size(&self) -> usize {
+            4 + 4 + self.compatible_brands.len() * 4
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            // Write major_brand (4 bytes)
+            cur.write_array(self.major_brand.as_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // Write minor_version (4 bytes)
+            cur.write_u32_be(self.minor_version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            // Write compatible_brands
+            for brand in &self.compatible_brands {
+                cur.write_array(brand.as_bytes())
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::STYP,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `StypBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
+        }
     }
 
     impl StypBoxView<'_> {
@@ -146,29 +187,28 @@ mod owned {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "alloc")]
     #[test]
-    fn test_styp_box_ref_parse() {
-        let data: [u8; 20] = [
-            b'i', b's', b'o', b'm', // major_brand
-            0x00, 0x00, 0x02, 0x00, // minor_version (512)
-            b'i', b's', b'o', b'm', // compatible_brand 1
-            b'i', b's', b'o', b'6', // compatible_brand 2
-            b'm', b's', b'd', b'h', // compatible_brand 3
-        ];
-
-        let styp_view = StypBoxView::parse(&data).unwrap();
-
-        assert_eq!(styp_view.major_brand, FourCC::new(*b"isom"));
-        assert_eq!(styp_view.minor_version, 512);
-
-        let compatible_brands: Vec<FourCC> = styp_view.compatible_brands().collect();
-        assert_eq!(
-            compatible_brands,
-            vec![
+    fn styp_box_round_trip() {
+        let original = StypBox {
+            major_brand: FourCC::new(*b"isom"),
+            minor_version: 512,
+            compatible_brands: vec![
                 FourCC::new(*b"isom"),
                 FourCC::new(*b"iso6"),
                 FourCC::new(*b"msdh"),
-            ]
-        );
+            ],
+        };
+
+        // Write
+        let mut buf = vec![0u8; original.size()];
+        original.write(&mut buf).unwrap();
+
+        // Parse
+        let reparsed = StypBox::parse(&buf).unwrap();
+
+        assert_eq!(reparsed.major_brand, original.major_brand);
+        assert_eq!(reparsed.minor_version, original.minor_version);
+        assert_eq!(reparsed.compatible_brands, original.compatible_brands);
     }
 }

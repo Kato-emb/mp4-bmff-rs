@@ -161,6 +161,8 @@ mod owned {
     extern crate alloc;
     use alloc::vec::Vec;
 
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned Sample to Group Box (`sbgp`).
@@ -195,6 +197,55 @@ mod owned {
         pub fn parse(payload: &[u8]) -> Result<SbgpBox> {
             let view = SbgpBoxView::parse(payload)?;
             SbgpBox::from_view(&view)
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            // version(1) + flags(3) + grouping_type(4) + [grouping_type_parameter(4)] + entry_count(4) + entries(8 * n)
+            let param_size = if self.version == 1 { 4 } else { 0 };
+            1 + 3 + 4 + param_size + 4 + self.entries.len() * 8
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.version)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(&self.flags.to_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            cur.write_array(self.grouping_type.as_bytes())
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            if self.version == 1 {
+                cur.write_u32_be(self.grouping_type_parameter.unwrap_or(0))
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            cur.write_u32_be(self.entries.len() as u32)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+            for entry in &self.entries {
+                cur.write_u32_be(entry.sample_count)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(entry.group_description_index)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+
+            if !cur.is_empty() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxSize {
+                        reason: "Buffer larger than expected",
+                        got: cur.remaining() as u64,
+                    },
+                    BoxType::SBGP,
+                ));
+            }
+
+            Ok(())
+        }
+
+        /// Writes this `SbgpBox` into the given payload.
+        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+            let mut cursor = WriteCursor::new(payload);
+            self.write_in(&mut cursor)
         }
     }
 

@@ -1,4 +1,5 @@
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
 use crate::BoxFrame;
 use crate::BoxType;
@@ -65,6 +66,39 @@ impl MfroBox {
     pub fn parse(payload: &[u8]) -> Result<MfroBox> {
         let mut cur = ReadCursor::new(payload);
         MfroBox::parse_in(&mut cur)
+    }
+
+    /// Returns the size of the payload in bytes.
+    pub fn payload_size(&self) -> usize {
+        // version(1) + flags(3) + size(4) = 8
+        8
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        cur.write_u8(self.version)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.flags.to_bytes())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.size)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        if !cur.is_empty() {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Buffer larger than expected",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::MFRO,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Writes this `MfroBox` into the given payload.
+    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+        let mut cursor = WriteCursor::new(payload);
+        self.write_in(&mut cursor)
     }
 }
 

@@ -1,6 +1,7 @@
 use core::mem;
 
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
 use crate::BoxType;
 use crate::error::*;
@@ -197,6 +198,99 @@ impl TkhdBox {
 
         Ok(this)
     }
+
+    /// Returns the size of the `TkhdBox` payload in bytes.
+    pub fn size(&self) -> usize {
+        let base = 4; // version + flags
+        let version_dependent = match self.version {
+            1 => 8 + 8 + 4 + 4 + 8, // u64 creation_time + u64 modification_time + u32 track_id + reserved + u64 duration
+            _ => 4 + 4 + 4 + 4 + 4, // u32 creation_time + u32 modification_time + u32 track_id + reserved + u32 duration
+        };
+        let common = Self::RESERVED_2_SIZE // reserved[2]
+            + 2 + 2 + 2 // layer + alternate_group + volume
+            + Self::RESERVED_3_SIZE // reserved
+            + 9 * 4 // matrix
+            + 4 + 4; // width + height
+        base + version_dependent + common
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        cur.write_u8(self.version)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_array(&self.flags.to_bytes())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        match self.version {
+            1 => {
+                cur.write_u64_be(self.creation_time.to_quicktime_seconds())
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u64_be(self.modification_time.to_quicktime_seconds())
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(self.track_id)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.reserve_zeros(Self::RESERVED_1_SIZE)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u64_be(self.duration)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+            _ => {
+                cur.write_u32_be(self.creation_time.to_quicktime_seconds() as u32)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(self.modification_time.to_quicktime_seconds() as u32)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(self.track_id)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.reserve_zeros(Self::RESERVED_1_SIZE)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+                cur.write_u32_be(self.duration as u32)
+                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            }
+        }
+
+        // reserved[2]
+        cur.reserve_zeros(Self::RESERVED_2_SIZE)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        cur.write_i16_be(self.layer)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_i16_be(self.alternate_group)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u16_be(self.volume.to_raw())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // reserved
+        cur.reserve_zeros(Self::RESERVED_3_SIZE)
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        // matrix
+        for &m in &self.matrix.to_raw() {
+            cur.write_i32_be(m)
+                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        }
+
+        cur.write_u32_be(self.width.to_raw())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.write_u32_be(self.height.to_raw())
+            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+
+        if !cur.is_empty() {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxSize {
+                    reason: "Buffer larger than expected",
+                    got: cur.remaining() as u64,
+                },
+                BoxType::TKHD,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Writes this `TkhdBox` into the given payload.
+    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
+        let mut cursor = WriteCursor::new(payload);
+        self.write_in(&mut cursor)
+    }
 }
 
 /// Specification type for Track Header Box (`tkhd`).
@@ -241,129 +335,94 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_version0_tkhd_box() {
-        let flags = TkhdFlags::TRACK_ENABLED | TkhdFlags::TRACK_IN_MOVIE;
-        let creation_time: u32 = 0x0102_0304;
-        let modification_time: u32 = 0x0506_0708;
-        let track_id: u32 = 0x1122_3344;
-        let duration: u32 = 0x99AA_BBCC;
-        let layer: i16 = 3;
-        let alternate_group: i16 = 4;
-        let volume_raw: u16 = 0x0100;
-        let matrix_raw: [i32; 9] = Matrix::identity().to_raw();
-        let width_raw: u32 = 0x0002_0000;
-        let height_raw: u32 = 0x0003_0000;
+    fn round_trip_v0() {
+        let tkhd = TkhdBox {
+            version: 0,
+            flags: TkhdFlags::TRACK_ENABLED | TkhdFlags::TRACK_IN_MOVIE,
+            creation_time: QuickTimeDateTime::from_quicktime_seconds(0x0102_0304),
+            modification_time: QuickTimeDateTime::from_quicktime_seconds(0x0506_0708),
+            track_id: 0x1122_3344,
+            duration: 0x99AA_BBCC,
+            layer: 3,
+            alternate_group: 4,
+            volume: U8F8::from_raw(0x0100),
+            matrix: Matrix::identity(),
+            width: U16F16::from_raw(0x0002_0000),
+            height: U16F16::from_raw(0x0003_0000),
+        };
 
-        let mut payload = Vec::new();
-        payload.push(0); // version
-        payload.extend_from_slice(&[
-            (flags.get() >> 16) as u8,
-            (flags.get() >> 8) as u8,
-            flags.get() as u8,
-        ]);
-        payload.extend_from_slice(&creation_time.to_be_bytes());
-        payload.extend_from_slice(&modification_time.to_be_bytes());
-        payload.extend_from_slice(&track_id.to_be_bytes());
-        payload.extend_from_slice(&0u32.to_be_bytes()); // reserved
-        payload.extend_from_slice(&duration.to_be_bytes());
-        payload.extend_from_slice(&0u32.to_be_bytes()); // reserved[0]
-        payload.extend_from_slice(&0u32.to_be_bytes()); // reserved[1]
-        payload.extend_from_slice(&layer.to_be_bytes());
-        payload.extend_from_slice(&alternate_group.to_be_bytes());
-        payload.extend_from_slice(&volume_raw.to_be_bytes());
-        payload.extend_from_slice(&0u16.to_be_bytes()); // reserved
-        for &value in &matrix_raw {
-            payload.extend_from_slice(&value.to_be_bytes());
-        }
-        payload.extend_from_slice(&width_raw.to_be_bytes());
-        payload.extend_from_slice(&height_raw.to_be_bytes());
+        let mut buf = vec![0u8; tkhd.size()];
+        tkhd.write(&mut buf).unwrap();
 
-        let tkhd = TkhdBox::parse(&payload).expect("parse version 0 tkhd");
-
-        assert_eq!(tkhd.version, 0);
-        assert_eq!(tkhd.flags.get(), flags.get());
+        let parsed = TkhdBox::parse(&buf).unwrap();
+        assert_eq!(parsed.version, tkhd.version);
+        assert_eq!(parsed.flags.get(), tkhd.flags.get());
         assert_eq!(
-            tkhd.creation_time.to_quicktime_seconds(),
-            creation_time as u64
+            parsed.creation_time.to_quicktime_seconds(),
+            tkhd.creation_time.to_quicktime_seconds()
         );
         assert_eq!(
-            tkhd.modification_time.to_quicktime_seconds(),
-            modification_time as u64
+            parsed.modification_time.to_quicktime_seconds(),
+            tkhd.modification_time.to_quicktime_seconds()
         );
-        assert_eq!(tkhd.track_id, track_id);
-        assert_eq!(tkhd.duration, duration as u64);
-        assert_eq!(tkhd.layer, layer);
-        assert_eq!(tkhd.alternate_group, alternate_group);
-        assert_eq!(tkhd.volume.to_raw(), volume_raw);
-        assert_eq!(tkhd.matrix.to_raw(), matrix_raw);
-        assert_eq!(tkhd.width.to_raw(), width_raw);
-        assert_eq!(tkhd.height.to_raw(), height_raw);
+        assert_eq!(parsed.track_id, tkhd.track_id);
+        assert_eq!(parsed.duration, tkhd.duration);
+        assert_eq!(parsed.layer, tkhd.layer);
+        assert_eq!(parsed.alternate_group, tkhd.alternate_group);
+        assert_eq!(parsed.volume.to_raw(), tkhd.volume.to_raw());
+        assert_eq!(parsed.matrix, tkhd.matrix);
+        assert_eq!(parsed.width.to_raw(), tkhd.width.to_raw());
+        assert_eq!(parsed.height.to_raw(), tkhd.height.to_raw());
     }
 
     #[test]
-    fn parse_version1_tkhd_box() {
-        let flags = TkhdFlags::TRACK_IN_PREVIEW;
-        let creation_time: u64 = 0x0102_0304_0506_0708;
-        let modification_time: u64 = 0x1112_1314_1516_1718;
-        let track_id: u32 = 0x5566_7788;
-        let duration: u64 = 0x2222_3333_4444_5555;
-        let layer: i16 = -2;
-        let alternate_group: i16 = 7;
-        let volume_raw: u16 = 0x0080;
-        let matrix_raw: [i32; 9] = [
-            0x0001_0000,
-            0x0000_0001,
-            0x0000_0002,
-            0x0000_0003,
-            0x0001_0000,
-            0x0000_0004,
-            0x0000_0005,
-            0x0000_0006,
-            0x4000_0000,
-        ];
-        let width_raw: u32 = 0x000A_0000;
-        let height_raw: u32 = 0x000B_0000;
+    fn round_trip_v1() {
+        let tkhd = TkhdBox {
+            version: 1,
+            flags: TkhdFlags::TRACK_IN_PREVIEW,
+            creation_time: QuickTimeDateTime::from_quicktime_seconds(0x0102_0304_0506_0708),
+            modification_time: QuickTimeDateTime::from_quicktime_seconds(0x1112_1314_1516_1718),
+            track_id: 0x5566_7788,
+            duration: 0x2222_3333_4444_5555, // exceeds u32::MAX
+            layer: -2,
+            alternate_group: 7,
+            volume: U8F8::from_raw(0x0080),
+            matrix: Matrix::from_raw([
+                0x0001_0000,
+                0x0000_0001,
+                0x0000_0002,
+                0x0000_0003,
+                0x0001_0000,
+                0x0000_0004,
+                0x0000_0005,
+                0x0000_0006,
+                0x4000_0000,
+            ]),
+            width: U16F16::from_raw(0x000A_0000),
+            height: U16F16::from_raw(0x000B_0000),
+        };
 
-        let mut payload = Vec::new();
-        payload.push(1); // version
-        payload.extend_from_slice(&[
-            (flags.get() >> 16) as u8,
-            (flags.get() >> 8) as u8,
-            flags.get() as u8,
-        ]);
-        payload.extend_from_slice(&creation_time.to_be_bytes());
-        payload.extend_from_slice(&modification_time.to_be_bytes());
-        payload.extend_from_slice(&track_id.to_be_bytes());
-        payload.extend_from_slice(&0u32.to_be_bytes()); // reserved
-        payload.extend_from_slice(&duration.to_be_bytes());
-        payload.extend_from_slice(&0u32.to_be_bytes()); // reserved[0]
-        payload.extend_from_slice(&0u32.to_be_bytes()); // reserved[1]
-        payload.extend_from_slice(&layer.to_be_bytes());
-        payload.extend_from_slice(&alternate_group.to_be_bytes());
-        payload.extend_from_slice(&volume_raw.to_be_bytes());
-        payload.extend_from_slice(&0u16.to_be_bytes()); // reserved
-        for &value in &matrix_raw {
-            payload.extend_from_slice(&value.to_be_bytes());
-        }
-        payload.extend_from_slice(&width_raw.to_be_bytes());
-        payload.extend_from_slice(&height_raw.to_be_bytes());
+        let mut buf = vec![0u8; tkhd.size()];
+        tkhd.write(&mut buf).unwrap();
 
-        let tkhd = TkhdBox::parse(&payload).expect("parse version 1 tkhd");
-
-        assert_eq!(tkhd.version, 1);
-        assert_eq!(tkhd.flags.get(), flags.get());
-        assert_eq!(tkhd.creation_time.to_quicktime_seconds(), creation_time);
+        let parsed = TkhdBox::parse(&buf).unwrap();
+        assert_eq!(parsed.version, tkhd.version);
+        assert_eq!(parsed.flags.get(), tkhd.flags.get());
         assert_eq!(
-            tkhd.modification_time.to_quicktime_seconds(),
-            modification_time
+            parsed.creation_time.to_quicktime_seconds(),
+            tkhd.creation_time.to_quicktime_seconds()
         );
-        assert_eq!(tkhd.track_id, track_id);
-        assert_eq!(tkhd.duration, duration);
-        assert_eq!(tkhd.layer, layer);
-        assert_eq!(tkhd.alternate_group, alternate_group);
-        assert_eq!(tkhd.volume.to_raw(), volume_raw);
-        assert_eq!(tkhd.matrix.to_raw(), matrix_raw);
-        assert_eq!(tkhd.width.to_raw(), width_raw);
-        assert_eq!(tkhd.height.to_raw(), height_raw);
+        assert_eq!(
+            parsed.modification_time.to_quicktime_seconds(),
+            tkhd.modification_time.to_quicktime_seconds()
+        );
+        assert_eq!(parsed.track_id, tkhd.track_id);
+        assert_eq!(parsed.duration, tkhd.duration);
+        assert_eq!(parsed.layer, tkhd.layer);
+        assert_eq!(parsed.alternate_group, tkhd.alternate_group);
+        assert_eq!(parsed.volume.to_raw(), tkhd.volume.to_raw());
+        assert_eq!(parsed.matrix, tkhd.matrix);
+        assert_eq!(parsed.width.to_raw(), tkhd.width.to_raw());
+        assert_eq!(parsed.height.to_raw(), tkhd.height.to_raw());
     }
 }
