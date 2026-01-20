@@ -5,7 +5,7 @@ use crate::cursor::ReadCursor;
 use crate::error::*;
 use crate::header::FullBoxFlags;
 use crate::header::FullBoxHeader;
-use crate::view::BoxView;
+use crate::BoxFrame;
 
 /// A reference to a Data Reference Box (`dref`).
 #[derive(Debug)]
@@ -34,9 +34,9 @@ impl<'a> DrefBoxView<'a> {
     pub fn entries(&self) -> impl Iterator<Item = Result<DrefEntryView<'a>>> + 'a {
         BoxIter::new(self.entries).map(|box_result| {
             let view = box_result?;
-            match view.header.boxtype() {
-                BoxType::URL_ => UrlBoxView::parse(view.payload).map(DrefEntryView::Url),
-                BoxType::URN_ => UrnBoxView::parse(view.payload).map(DrefEntryView::Urn),
+            match view.boxtype() {
+                BoxType::URL_ => UrlBoxView::parse(view.payload()).map(DrefEntryView::Url),
+                BoxType::URN_ => UrnBoxView::parse(view.payload()).map(DrefEntryView::Urn),
                 other => Err(Error::in_box(
                     ErrorKind::InvalidBoxType {
                         reason: "Unexpected box type in entries",
@@ -57,7 +57,7 @@ impl<'a> DrefBoxView<'a> {
 
         let entries = cur.remaining_slice();
         for _ in 0..entry_count {
-            BoxView::parse_in(cur)?;
+            BoxFrame::parse_in(cur)?;
         }
 
         if !cur.is_empty() {

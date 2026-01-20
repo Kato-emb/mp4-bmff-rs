@@ -2,7 +2,7 @@ use crate::cursor::ReadCursor;
 
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::HdlrBoxView;
@@ -28,8 +28,8 @@ impl<'a> MdiaBoxView<'a> {
     pub fn mdhd(&self) -> Result<MdhdBox> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::MDHD {
-                let mdhd = MdhdBox::parse(child.payload)?;
+            if child.boxtype() == BoxType::MDHD {
+                let mdhd = MdhdBox::parse(child.payload())?;
                 return Ok(mdhd);
             }
         }
@@ -46,8 +46,8 @@ impl<'a> MdiaBoxView<'a> {
     pub fn hdlr(&self) -> Result<HdlrBoxView<'a>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::HDLR {
-                let hdlr = HdlrBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::HDLR {
+                let hdlr = HdlrBoxView::parse(child.payload())?;
                 return Ok(hdlr);
             }
         }
@@ -64,8 +64,8 @@ impl<'a> MdiaBoxView<'a> {
     pub fn minf(&self) -> Result<MinfBoxView<'a>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::MINF {
-                let minf = MinfBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::MINF {
+                let minf = MinfBoxView::parse(child.payload())?;
                 return Ok(minf);
             }
         }
@@ -90,18 +90,18 @@ impl<'a> MdiaBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for MdiaBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for MdiaBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::MDIA {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::MDIA {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MDIA,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        MdiaBoxView::parse(value.payload)
+        MdiaBoxView::parse(value.payload())
     }
 }
 
@@ -135,9 +135,9 @@ mod owned {
             for child in view.children() {
                 let child = child?;
 
-                match child.header.boxtype() {
+                match child.boxtype() {
                     BoxType::MDHD if mdhd.is_none() => {
-                        mdhd = Some(MdhdBox::parse(child.payload)?);
+                        mdhd = Some(MdhdBox::parse(child.payload())?);
                     }
                     BoxType::MDHD => {
                         return Err(Error::in_box(
@@ -149,7 +149,7 @@ mod owned {
                         ));
                     }
                     BoxType::HDLR if hdlr.is_none() => {
-                        let hdlr_view = HdlrBoxView::parse(child.payload)?;
+                        let hdlr_view = HdlrBoxView::parse(child.payload())?;
                         hdlr = Some(HdlrBox::from_view(&hdlr_view));
                     }
                     BoxType::HDLR => {
@@ -162,7 +162,7 @@ mod owned {
                         ));
                     }
                     BoxType::MINF if minf.is_none() => {
-                        let minf_view = MinfBoxView::parse(child.payload)?;
+                        let minf_view = MinfBoxView::parse(child.payload())?;
                         minf = Some(MinfBox::from_view(&minf_view)?);
                     }
                     BoxType::MINF => {
@@ -215,18 +215,18 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for MdiaBox {
+    impl TryFrom<BoxFrame<'_>> for MdiaBox {
         type Error = Error;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
-            if value.header.boxtype() != BoxType::MDIA {
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+            if value.boxtype() != BoxType::MDIA {
                 return Err(Error::new(ErrorKind::MismatchedBoxType {
                     expected: BoxType::MDIA,
-                    found: value.header.boxtype(),
+                    found: value.boxtype(),
                 }));
             }
 
-            let view = MdiaBoxView::parse(value.payload)?;
+            let view = MdiaBoxView::parse(value.payload())?;
             MdiaBox::from_view(&view)
         }
     }

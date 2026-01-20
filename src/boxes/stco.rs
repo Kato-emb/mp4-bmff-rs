@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
 use crate::header::FullBoxHeader;
@@ -86,18 +86,18 @@ impl<'a> TryFrom<&'a [u8]> for StcoBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxView<'a>> for StcoBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for StcoBoxView<'a> {
     type Error = Error;
 
-    fn try_from(box_view: BoxView<'a>) -> Result<Self> {
-        if box_view.header.boxtype() != BoxType::STCO {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::STCO {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STCO,
-                found: box_view.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        StcoBoxView::parse(box_view.payload)
+        StcoBoxView::parse(value.payload())
     }
 }
 
@@ -217,7 +217,7 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
         let result = StcoBoxView::try_from(box_view);
         assert!(result.is_err());
     }

@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
 use crate::header::FullBoxHeader;
@@ -109,18 +109,18 @@ impl<'a> TryFrom<&'a [u8]> for StssBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for StssBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for StssBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::STSS {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::STSS {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STSS,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        StssBoxView::parse(value.payload)
+        StssBoxView::parse(value.payload())
     }
 }
 
@@ -244,8 +244,8 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = StssBoxView::try_from(&box_view);
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let result = StssBoxView::try_from(box_view);
         assert!(result.is_err());
     }
 

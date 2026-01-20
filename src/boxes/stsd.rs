@@ -1,6 +1,6 @@
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::cursor::ReadCursor;
 
 use crate::FullBoxFlags;
@@ -18,7 +18,7 @@ pub enum StsdEntryView<'a> {
     /// An Avc1 Box entry.
     Avc1(Avc1BoxView<'a>),
     /// An unrecognized box entry.
-    Other(BoxView<'a>),
+    Other(BoxFrame<'a>),
 }
 
 /// An reference to a Sample Description Box (`stsd`).
@@ -39,9 +39,9 @@ impl<'a> StsdBoxView<'a> {
     pub fn entries(&self) -> impl Iterator<Item = Result<StsdEntryView<'a>>> + 'a {
         BoxIter::new(self.entries).map(|box_result| {
             let view = box_result?;
-            match view.header.boxtype() {
-                BoxType::AVC1 => Avc1BoxView::parse(view.payload).map(StsdEntryView::Avc1),
-                BoxType::MP4A => Mp4aBoxView::parse(view.payload).map(StsdEntryView::Mp4a),
+            match view.boxtype() {
+                BoxType::AVC1 => Avc1BoxView::parse(view.payload()).map(StsdEntryView::Avc1),
+                BoxType::MP4A => Mp4aBoxView::parse(view.payload()).map(StsdEntryView::Mp4a),
                 _ => Ok(StsdEntryView::Other(view)),
             }
         })
@@ -56,7 +56,7 @@ impl<'a> StsdBoxView<'a> {
 
         let entries = cur.remaining_slice();
         for _ in 0..entry_count {
-            BoxView::parse_in(cur)?;
+            BoxFrame::parse_in(cur)?;
         }
 
         if !cur.is_empty() {
@@ -100,7 +100,6 @@ pub use owned::{
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::BoxOwned;
     use crate::boxes::Avc1Box;
     use crate::boxes::Mp4aBox;
 
@@ -114,7 +113,12 @@ mod owned {
         /// An Avc1 Box entry.
         Avc1(Avc1Box),
         /// An unrecognized box entry.
-        Other(BoxOwned),
+        Other {
+            /// The box type.
+            boxtype: BoxType,
+            /// The box payload.
+            payload: Vec<u8>,
+        },
     }
 
     impl TryFrom<&StsdEntryView<'_>> for StsdEntry {
@@ -124,7 +128,10 @@ mod owned {
             match value {
                 StsdEntryView::Mp4a(view) => Ok(StsdEntry::Mp4a(Mp4aBox::from_view(view)?)),
                 StsdEntryView::Avc1(view) => Ok(StsdEntry::Avc1(Avc1Box::from_view(view)?)),
-                StsdEntryView::Other(view) => Ok(StsdEntry::Other(view.to_owned())),
+                StsdEntryView::Other(view) => Ok(StsdEntry::Other {
+                    boxtype: view.boxtype(),
+                    payload: view.payload().to_vec(),
+                }),
             }
         }
     }

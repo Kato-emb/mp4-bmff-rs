@@ -2,7 +2,7 @@ use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
 use crate::header::FullBoxHeader;
@@ -126,18 +126,18 @@ impl<'a> TryFrom<&'a [u8]> for SbgpBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for SbgpBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for SbgpBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::SBGP {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::SBGP {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::SBGP,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        SbgpBoxView::parse(value.payload)
+        SbgpBoxView::parse(value.payload())
     }
 }
 
@@ -201,10 +201,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for SbgpBox {
+    impl TryFrom<BoxFrame<'_>> for SbgpBox {
         type Error = Error;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
             let view = SbgpBoxView::try_from(value)?;
             SbgpBox::from_view(&view)
         }
@@ -279,8 +279,8 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = SbgpBoxView::try_from(&box_view);
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let result = SbgpBoxView::try_from(box_view);
         assert!(result.is_err());
     }
 

@@ -1,9 +1,8 @@
-use crate::cursor::ReadCursor;
-
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxView;
+use crate::cursor::ReadCursor;
 use crate::error::*;
+use crate::framing::BoxFrame;
 use crate::types::FourCC;
 
 /// A reference to a Track Reference Type Box.
@@ -28,25 +27,24 @@ impl<'a> TrackReferenceTypeBoxView<'a> {
             .map(|chunk| u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
     }
 
-    /// Parses a `TrackReferenceTypeView` from the given box view.
-    pub fn from_box_view(box_view: &BoxView<'a>) -> Result<Self> {
-        let boxtype = box_view.header.boxtype();
-        let reference_type = boxtype.type_field();
-        let payload = box_view.payload;
+    /// Creates a `TrackReferenceTypeBoxView` from a `BoxFrame`.
+    pub fn from_frame(frame: BoxFrame<'a>) -> Result<Self> {
+        let reference_type = frame.boxtype().type_field();
+        let track_ids = frame.payload();
 
-        if !payload.len().is_multiple_of(Self::TRACK_ID_SIZE) {
+        if !track_ids.len().is_multiple_of(Self::TRACK_ID_SIZE) {
             return Err(Error::in_box(
                 ErrorKind::InvalidBoxSize {
                     reason: "Track reference payload is not a multiple of 4 bytes",
-                    got: payload.len() as u64,
+                    got: track_ids.len() as u64,
                 },
-                boxtype,
+                BoxType::TREF,
             ));
         }
 
         Ok(TrackReferenceTypeBoxView {
             reference_type,
-            track_ids: payload,
+            track_ids,
         })
     }
 }
@@ -69,9 +67,8 @@ impl<'a> TrefBoxView<'a> {
 
     /// Returns an iterator over the track reference types in this box.
     pub fn references(&self) -> impl Iterator<Item = Result<TrackReferenceTypeBoxView<'a>>> + 'a {
-        self.children().map(|result| {
-            result.and_then(|box_view| TrackReferenceTypeBoxView::from_box_view(&box_view))
-        })
+        self.children()
+            .map(|result| result.and_then(TrackReferenceTypeBoxView::from_frame))
     }
 
     /// Finds a track reference by its reference type.
@@ -97,21 +94,6 @@ impl<'a> TrefBoxView<'a> {
     pub fn parse(payload: &'a [u8]) -> Result<TrefBoxView<'a>> {
         let mut cursor = ReadCursor::new(payload);
         TrefBoxView::parse_in(&mut cursor)
-    }
-}
-
-impl<'a> TryFrom<&BoxView<'a>> for TrefBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::TREF {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::TREF,
-                found: value.header.boxtype(),
-            }));
-        }
-
-        TrefBoxView::parse(value.payload)
     }
 }
 
@@ -188,26 +170,12 @@ mod owned {
             TrefBox::from_view(value)
         }
     }
-
-    impl TryFrom<&BoxView<'_>> for TrefBox {
-        type Error = Error;
-
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
-            if value.header.boxtype() != BoxType::TREF {
-                return Err(Error::new(ErrorKind::MismatchedBoxType {
-                    expected: BoxType::TREF,
-                    found: value.header.boxtype(),
-                }));
-            }
-
-            let view = TrefBoxView::parse(value.payload)?;
-            TrefBox::from_view(&view)
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::framing::BoxFrame;
+
     use super::*;
 
     fn make_box(boxtype: &[u8; 4], payload: &[u8]) -> Vec<u8> {
@@ -291,33 +259,13 @@ mod tests {
         box_data.extend_from_slice(b"hint");
         box_data.extend_from_slice(&[1, 2, 3, 4, 5]); // 5 bytes - not multiple of 4
 
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = TrackReferenceTypeBoxView::from_box_view(&box_view);
+        let frame = BoxFrame::parse(&box_data).unwrap();
+        let result = TrackReferenceTypeBoxView::from_frame(frame);
 
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err().kind(),
             ErrorKind::InvalidBoxSize { .. }
-        ));
-    }
-
-    #[test]
-    fn wrong_box_type() {
-        let payload = make_tref_payload(&[]);
-        let mut box_data = Vec::new();
-        box_data.extend_from_slice(&(8 + payload.len() as u32).to_be_bytes());
-        box_data.extend_from_slice(b"trak");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = TrefBoxView::try_from(&box_view);
-
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err().kind(),
-            ErrorKind::MismatchedBoxType { .. }
         ));
     }
 

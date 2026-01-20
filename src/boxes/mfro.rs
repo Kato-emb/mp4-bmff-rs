@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
 use crate::header::FullBoxHeader;
@@ -71,18 +71,18 @@ impl TryFrom<&[u8]> for MfroBox {
     }
 }
 
-impl TryFrom<&BoxView<'_>> for MfroBox {
+impl TryFrom<BoxFrame<'_>> for MfroBox {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'_>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::MFRO {
+    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        if value.boxtype() != BoxType::MFRO {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MFRO,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        MfroBox::parse(value.payload)
+        MfroBox::parse(value.payload())
     }
 }
 

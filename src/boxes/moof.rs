@@ -2,7 +2,7 @@ use crate::cursor::ReadCursor;
 
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::MfhdBox;
@@ -26,8 +26,8 @@ impl<'a> MoofBoxView<'a> {
     pub fn mfhd(&self) -> Result<MfhdBox> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::MFHD {
-                return MfhdBox::try_from(&child);
+            if child.boxtype() == BoxType::MFHD {
+                return MfhdBox::parse(child.payload());
             }
         }
 
@@ -42,9 +42,7 @@ impl<'a> MoofBoxView<'a> {
     /// Returns an iterator over the Track Fragment Boxes (`traf`).
     pub fn trafs(&self) -> impl Iterator<Item = Result<TrafBoxView<'a>>> + 'a {
         self.children().filter_map(|result| match result {
-            Ok(box_view) if box_view.header.boxtype() == BoxType::TRAF => {
-                Some(TrafBoxView::try_from(&box_view))
-            }
+            Ok(view) if view.boxtype() == BoxType::TRAF => Some(TrafBoxView::parse(view.payload())),
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
@@ -62,18 +60,18 @@ impl<'a> MoofBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for MoofBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for MoofBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::MOOF {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::MOOF {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MOOF,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        MoofBoxView::parse(value.payload)
+        MoofBoxView::parse(value.payload())
     }
 }
 
@@ -126,10 +124,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for MoofBox {
+    impl TryFrom<BoxFrame<'_>> for MoofBox {
         type Error = Error;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
             let view = MoofBoxView::try_from(value)?;
             MoofBox::from_view(&view)
         }
@@ -225,8 +223,8 @@ mod tests {
         box_data.extend_from_slice(&mfhd);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let moof = MoofBoxView::try_from(&box_view).unwrap();
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let moof = MoofBoxView::try_from(box_view).unwrap();
 
         assert_eq!(moof.mfhd().unwrap().sequence_number, 1);
     }
@@ -242,8 +240,8 @@ mod tests {
         box_data.extend_from_slice(&mfhd);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = MoofBoxView::try_from(&box_view);
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let result = MoofBoxView::try_from(box_view);
 
         assert!(result.is_err());
     }

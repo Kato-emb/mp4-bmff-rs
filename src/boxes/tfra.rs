@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
 use crate::header::FullBoxHeader;
@@ -263,18 +263,18 @@ impl<'a> TryFrom<&'a [u8]> for TfraBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for TfraBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for TfraBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::TFRA {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::TFRA {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::TFRA,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        TfraBoxView::parse(value.payload)
+        TfraBoxView::parse(value.payload())
     }
 }
 
@@ -357,10 +357,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for TfraBox {
+    impl TryFrom<BoxFrame<'_>> for TfraBox {
         type Error = Error;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
             let view = TfraBoxView::try_from(value)?;
             TfraBox::from_view(&view)
         }

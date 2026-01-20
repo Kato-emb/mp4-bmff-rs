@@ -2,7 +2,7 @@ use crate::cursor::ReadCursor;
 
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::MehdBox;
@@ -27,8 +27,8 @@ impl<'a> MvexBoxView<'a> {
     pub fn mehd(&self) -> Result<Option<MehdBox>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::MEHD {
-                let mehd = MehdBox::parse(child.payload)?;
+            if child.boxtype() == BoxType::MEHD {
+                let mehd = MehdBox::parse(child.payload())?;
                 return Ok(Some(mehd));
             }
         }
@@ -38,9 +38,7 @@ impl<'a> MvexBoxView<'a> {
     /// Returns an iterator over the Track Extends Boxes (`trex`) contained in this `MvexBoxView`.
     pub fn trexs(&self) -> impl Iterator<Item = Result<TrexBox>> + 'a {
         self.children().filter_map(|child| match child {
-            Ok(view) if view.header.boxtype() == BoxType::TREX => {
-                Some(TrexBox::parse(view.payload))
-            }
+            Ok(view) if view.boxtype() == BoxType::TREX => Some(TrexBox::parse(view.payload())),
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
@@ -69,18 +67,18 @@ impl<'a> MvexBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for MvexBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for MvexBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::MVEX {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::MVEX {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MVEX,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        MvexBoxView::parse(value.payload)
+        MvexBoxView::parse(value.payload())
     }
 }
 
@@ -112,9 +110,9 @@ mod owned {
             for child in view.children() {
                 let child = child?;
 
-                match child.header.boxtype() {
+                match child.boxtype() {
                     BoxType::MEHD if mehd.is_none() => {
-                        mehd = Some(MehdBox::parse(child.payload)?);
+                        mehd = Some(MehdBox::parse(child.payload())?);
                     }
                     BoxType::MEHD => {
                         return Err(Error::in_box(
@@ -126,7 +124,7 @@ mod owned {
                         ));
                     }
                     BoxType::TREX => {
-                        trexs.push(TrexBox::parse(child.payload)?);
+                        trexs.push(TrexBox::parse(child.payload())?);
                     }
                     _ => continue,
                 }
@@ -155,18 +153,18 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for MvexBox {
+    impl TryFrom<BoxFrame<'_>> for MvexBox {
         type Error = Error;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
-            if value.header.boxtype() != BoxType::MVEX {
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+            if value.boxtype() != BoxType::MVEX {
                 return Err(Error::new(ErrorKind::MismatchedBoxType {
                     expected: BoxType::MVEX,
-                    found: value.header.boxtype(),
+                    found: value.boxtype(),
                 }));
             }
 
-            let view = MvexBoxView::parse(value.payload)?;
+            let view = MvexBoxView::parse(value.payload())?;
             MvexBox::from_view(&view)
         }
     }
@@ -283,8 +281,8 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let mvex = MvexBoxView::try_from(&box_view).unwrap();
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let mvex = MvexBoxView::try_from(box_view).unwrap();
 
         assert!(mvex.mehd().unwrap().is_some());
     }
@@ -300,8 +298,8 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = MvexBoxView::try_from(&box_view);
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let result = MvexBoxView::try_from(box_view);
 
         assert!(result.is_err());
         if let Err(err) = result {

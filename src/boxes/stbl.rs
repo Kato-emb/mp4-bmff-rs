@@ -2,7 +2,7 @@ use crate::cursor::ReadCursor;
 
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::Co64BoxView;
@@ -40,8 +40,8 @@ impl<'a> StblBoxView<'a> {
     pub fn stsd(&self) -> Result<StsdBoxView<'a>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::STSD {
-                let stsd = StsdBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::STSD {
+                let stsd = StsdBoxView::parse(child.payload())?;
                 return Ok(stsd);
             }
         }
@@ -58,8 +58,8 @@ impl<'a> StblBoxView<'a> {
     pub fn stts(&self) -> Result<SttsBoxView<'a>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::STTS {
-                let stts = SttsBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::STTS {
+                let stts = SttsBoxView::parse(child.payload())?;
                 return Ok(stts);
             }
         }
@@ -76,8 +76,8 @@ impl<'a> StblBoxView<'a> {
     pub fn stsc(&self) -> Result<StscBoxView<'a>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::STSC {
-                let stsc = StscBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::STSC {
+                let stsc = StscBoxView::parse(child.payload())?;
                 return Ok(stsc);
             }
         }
@@ -94,8 +94,8 @@ impl<'a> StblBoxView<'a> {
     pub fn ctts(&self) -> Result<Option<CttsBoxView<'a>>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::CTTS {
-                let ctts = CttsBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::CTTS {
+                let ctts = CttsBoxView::parse(child.payload())?;
                 return Ok(Some(ctts));
             }
         }
@@ -107,8 +107,8 @@ impl<'a> StblBoxView<'a> {
     pub fn cslg(&self) -> Result<Option<CslgBox>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::CSLG {
-                let cslg = CslgBox::parse(child.payload)?;
+            if child.boxtype() == BoxType::CSLG {
+                let cslg = CslgBox::parse(child.payload())?;
                 return Ok(Some(cslg));
             }
         }
@@ -120,8 +120,8 @@ impl<'a> StblBoxView<'a> {
     pub fn stsz(&self) -> Result<Option<StszBoxView<'a>>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::STSZ {
-                let stsz = StszBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::STSZ {
+                let stsz = StszBoxView::parse(child.payload())?;
                 return Ok(Some(stsz));
             }
         }
@@ -133,8 +133,8 @@ impl<'a> StblBoxView<'a> {
     pub fn stss(&self) -> Result<Option<StssBoxView<'a>>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::STSS {
-                let stss = StssBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::STSS {
+                let stss = StssBoxView::parse(child.payload())?;
                 return Ok(Some(stss));
             }
         }
@@ -146,8 +146,8 @@ impl<'a> StblBoxView<'a> {
     pub fn stco(&self) -> Result<Option<StcoBoxView<'a>>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::STCO {
-                let stco = StcoBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::STCO {
+                let stco = StcoBoxView::parse(child.payload())?;
                 return Ok(Some(stco));
             }
         }
@@ -159,8 +159,8 @@ impl<'a> StblBoxView<'a> {
     pub fn co64(&self) -> Result<Option<Co64BoxView<'a>>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::CO64 {
-                let co64 = Co64BoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::CO64 {
+                let co64 = Co64BoxView::parse(child.payload())?;
                 return Ok(Some(co64));
             }
         }
@@ -174,13 +174,13 @@ impl<'a> StblBoxView<'a> {
 
         for child in self.children() {
             let child = child?;
-            match child.header.boxtype() {
+            match child.boxtype() {
                 BoxType::STCO if chunk_offsets.is_none() => {
-                    let stco = StcoBoxView::parse(child.payload)?;
+                    let stco = StcoBoxView::parse(child.payload())?;
                     chunk_offsets = Some(ChunkOffsetsView::Stco(stco));
                 }
                 BoxType::CO64 if chunk_offsets.is_none() => {
-                    let co64 = Co64BoxView::parse(child.payload)?;
+                    let co64 = Co64BoxView::parse(child.payload())?;
                     chunk_offsets = Some(ChunkOffsetsView::Co64(co64));
                 }
                 BoxType::STCO | BoxType::CO64 => {
@@ -217,18 +217,18 @@ impl<'a> StblBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for StblBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for StblBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::STBL {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::STBL {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STBL,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        StblBoxView::parse(value.payload)
+        StblBoxView::parse(value.payload())
     }
 }
 
@@ -289,40 +289,40 @@ mod owned {
             for child in view.children() {
                 let child = child?;
 
-                match child.header.boxtype() {
+                match child.boxtype() {
                     BoxType::STSD if stsd.is_none() => {
-                        let stsd_view = StsdBoxView::parse(child.payload)?;
+                        let stsd_view = StsdBoxView::parse(child.payload())?;
                         stsd = Some(StsdBox::from_view(&stsd_view)?);
                     }
                     BoxType::STTS if stts.is_none() => {
-                        let stts_view = SttsBoxView::parse(child.payload)?;
+                        let stts_view = SttsBoxView::parse(child.payload())?;
                         stts = Some(SttsBox::from_view(&stts_view)?);
                     }
                     BoxType::CTTS if ctts.is_none() => {
-                        let ctts_view = CttsBoxView::parse(child.payload)?;
+                        let ctts_view = CttsBoxView::parse(child.payload())?;
                         ctts = Some(CttsBox::from_view(&ctts_view)?);
                     }
                     BoxType::CSLG if cslg.is_none() => {
-                        cslg = Some(CslgBox::parse(child.payload)?);
+                        cslg = Some(CslgBox::parse(child.payload())?);
                     }
                     BoxType::STSC if stsc.is_none() => {
-                        let stsc_view = StscBoxView::parse(child.payload)?;
+                        let stsc_view = StscBoxView::parse(child.payload())?;
                         stsc = Some(StscBox::from_view(&stsc_view)?);
                     }
                     BoxType::STSZ if stsz.is_none() => {
-                        let stsz_view = StszBoxView::parse(child.payload)?;
+                        let stsz_view = StszBoxView::parse(child.payload())?;
                         stsz = Some(StszBox::from_view(&stsz_view)?);
                     }
                     BoxType::STSS if stss.is_none() => {
-                        let stss_view = StssBoxView::parse(child.payload)?;
+                        let stss_view = StssBoxView::parse(child.payload())?;
                         stss = Some(StssBox::from_view(&stss_view)?);
                     }
                     BoxType::STCO if chunk_offsets.is_none() => {
-                        let stco_view = StcoBoxView::parse(child.payload)?;
+                        let stco_view = StcoBoxView::parse(child.payload())?;
                         chunk_offsets = Some(ChunkOffsets::Stco(StcoBox::from_view(&stco_view)?));
                     }
                     BoxType::CO64 if chunk_offsets.is_none() => {
-                        let co64_view = Co64BoxView::parse(child.payload)?;
+                        let co64_view = Co64BoxView::parse(child.payload())?;
                         chunk_offsets = Some(ChunkOffsets::Co64(Co64Box::from_view(&co64_view)?));
                     }
                     BoxType::STSD
@@ -394,18 +394,18 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for StblBox {
+    impl TryFrom<BoxFrame<'_>> for StblBox {
         type Error = Error;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
-            if value.header.boxtype() != BoxType::STBL {
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+            if value.boxtype() != BoxType::STBL {
                 return Err(Error::new(ErrorKind::MismatchedBoxType {
                     expected: BoxType::STBL,
-                    found: value.header.boxtype(),
+                    found: value.boxtype(),
                 }));
             }
 
-            let view = StblBoxView::parse(value.payload)?;
+            let view = StblBoxView::parse(value.payload())?;
             StblBox::from_view(&view)
         }
     }

@@ -22,8 +22,8 @@ impl<'a> DinfBoxView<'a> {
     pub fn dref(&self) -> Result<DrefBoxView<'a>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::DREF {
-                let dref = DrefBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::DREF {
+                let dref = DrefBoxView::parse(child.payload())?;
                 return Ok(dref);
             }
         }
@@ -72,8 +72,8 @@ mod owned {
 
             for child in view.children() {
                 let child = child?;
-                if child.header.boxtype() == BoxType::DREF {
-                    let dref_view = DrefBoxView::parse(child.payload)?;
+                if child.boxtype() == BoxType::DREF {
+                    let dref_view = DrefBoxView::parse(child.payload())?;
                     dref = Some(DrefBox::from_view(&dref_view)?);
                 }
             }

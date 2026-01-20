@@ -4,7 +4,7 @@ use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::FullBoxFlags;
 use crate::FullBoxHeader;
 use crate::error::*;
@@ -78,18 +78,18 @@ impl<'a> HdlrBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for HdlrBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for HdlrBoxView<'a> {
     type Error = Error;
 
-    fn try_from(box_view: &BoxView<'a>) -> Result<Self> {
-        if box_view.header.boxtype() != BoxType::HDLR {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::HDLR {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::HDLR,
-                found: box_view.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        HdlrBoxView::parse(box_view.payload)
+        HdlrBoxView::parse(value.payload())
     }
 }
 
@@ -146,11 +146,11 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for HdlrBox {
+    impl TryFrom<BoxFrame<'_>> for HdlrBox {
         type Error = Error;
 
-        fn try_from(box_view: &BoxView<'_>) -> Result<Self> {
-            let view = HdlrBoxView::try_from(box_view)?;
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+            let view = HdlrBoxView::try_from(value)?;
             Ok(HdlrBox::from_view(&view))
         }
     }

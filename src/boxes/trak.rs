@@ -2,7 +2,7 @@ use crate::cursor::ReadCursor;
 
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::MdiaBoxView;
@@ -25,8 +25,8 @@ impl<'a> TrakBoxView<'a> {
     pub fn tkhd(&self) -> Result<TkhdBox> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::TKHD {
-                let tkhd = TkhdBox::parse(child.payload)?;
+            if child.boxtype() == BoxType::TKHD {
+                let tkhd = TkhdBox::parse(child.payload())?;
                 return Ok(tkhd);
             }
         }
@@ -43,8 +43,8 @@ impl<'a> TrakBoxView<'a> {
     pub fn mdia(&self) -> Result<MdiaBoxView<'a>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::MDIA {
-                let mdia = MdiaBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::MDIA {
+                let mdia = MdiaBoxView::parse(child.payload())?;
                 return Ok(mdia);
             }
         }
@@ -61,8 +61,8 @@ impl<'a> TrakBoxView<'a> {
     pub fn tref(&self) -> Result<Option<TrefBoxView<'a>>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::TREF {
-                let tref = TrefBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::TREF {
+                let tref = TrefBoxView::parse(child.payload())?;
                 return Ok(Some(tref));
             }
         }
@@ -82,18 +82,18 @@ impl<'a> TrakBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for TrakBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for TrakBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::TRAK {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::TRAK {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::TRAK,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        TrakBoxView::parse(value.payload)
+        TrakBoxView::parse(value.payload())
     }
 }
 
@@ -127,9 +127,9 @@ mod owned {
             for child in view.children() {
                 let child = child?;
 
-                match child.header.boxtype() {
+                match child.boxtype() {
                     BoxType::TKHD if tkhd.is_none() => {
-                        tkhd = Some(TkhdBox::parse(child.payload)?);
+                        tkhd = Some(TkhdBox::parse(child.payload())?);
                     }
                     BoxType::TKHD => {
                         return Err(Error::in_box(
@@ -141,7 +141,7 @@ mod owned {
                         ));
                     }
                     BoxType::TREF if tref.is_none() => {
-                        let tref_view = TrefBoxView::parse(child.payload)?;
+                        let tref_view = TrefBoxView::parse(child.payload())?;
                         tref = Some(TrefBox::from_view(&tref_view)?);
                     }
                     BoxType::TREF => {
@@ -154,7 +154,7 @@ mod owned {
                         ));
                     }
                     BoxType::MDIA if mdia.is_none() => {
-                        let mdia_view = MdiaBoxView::parse(child.payload)?;
+                        let mdia_view = MdiaBoxView::parse(child.payload())?;
                         mdia = Some(MdiaBox::from_view(&mdia_view)?);
                     }
                     BoxType::MDIA => {
@@ -202,18 +202,18 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for TrakBox {
+    impl TryFrom<BoxFrame<'_>> for TrakBox {
         type Error = Error;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
-            if value.header.boxtype() != BoxType::TRAK {
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+            if value.boxtype() != BoxType::TRAK {
                 return Err(Error::new(ErrorKind::MismatchedBoxType {
                     expected: BoxType::TRAK,
-                    found: value.header.boxtype(),
+                    found: value.boxtype(),
                 }));
             }
 
-            let view = TrakBoxView::parse(value.payload)?;
+            let view = TrakBoxView::parse(value.payload())?;
             TrakBox::from_view(&view)
         }
     }

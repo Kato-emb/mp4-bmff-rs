@@ -2,7 +2,7 @@ use crate::cursor::ReadCursor;
 
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::SbgpBoxView;
@@ -28,8 +28,8 @@ impl<'a> TrafBoxView<'a> {
     pub fn tfhd(&self) -> Result<TfhdBox> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::TFHD {
-                return TfhdBox::try_from(&child);
+            if child.boxtype() == BoxType::TFHD {
+                return TfhdBox::parse(child.payload());
             }
         }
 
@@ -45,8 +45,8 @@ impl<'a> TrafBoxView<'a> {
     pub fn tfdt(&self) -> Result<Option<TfdtBox>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::TFDT {
-                return Ok(Some(TfdtBox::try_from(&child)?));
+            if child.boxtype() == BoxType::TFDT {
+                return Ok(Some(TfdtBox::parse(child.payload())?));
             }
         }
 
@@ -56,9 +56,7 @@ impl<'a> TrafBoxView<'a> {
     /// Returns an iterator over the Track Run Boxes (`trun`).
     pub fn truns(&self) -> impl Iterator<Item = Result<TrunBoxView<'a>>> + 'a {
         self.children().filter_map(|result| match result {
-            Ok(box_view) if box_view.header.boxtype() == BoxType::TRUN => {
-                Some(TrunBoxView::try_from(&box_view))
-            }
+            Ok(view) if view.boxtype() == BoxType::TRUN => Some(TrunBoxView::parse(view.payload())),
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
@@ -67,9 +65,7 @@ impl<'a> TrafBoxView<'a> {
     /// Returns an iterator over the Sample to Group Boxes (`sbgp`).
     pub fn sbgps(&self) -> impl Iterator<Item = Result<SbgpBoxView<'a>>> + 'a {
         self.children().filter_map(|result| match result {
-            Ok(box_view) if box_view.header.boxtype() == BoxType::SBGP => {
-                Some(SbgpBoxView::try_from(&box_view))
-            }
+            Ok(view) if view.boxtype() == BoxType::SBGP => Some(SbgpBoxView::parse(view.payload())),
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
@@ -87,18 +83,18 @@ impl<'a> TrafBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for TrafBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for TrafBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::TRAF {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::TRAF {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::TRAF,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        TrafBoxView::parse(value.payload)
+        TrafBoxView::parse(value.payload())
     }
 }
 
@@ -168,10 +164,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for TrafBox {
+    impl TryFrom<BoxFrame<'_>> for TrafBox {
         type Error = Error;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
             let view = TrafBoxView::try_from(value)?;
             TrafBox::from_view(&view)
         }
@@ -289,8 +285,8 @@ mod tests {
         box_data.extend_from_slice(&tfhd);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let traf = TrafBoxView::try_from(&box_view).unwrap();
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let traf = TrafBoxView::try_from(box_view).unwrap();
 
         assert_eq!(traf.tfhd().unwrap().track_id, 1);
     }
@@ -306,8 +302,8 @@ mod tests {
         box_data.extend_from_slice(&tfhd);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = TrafBoxView::try_from(&box_view);
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let result = TrafBoxView::try_from(box_view);
 
         assert!(result.is_err());
     }

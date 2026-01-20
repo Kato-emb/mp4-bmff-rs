@@ -2,7 +2,7 @@ use crate::cursor::ReadCursor;
 
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::MvexBoxView;
@@ -25,8 +25,8 @@ impl<'a> MoovBoxView<'a> {
     pub fn mvhd(&self) -> Result<MvhdBox> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::MVHD {
-                let mvhd = MvhdBox::parse(child.payload)?;
+            if child.boxtype() == BoxType::MVHD {
+                let mvhd = MvhdBox::parse(child.payload())?;
                 return Ok(mvhd);
             }
         }
@@ -42,9 +42,7 @@ impl<'a> MoovBoxView<'a> {
     /// Returns an iterator over the Track Boxes (`trak`) contained in this `MoovBoxView`.
     pub fn traks(&self) -> impl Iterator<Item = Result<TrakBoxView<'a>>> + 'a {
         self.children().filter_map(|child| match child {
-            Ok(view) if view.header.boxtype() == BoxType::TRAK => {
-                Some(TrakBoxView::parse(view.payload))
-            }
+            Ok(view) if view.boxtype() == BoxType::TRAK => Some(TrakBoxView::parse(view.payload())),
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
@@ -54,8 +52,8 @@ impl<'a> MoovBoxView<'a> {
     pub fn mvex(&self) -> Result<Option<MvexBoxView<'a>>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::MVEX {
-                let mvex = MvexBoxView::parse(child.payload)?;
+            if child.boxtype() == BoxType::MVEX {
+                let mvex = MvexBoxView::parse(child.payload())?;
                 return Ok(Some(mvex));
             }
         }
@@ -74,18 +72,18 @@ impl<'a> MoovBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for MoovBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for MoovBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::MOOV {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::MOOV {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MOOV,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        MoovBoxView::parse(value.payload)
+        MoovBoxView::parse(value.payload())
     }
 }
 
@@ -122,9 +120,9 @@ mod owned {
             for child in view.children() {
                 let child = child?;
 
-                match child.header.boxtype() {
+                match child.boxtype() {
                     BoxType::MVHD if mvhd.is_none() => {
-                        mvhd = Some(MvhdBox::parse(child.payload)?);
+                        mvhd = Some(MvhdBox::parse(child.payload())?);
                     }
                     BoxType::MVHD => {
                         return Err(Error::in_box(
@@ -136,7 +134,7 @@ mod owned {
                         ));
                     }
                     BoxType::MVEX if mvex.is_none() => {
-                        let mvex_view = MvexBoxView::parse(child.payload)?;
+                        let mvex_view = MvexBoxView::parse(child.payload())?;
                         mvex = Some(MvexBox::from_view(&mvex_view)?);
                     }
                     BoxType::MVEX => {
@@ -149,7 +147,7 @@ mod owned {
                         ));
                     }
                     BoxType::TRAK => {
-                        let trak_view = TrakBoxView::parse(child.payload)?;
+                        let trak_view = TrakBoxView::parse(child.payload())?;
                         traks.push(TrakBox::from_view(&trak_view)?);
                     }
                     _ => continue,
@@ -183,18 +181,18 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for MoovBox {
+    impl TryFrom<BoxFrame<'_>> for MoovBox {
         type Error = Error;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
-            if value.header.boxtype() != BoxType::MOOV {
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+            if value.boxtype() != BoxType::MOOV {
                 return Err(Error::new(ErrorKind::MismatchedBoxType {
                     expected: BoxType::MOOV,
-                    found: value.header.boxtype(),
+                    found: value.boxtype(),
                 }));
             }
 
-            let view = MoovBoxView::parse(value.payload)?;
+            let view = MoovBoxView::parse(value.payload())?;
             MoovBox::from_view(&view)
         }
     }

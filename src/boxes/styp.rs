@@ -2,7 +2,7 @@ use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 
 /// A reference to a Segment Type Box (`styp`).
@@ -74,18 +74,18 @@ impl<'a> TryFrom<&'a [u8]> for StypBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxView<'a>> for StypBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for StypBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::STYP {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::STYP {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STYP,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        StypBoxView::parse(value.payload)
+        StypBoxView::parse(value.payload())
     }
 }
 

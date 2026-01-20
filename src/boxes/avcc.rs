@@ -1,5 +1,6 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -141,8 +142,8 @@ impl<'a> Avc1BoxView<'a> {
     pub fn avcc(&self) -> Result<AvcCBoxView<'a>> {
         for child in self.extensions() {
             match child {
-                Ok(c) if c.header.boxtype() == BoxType::AVCC => {
-                    return AvcCBoxView::parse(c.payload);
+                Ok(c) if c.boxtype() == BoxType::AVCC => {
+                    return AvcCBoxView::parse(c.payload());
                 }
                 Ok(_) => continue,
                 Err(e) => return Err(e),
@@ -170,6 +171,29 @@ impl<'a> Avc1BoxView<'a> {
         let this = Avc1BoxView::parse_in(&mut cursor)?;
 
         Ok(this)
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for Avc1BoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        Avc1BoxView::parse(value)
+    }
+}
+
+impl<'a> TryFrom<BoxFrame<'a>> for Avc1BoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::AVC1 {
+            return Err(Error::new(ErrorKind::MismatchedBoxType {
+                expected: BoxType::AVC1,
+                found: value.boxtype(),
+            }));
+        }
+
+        Avc1BoxView::parse(value.payload())
     }
 }
 
@@ -258,8 +282,8 @@ mod owned {
 
             for extention in view.extensions() {
                 match extention {
-                    Ok(c) if c.header.boxtype() == BoxType::AVCC => {
-                        let avcc_view = AvcCBoxView::parse(c.payload)?;
+                    Ok(c) if c.boxtype() == BoxType::AVCC => {
+                        let avcc_view = AvcCBoxView::parse(c.payload())?;
                         avcc = Some(AvcCBox::from_view(&avcc_view));
                     }
                     Ok(_) => continue,

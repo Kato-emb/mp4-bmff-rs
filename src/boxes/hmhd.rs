@@ -3,7 +3,7 @@ use core::mem;
 use crate::cursor::ReadCursor;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::FullBoxFlags;
 use crate::FullBoxHeader;
 use crate::error::*;
@@ -103,18 +103,18 @@ impl TryFrom<&[u8]> for HmhdBox {
     }
 }
 
-impl TryFrom<&BoxView<'_>> for HmhdBox {
+impl TryFrom<BoxFrame<'_>> for HmhdBox {
     type Error = Error;
 
-    fn try_from(box_view: &BoxView<'_>) -> Result<Self> {
-        if box_view.header.boxtype() != BoxType::HMHD {
+    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        if value.boxtype() != BoxType::HMHD {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::HMHD,
-                found: box_view.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        HmhdBox::parse(box_view.payload)
+        HmhdBox::parse(value.payload())
     }
 }
 

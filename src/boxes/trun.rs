@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
 use crate::header::FullBoxHeader;
@@ -226,18 +226,18 @@ impl<'a> TryFrom<&'a [u8]> for TrunBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for TrunBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for TrunBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::TRUN {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::TRUN {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::TRUN,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        TrunBoxView::parse(value.payload)
+        TrunBoxView::parse(value.payload())
     }
 }
 
@@ -378,10 +378,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for TrunBox {
+    impl TryFrom<BoxFrame<'_>> for TrunBox {
         type Error = Error;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
             let view = TrunBoxView::try_from(value)?;
             TrunBox::from_view(&view)
         }
@@ -521,8 +521,8 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let trun = TrunBoxView::try_from(&box_view).unwrap();
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let trun = TrunBoxView::try_from(box_view).unwrap();
 
         assert_eq!(trun.sample_count, 0);
     }
@@ -538,8 +538,8 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = TrunBoxView::try_from(&box_view);
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let result = TrunBoxView::try_from(box_view);
 
         assert!(result.is_err());
     }

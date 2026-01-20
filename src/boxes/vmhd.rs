@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::FullBoxFlags;
 use crate::FullBoxHeader;
 use crate::error::*;
@@ -78,18 +78,18 @@ impl TryFrom<&[u8]> for VmhdBox {
     }
 }
 
-impl TryFrom<&BoxView<'_>> for VmhdBox {
+impl TryFrom<BoxFrame<'_>> for VmhdBox {
     type Error = Error;
 
-    fn try_from(box_view: &BoxView<'_>) -> Result<Self> {
-        if box_view.header.boxtype() != BoxType::VMHD {
+    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        if value.boxtype() != BoxType::VMHD {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::VMHD,
-                found: box_view.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        VmhdBox::parse(box_view.payload)
+        VmhdBox::parse(value.payload())
     }
 }
 

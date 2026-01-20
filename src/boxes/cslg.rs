@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
 use crate::header::FullBoxHeader;
@@ -116,18 +116,18 @@ impl TryFrom<&[u8]> for CslgBox {
     }
 }
 
-impl TryFrom<&BoxView<'_>> for CslgBox {
+impl TryFrom<BoxFrame<'_>> for CslgBox {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'_>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::CSLG {
+    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        if value.boxtype() != BoxType::CSLG {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::CSLG,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        CslgBox::parse(value.payload)
+        CslgBox::parse(value.payload())
     }
 }
 
@@ -268,8 +268,8 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let cslg = CslgBox::try_from(&box_view).unwrap();
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let cslg = CslgBox::try_from(box_view).unwrap();
 
         assert_eq!(cslg.composition_to_dts_shift, 50);
     }
@@ -285,8 +285,8 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = CslgBox::try_from(&box_view);
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let result = CslgBox::try_from(box_view);
 
         assert!(result.is_err());
         if let Err(err) = result {

@@ -44,13 +44,18 @@ pub mod types;
 pub mod error;
 pub mod header;
 pub mod iter;
-pub mod view;
+
+pub mod framing;
 
 // Re-export for convenience
 pub use error::{
     Error, //
     ErrorKind,
     Result,
+};
+pub use framing::{
+    BoxFrame, //
+    BoxFrameMut,
 };
 pub use header::{
     BoxHeader, //
@@ -60,15 +65,12 @@ pub use header::{
     FullBoxHeader,
 };
 pub use iter::BoxIter;
-pub use view::BoxView;
 
 // =============================================================================
 // Layer 2 - Typed Box Representations (requires alloc)
 // =============================================================================
 pub mod boxes;
 pub mod descriptor;
-#[cfg(feature = "alloc")]
-pub use view::BoxOwned;
 
 // =============================================================================
 // Layer 3 -  I/O (std)

@@ -3,7 +3,7 @@
 use crate::cursor::ReadCursor;
 
 use crate::error::*;
-use crate::view::BoxView;
+use crate::framing::BoxFrame;
 
 /// An iterator over BMFF boxes in a byte slice.
 pub struct BoxIter<'a> {
@@ -20,14 +20,14 @@ impl<'a> BoxIter<'a> {
 }
 
 impl<'a> Iterator for BoxIter<'a> {
-    type Item = Result<BoxView<'a>>;
+    type Item = Result<BoxFrame<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.cur.is_empty() {
             return None;
         }
 
-        Some(BoxView::parse_in(&mut self.cur))
+        Some(BoxFrame::parse_in(&mut self.cur))
     }
 }
 
@@ -55,8 +55,8 @@ mod tests {
         let mut iter = BoxIter::new(&data);
 
         let view = iter.next().unwrap().unwrap();
-        assert_eq!(view.header.boxtype().type_field(), FourCC::from(*b"ftyp"));
-        assert_eq!(view.payload, &[0x01, 0x02, 0x03, 0x04]);
+        assert_eq!(view.boxtype().type_field(), FourCC::from(*b"ftyp"));
+        assert_eq!(view.payload(), &[0x01, 0x02, 0x03, 0x04]);
 
         assert!(iter.next().is_none());
     }
@@ -85,16 +85,16 @@ mod tests {
         assert_eq!(boxes.len(), 3);
 
         let view0 = boxes[0].as_ref().unwrap();
-        assert_eq!(view0.header.boxtype().type_field(), FourCC::from(*b"ftyp"));
-        assert_eq!(view0.payload.len(), 4);
+        assert_eq!(view0.boxtype().type_field(), FourCC::from(*b"ftyp"));
+        assert_eq!(view0.payload().len(), 4);
 
         let view1 = boxes[1].as_ref().unwrap();
-        assert_eq!(view1.header.boxtype().type_field(), FourCC::from(*b"moov"));
-        assert_eq!(view1.payload.len(), 8);
+        assert_eq!(view1.boxtype().type_field(), FourCC::from(*b"moov"));
+        assert_eq!(view1.payload().len(), 8);
 
         let view2 = boxes[2].as_ref().unwrap();
-        assert_eq!(view2.header.boxtype().type_field(), FourCC::from(*b"free"));
-        assert_eq!(view2.payload.len(), 0);
+        assert_eq!(view2.boxtype().type_field(), FourCC::from(*b"free"));
+        assert_eq!(view2.payload().len(), 0);
     }
 
     #[test]
@@ -119,12 +119,12 @@ mod tests {
         assert_eq!(boxes.len(), 2);
 
         let view0 = boxes[0].as_ref().unwrap();
-        assert_eq!(view0.header.boxtype().type_field(), FourCC::from(*b"ftyp"));
+        assert_eq!(view0.boxtype().type_field(), FourCC::from(*b"ftyp"));
 
         let view1 = boxes[1].as_ref().unwrap();
-        assert_eq!(view1.header.boxtype().type_field(), FourCC::from(*b"mdat"));
-        assert!(view1.header.boxsize().is_eof());
-        assert_eq!(view1.payload.len(), 8);
+        assert_eq!(view1.boxtype().type_field(), FourCC::from(*b"mdat"));
+        assert!(view1.boxsize().is_eof());
+        assert_eq!(view1.payload().len(), 8);
     }
 
     #[test]
@@ -149,13 +149,13 @@ mod tests {
         assert_eq!(boxes.len(), 2);
 
         let view0 = boxes[0].as_ref().unwrap();
-        assert_eq!(view0.header.boxtype().type_field(), FourCC::from(*b"ftyp"));
-        assert!(!view0.header.boxsize().is_extended());
+        assert_eq!(view0.boxtype().type_field(), FourCC::from(*b"ftyp"));
+        assert!(!view0.boxsize().is_extended());
 
         let view1 = boxes[1].as_ref().unwrap();
-        assert_eq!(view1.header.boxtype().type_field(), FourCC::from(*b"mdat"));
-        assert!(view1.header.boxsize().is_extended());
-        assert_eq!(view1.payload.len(), 8);
+        assert_eq!(view1.boxtype().type_field(), FourCC::from(*b"mdat"));
+        assert!(view1.boxsize().is_extended());
+        assert_eq!(view1.payload().len(), 8);
     }
 
     #[test]
@@ -175,7 +175,7 @@ mod tests {
 
         // First box succeeds
         let view = iter.next().unwrap().unwrap();
-        assert_eq!(view.header.boxtype().type_field(), FourCC::from(*b"ftyp"));
+        assert_eq!(view.boxtype().type_field(), FourCC::from(*b"ftyp"));
 
         // Second box fails - not enough data for header
         let result = iter.next().unwrap();
@@ -214,7 +214,7 @@ mod tests {
 
         let types: Vec<_> = BoxIter::new(&data)
             .filter_map(|r| r.ok())
-            .map(|v| v.header.boxtype().type_field())
+            .map(|v| v.boxtype().type_field())
             .collect();
 
         assert_eq!(

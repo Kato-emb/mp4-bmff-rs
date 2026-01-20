@@ -2,7 +2,7 @@ use crate::cursor::ReadCursor;
 
 use crate::BoxIter;
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 
 use crate::boxes::MfroBox;
@@ -29,8 +29,8 @@ impl<'a> MfraBoxView<'a> {
     pub fn mfro(&self) -> Result<MfroBox> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::MFRO {
-                return MfroBox::try_from(&child);
+            if child.boxtype() == BoxType::MFRO {
+                return MfroBox::try_from(child.payload());
             }
         }
 
@@ -45,8 +45,8 @@ impl<'a> MfraBoxView<'a> {
     /// Returns an iterator over the Track Fragment Random Access Boxes (`tfra`).
     pub fn tfras(&self) -> impl Iterator<Item = Result<TfraBoxView<'a>>> + 'a {
         self.children().filter_map(|result| match result {
-            Ok(box_view) if box_view.header.boxtype() == BoxType::TFRA => {
-                Some(TfraBoxView::try_from(&box_view))
+            Ok(box_view) if box_view.boxtype() == BoxType::TFRA => {
+                Some(TfraBoxView::try_from(box_view.payload()))
             }
             Ok(_) => None,
             Err(e) => Some(Err(e)),
@@ -65,18 +65,18 @@ impl<'a> MfraBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for MfraBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for MfraBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::MFRA {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::MFRA {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MFRA,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        MfraBoxView::parse(value.payload)
+        MfraBoxView::parse(value.payload())
     }
 }
 
@@ -129,10 +129,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for MfraBox {
+    impl TryFrom<BoxFrame<'_>> for MfraBox {
         type Error = Error;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
+        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
             let view = MfraBoxView::try_from(value)?;
             MfraBox::from_view(&view)
         }
@@ -233,8 +233,8 @@ mod tests {
         box_data.extend_from_slice(&mfro);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let mfra = MfraBoxView::try_from(&box_view).unwrap();
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let mfra = MfraBoxView::try_from(box_view).unwrap();
 
         assert_eq!(mfra.mfro().unwrap().size, 512);
     }
@@ -250,8 +250,8 @@ mod tests {
         box_data.extend_from_slice(&mfro);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = MfraBoxView::try_from(&box_view);
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let result = MfraBoxView::try_from(box_view);
 
         assert!(result.is_err());
     }

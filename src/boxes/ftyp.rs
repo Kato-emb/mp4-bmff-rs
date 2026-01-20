@@ -2,7 +2,7 @@ use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 
 /// A reference to a File Type Box (`ftyp`).
@@ -74,18 +74,18 @@ impl<'a> TryFrom<&'a [u8]> for FtypBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxView<'a>> for FtypBoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for FtypBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::FTYP {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::FTYP {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::FTYP,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        FtypBoxView::parse(value.payload)
+        FtypBoxView::parse(value.payload())
     }
 }
 

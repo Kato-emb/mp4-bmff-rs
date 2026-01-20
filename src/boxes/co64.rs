@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxFrame;
 use crate::BoxType;
-use crate::BoxView;
 use crate::error::*;
 use crate::header::FullBoxFlags;
 use crate::header::FullBoxHeader;
@@ -91,18 +91,18 @@ impl<'a> TryFrom<&'a [u8]> for Co64BoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxView<'a>> for Co64BoxView<'a> {
+impl<'a> TryFrom<BoxFrame<'a>> for Co64BoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::CO64 {
+    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::CO64 {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::CO64,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        Co64BoxView::parse(value.payload)
+        Co64BoxView::parse(value.payload())
     }
 }
 

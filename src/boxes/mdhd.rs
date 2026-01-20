@@ -5,7 +5,7 @@ use crate::types::LanguageCode;
 use crate::types::QuickTimeDateTime;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::FullBoxFlags;
 use crate::FullBoxHeader;
 use crate::error::*;
@@ -160,18 +160,18 @@ impl TryFrom<&[u8]> for MdhdBox {
     }
 }
 
-impl TryFrom<&BoxView<'_>> for MdhdBox {
+impl TryFrom<BoxFrame<'_>> for MdhdBox {
     type Error = Error;
 
-    fn try_from(box_view: &BoxView<'_>) -> Result<Self> {
-        if box_view.header.boxtype() != BoxType::MDHD {
+    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        if value.boxtype() != BoxType::MDHD {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MDHD,
-                found: box_view.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        MdhdBox::parse(box_view.payload)
+        MdhdBox::parse(value.payload())
     }
 }
 

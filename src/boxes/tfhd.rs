@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 
 use crate::BoxType;
-use crate::BoxView;
+use crate::BoxFrame;
 use crate::error::*;
 use crate::header::FullBoxFlags;
 use crate::header::FullBoxHeader;
@@ -126,18 +126,18 @@ impl TryFrom<&[u8]> for TfhdBox {
     }
 }
 
-impl TryFrom<&BoxView<'_>> for TfhdBox {
+impl TryFrom<BoxFrame<'_>> for TfhdBox {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'_>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::TFHD {
+    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        if value.boxtype() != BoxType::TFHD {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::TFHD,
-                found: value.header.boxtype(),
+                found: value.boxtype(),
             }));
         }
 
-        TfhdBox::parse(value.payload)
+        TfhdBox::parse(value.payload())
     }
 }
 
@@ -290,8 +290,8 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let tfhd = TfhdBox::try_from(&box_view).unwrap();
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let tfhd = TfhdBox::try_from(box_view).unwrap();
 
         assert_eq!(tfhd.track_id, 42);
     }
@@ -307,8 +307,8 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = TfhdBox::try_from(&box_view);
+        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let result = TfhdBox::try_from(box_view);
 
         assert!(result.is_err());
     }
