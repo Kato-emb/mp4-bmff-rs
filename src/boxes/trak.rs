@@ -104,11 +104,12 @@ pub use owned::TrakBox;
 mod owned {
     use crate::cursor::WriteCursor;
 
-    use super::*;
     use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
+    use super::*;
     use crate::boxes::MdiaBox;
     use crate::boxes::TrefBox;
-    use crate::framing::write_box_in;
 
     /// An owned Track Box (`trak`).
     pub struct TrakBox {

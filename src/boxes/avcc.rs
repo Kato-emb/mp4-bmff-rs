@@ -205,8 +205,10 @@ pub use owned::{
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::BoxFrameMut;
     use crate::cursor::WriteCursor;
+
+    use crate::BoxFrameMut;
+    use crate::BoxHeader;
 
     use super::*;
 
@@ -400,9 +402,9 @@ mod owned {
 
             // Write avcC box
             let avcc_payload_len = self.avcc.size();
-            let avcc_frame_len = BoxFrameMut::required_len(BoxType::AVCC, avcc_payload_len);
-            let bytes = cur.take_mut(avcc_frame_len)?;
-            let mut frame = BoxFrameMut::new(bytes, BoxType::AVCC, avcc_payload_len)?;
+            let avcc_header = BoxHeader::new(BoxType::AVCC, avcc_payload_len);
+            let bytes = cur.take_mut(avcc_header.total_size() as usize)?;
+            let mut frame = BoxFrameMut::new(bytes, avcc_header)?;
             self.avcc.write(frame.payload_mut())?;
 
             if !cur.is_empty() {

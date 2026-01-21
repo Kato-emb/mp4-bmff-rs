@@ -4,8 +4,8 @@ use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 use crate::types::*;
 
+use crate::BoxType;
 use crate::error::*;
-use crate::header::*;
 
 use super::FullBoxFlags;
 

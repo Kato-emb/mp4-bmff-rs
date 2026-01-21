@@ -89,10 +89,11 @@ pub use owned::MvexBox;
 mod owned {
     use crate::lib::Vec;
 
-    use super::*;
     use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
+    use super::*;
     use crate::cursor::WriteCursor;
-    use crate::framing::write_box_in;
 
     /// An owned Movie Extends Box (`mvex`).
     #[derive(Debug, Clone)]

@@ -99,12 +99,14 @@ pub use owned::{
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::BoxFrameMut;
-    use crate::boxes::Avc1Box;
-    use crate::boxes::Mp4aBox;
     use crate::cursor::WriteCursor;
 
+    use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
     use super::*;
+    use crate::boxes::Avc1Box;
+    use crate::boxes::Mp4aBox;
 
     /// An enum representing the different types of entries in a Sample Description Box (`stsd`).
     #[derive(Debug, Clone)]
@@ -163,19 +165,16 @@ mod owned {
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             let boxtype = self.boxtype();
-            let payload_size = self.payload_size();
-            let frame_size = self.frame_size();
+            let payload_len = self.payload_size();
 
-            let buf = cur.take_mut(frame_size)?;
-            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
-
-            match self {
-                StsdEntry::Mp4a(box_) => box_.write(frame.payload_mut())?,
-                StsdEntry::Avc1(box_) => box_.write(frame.payload_mut())?,
+            write_box_in(cur, boxtype, payload_len, |p| match self {
+                StsdEntry::Mp4a(box_) => box_.write(p),
+                StsdEntry::Avc1(box_) => box_.write(p),
                 StsdEntry::Other { payload, .. } => {
-                    frame.payload_mut().copy_from_slice(payload);
+                    p.copy_from_slice(payload);
+                    Ok(())
                 }
-            }
+            })?;
 
             Ok(())
         }

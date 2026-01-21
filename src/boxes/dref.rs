@@ -228,6 +228,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
 
     use super::*;
 
@@ -311,18 +312,10 @@ mod owned {
             for entry in &self.entries {
                 match entry {
                     DrefEntry::Url(url_box) => {
-                        let payload_len = url_box.size();
-                        let required_len = BoxFrameMut::required_len(BoxType::URL_, payload_len);
-                        let bytes = cur.take_mut(required_len)?;
-                        let mut frame = BoxFrameMut::new(bytes, BoxType::URL_, payload_len)?;
-                        url_box.write(frame.payload_mut())?;
+                        write_box_in(cur, BoxType::URL_, url_box.size(), |p| url_box.write(p))?;
                     }
                     DrefEntry::Urn(urn_box) => {
-                        let payload_len = urn_box.size();
-                        let required_len = BoxFrameMut::required_len(BoxType::URN_, payload_len);
-                        let bytes = cur.take_mut(required_len)?;
-                        let mut frame = BoxFrameMut::new(bytes, BoxType::URN_, payload_len)?;
-                        urn_box.write(frame.payload_mut())?;
+                        write_box_in(cur, BoxType::URN_, urn_box.size(), |p| urn_box.write(p))?;
                     }
                 }
             }

@@ -114,9 +114,10 @@ mod owned {
 
     use super::*;
     use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
     use crate::boxes::HdlrBox;
     use crate::boxes::MinfBox;
-    use crate::framing::write_box_in;
 
     /// An owned Media Box (`mdia`).
     pub struct MdiaBox {

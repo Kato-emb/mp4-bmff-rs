@@ -1,9 +1,10 @@
+use crate::cursor::ReadCursor;
+use crate::types::FourCC;
+
+use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::cursor::ReadCursor;
 use crate::error::*;
-use crate::framing::BoxFrame;
-use crate::types::FourCC;
 
 /// A reference to a Track Reference Type Box.
 ///
@@ -104,8 +105,10 @@ pub use owned::*;
 mod owned {
     use crate::cursor::WriteCursor;
 
-    use super::*;
     use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
+    use super::*;
 
     /// An owned Track Reference Type Box.
     #[derive(Debug, Clone)]
@@ -134,7 +137,7 @@ mod owned {
         /// Returns the box type for this track reference.
         pub fn boxtype(&self) -> BoxType {
             // Track reference types are always valid FourCC values
-            BoxType::from_fourcc(self.reference_type).unwrap()
+            BoxType::new(self.reference_type)
         }
 
         /// Returns the total frame size (including box header).
@@ -203,11 +206,7 @@ mod owned {
             for reference in &self.references {
                 let boxtype = reference.boxtype();
                 let payload_size = reference.size();
-                let frame_size = reference.frame_size();
-
-                let buf = cur.take_mut(frame_size)?;
-                let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
-                reference.write(frame.payload_mut())?;
+                write_box_in(cur, boxtype, payload_size, |p| reference.write(p))?;
             }
 
             if !cur.is_empty() {
@@ -241,8 +240,6 @@ mod owned {
 
 #[cfg(test)]
 mod tests {
-    use crate::framing::BoxFrame;
-
     use super::*;
 
     fn make_box(boxtype: &[u8; 4], payload: &[u8]) -> Vec<u8> {

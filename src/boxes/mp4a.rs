@@ -52,10 +52,13 @@ pub use owned::Mp4aBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use super::*;
-    use crate::BoxFrameMut;
-    use crate::boxes::EsdsBox;
     use crate::cursor::WriteCursor;
+
+    use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
+    use super::*;
+    use crate::boxes::EsdsBox;
 
     /// An owned Mp4a Box (`mp4a`).
     #[derive(Debug, Clone)]
@@ -85,11 +88,7 @@ mod owned {
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             self.base.write_in(cur)?;
 
-            let esds_payload_size = self.esds.size();
-            let esds_frame_size = BoxFrameMut::required_len(BoxType::ESDS, esds_payload_size);
-            let esds_buf = cur.take_mut(esds_frame_size)?;
-            let mut frame = BoxFrameMut::new(esds_buf, BoxType::ESDS, esds_payload_size)?;
-            self.esds.write(frame.payload_mut())?;
+            write_box_in(cur, BoxType::ESDS, self.esds.size(), |p| self.esds.write(p))?;
 
             if !cur.is_empty() {
                 return Err(Error::in_box(

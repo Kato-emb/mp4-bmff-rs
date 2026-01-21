@@ -240,6 +240,9 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
+    use super::*;
     use crate::boxes::Co64Box;
     use crate::boxes::CttsBox;
     use crate::boxes::StcoBox;
@@ -248,9 +251,6 @@ mod owned {
     use crate::boxes::StssBox;
     use crate::boxes::StszBox;
     use crate::boxes::SttsBox;
-    use crate::framing::write_box_in;
-
-    use super::*;
 
     #[derive(Debug, Clone)]
     pub enum ChunkOffsets {
@@ -282,16 +282,11 @@ mod owned {
 
         fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             let boxtype = self.boxtype();
-            let payload_size = self.size();
-            let frame_size = self.frame_size();
-
-            let buf = cur.take_mut(frame_size)?;
-            let mut frame = BoxFrameMut::new(buf, boxtype, payload_size)?;
-
-            match self {
-                ChunkOffsets::Stco(stco) => stco.write(frame.payload_mut())?,
-                ChunkOffsets::Co64(co64) => co64.write(frame.payload_mut())?,
-            }
+            let payload_len = self.size();
+            write_box_in(cur, boxtype, payload_len, |p| match self {
+                ChunkOffsets::Stco(stco) => stco.write(p),
+                ChunkOffsets::Co64(co64) => co64.write(p),
+            })?;
 
             Ok(())
         }

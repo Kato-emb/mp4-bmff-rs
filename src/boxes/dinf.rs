@@ -58,8 +58,10 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use super::*;
+    use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
     use crate::boxes::DrefBox;
-    use crate::framing::write_box_in;
 
     /// An owned Data Information Box (`dinf`).
     pub struct DinfBox {
@@ -96,10 +98,10 @@ mod owned {
             DinfBox::from_view(&view)
         }
 
-        /// Returns the size of this `DinfBox`.
+        /// Returns the size of this `DinfBox` payload (child boxes total size).
         #[inline]
         pub fn size(&self) -> usize {
-            self.dref.size() // Box header + dref box
+            BoxFrameMut::required_len(BoxType::DREF, self.dref.size())
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
@@ -175,8 +177,8 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn dinf_box_round_trip() {
-        use crate::BoxFrameMut;
         use crate::boxes::{DrefBox, DrefEntry, UrlBox, UrlFlags};
+        use crate::{BoxFrame, BoxFrameMut, BoxHeader};
 
         let dinf_box = DinfBox {
             dref: DrefBox {
@@ -191,16 +193,18 @@ mod tests {
         };
 
         // Write dinf (note: dinf.size() returns dref payload size, need frame)
-        let dref_payload_size = dinf_box.dref.size();
-        let dref_frame_size = BoxFrameMut::required_len(BoxType::DREF, dref_payload_size);
-        let mut buf = vec![0u8; dref_frame_size];
-
-        // Write dref as a framed box
-        let mut frame = BoxFrameMut::new(&mut buf, BoxType::DREF, dref_payload_size).unwrap();
-        dinf_box.dref.write(frame.payload_mut()).unwrap();
+        let dinf_payload_size = dinf_box.size();
+        let dinf_header = BoxHeader::new(BoxType::DINF, dinf_payload_size);
+        let mut buf = vec![0u8; dinf_header.total_size() as usize];
+        {
+            let mut frame = BoxFrameMut::new(&mut buf, dinf_header).unwrap();
+            dinf_box.write(frame.payload_mut()).unwrap();
+        }
 
         // Parse back as dinf payload
-        let reparsed = DinfBoxView::parse(&buf).unwrap();
+        let frame = BoxFrame::parse(&buf).unwrap();
+        assert_eq!(frame.boxtype(), BoxType::DINF);
+        let reparsed = DinfBoxView::parse(frame.payload()).unwrap();
         let dref = reparsed.dref().unwrap();
 
         assert_eq!(dref.entry_count, 1);

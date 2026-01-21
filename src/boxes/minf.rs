@@ -230,11 +230,12 @@ pub use owned::MinfBox;
 mod owned {
     use crate::cursor::WriteCursor;
 
-    use super::*;
     use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
+    use super::*;
     use crate::boxes::DinfBox;
     use crate::boxes::StblBox;
-    use crate::framing::write_box_in;
 
     /// An owned Media Information Box (`minf`).
     pub struct MinfBox {

@@ -86,8 +86,9 @@ mod owned {
 
     use super::*;
     use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
     use crate::boxes::TrafBox;
-    use crate::framing::write_box_in;
 
     /// An owned Movie Fragment Box (`moof`).
     #[derive(Debug, Clone)]

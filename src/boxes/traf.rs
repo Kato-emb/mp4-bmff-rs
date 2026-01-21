@@ -107,11 +107,12 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    use super::*;
     use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
+    use super::*;
     use crate::boxes::SbgpBox;
     use crate::boxes::TrunBox;
-    use crate::framing::write_box_in;
 
     /// An owned Track Fragment Box (`traf`).
     #[derive(Debug, Clone)]

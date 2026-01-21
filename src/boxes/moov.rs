@@ -96,11 +96,12 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    use super::*;
     use crate::BoxFrameMut;
+    use crate::base::frame::write_box_in;
+
+    use super::*;
     use crate::boxes::MvexBox;
     use crate::boxes::TrakBox;
-    use crate::framing::write_box_in;
 
     /// An owned Movie Box (`moov`).
     pub struct MoovBox {
