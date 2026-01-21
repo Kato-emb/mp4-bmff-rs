@@ -1,9 +1,11 @@
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
-use crate::BoxFrame;
+use crate::BmffBox;
 use crate::BoxType;
 use crate::error::*;
+
+use crate::base::codec::DecodeIn;
 
 /// A reference to a File Type Box (`ftyp`).
 #[derive(Debug)]
@@ -22,8 +24,20 @@ impl<'a> FtypBoxView<'a> {
             .chunks_exact(4)
             .map(|chunk| FourCC::new([chunk[0], chunk[1], chunk[2], chunk[3]]))
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<FtypBoxView<'a>> {
+impl BmffBox for FtypBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::FTYP
+    }
+
+    fn payload_size(&self) -> u64 {
+        4 + 4 + self.compatible_brands.len() as u64
+    }
+}
+
+impl<'de> DecodeIn<'de> for FtypBoxView<'de> {
+    fn decode_in(cur: &mut ReadCursor<'de>) -> Result<Self> {
         // Read major_brand (4 bytes)
         let major_brand = cur.read_array::<4>()?;
         let major_brand = FourCC::new(major_brand);
@@ -52,37 +66,6 @@ impl<'a> FtypBoxView<'a> {
             compatible_brands,
         })
     }
-
-    /// Parses an `FtypBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<FtypBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = FtypBoxView::parse_in(&mut cursor)?;
-
-        Ok(this)
-    }
-}
-
-impl<'a> TryFrom<&'a [u8]> for FtypBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &'a [u8]) -> Result<Self> {
-        FtypBoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<BoxFrame<'a>> for FtypBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::FTYP {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::FTYP,
-                found: value.boxtype(),
-            }));
-        }
-
-        FtypBoxView::parse(value.payload())
-    }
 }
 
 #[cfg(feature = "alloc")]
@@ -95,6 +78,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use super::*;
+    use crate::base::codec::EncodeIn;
 
     /// An owned File Type Box (`ftyp`).
     #[derive(Debug, Clone)]
@@ -107,9 +91,20 @@ mod owned {
         pub compatible_brands: Vec<FourCC>,
     }
 
-    impl FtypBox {
-        /// Creates an `FtypBox` from an `FtypBoxView`.
-        pub fn from_view(view: &FtypBoxView) -> Self {
+    impl BmffBox for FtypBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::FTYP
+        }
+
+        fn payload_size(&self) -> u64 {
+            4 // major_brand
+            + 4 // minor_version
+            + self.compatible_brands.len() as u64 * 4 // compatible_brands
+        }
+    }
+
+    impl From<&FtypBoxView<'_>> for FtypBox {
+        fn from(view: &FtypBoxView) -> Self {
             let compatible_brands = view.compatible_brands().collect::<Vec<FourCC>>();
 
             FtypBox {
@@ -118,19 +113,17 @@ mod owned {
                 compatible_brands,
             }
         }
+    }
 
-        /// Parses an `FtypBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let ftyp_view = FtypBoxView::parse(payload)?;
-            Ok(Self::from_view(&ftyp_view))
+    impl DecodeIn<'_> for FtypBox {
+        fn decode_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
+            let view = FtypBoxView::decode_in(cur)?;
+            Ok(FtypBox::from(&view))
         }
+    }
 
-        /// Writes this `FtypBox` into the given buffer.
-        pub fn size(&self) -> usize {
-            4 + 4 + self.compatible_brands.len() * 4
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl EncodeIn for FtypBox {
+        fn encode_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             // Write major_brand (4 bytes)
             cur.write_array(self.major_brand.as_bytes())?;
 
@@ -142,36 +135,7 @@ mod owned {
                 cur.write_array(brand.as_bytes())?;
             }
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::FTYP,
-                ));
-            }
-
             Ok(())
-        }
-
-        /// Writes this `FtypBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl FtypBoxView<'_> {
-        /// Converts this `FtypBoxView` into an owned `FtypBox`.
-        pub fn to_owned(&self) -> FtypBox {
-            FtypBox::from_view(self)
-        }
-    }
-
-    impl From<FtypBoxView<'_>> for FtypBox {
-        fn from(view: FtypBoxView) -> Self {
-            Self::from_view(&view)
         }
     }
 }
@@ -182,6 +146,8 @@ mod tests {
 
     #[test]
     fn test_ftyp_box_ref_parse() {
+        use crate::BoxDecode;
+
         let data: [u8; 20] = [
             b'i', b's', b'o', b'm', // major_brand
             0x00, 0x00, 0x02, 0x00, // minor_version (512)
@@ -190,7 +156,7 @@ mod tests {
             b'a', b'v', b'c', b'1', // compatible_brand 3
         ];
 
-        let ftyp_view = FtypBoxView::parse(&data).unwrap();
+        let ftyp_view = FtypBoxView::decode(&data).unwrap();
 
         assert_eq!(ftyp_view.major_brand, FourCC::new(*b"isom"));
         assert_eq!(ftyp_view.minor_version, 512);
@@ -209,6 +175,8 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn test_ftyp_box_write() {
+        use crate::BoxEncode;
+
         let ftyp_view = FtypBox {
             major_brand: FourCC::new(*b"isom"),
             minor_version: 512,
@@ -219,8 +187,8 @@ mod tests {
             ],
         };
 
-        let mut buffer = vec![0u8; ftyp_view.size()];
-        ftyp_view.write(&mut buffer).unwrap();
+        let mut buffer = vec![0u8; ftyp_view.payload_size() as usize];
+        ftyp_view.encode(&mut buffer).unwrap();
 
         let expected: [u8; 20] = [
             b'i', b's', b'o', b'm', // major_brand

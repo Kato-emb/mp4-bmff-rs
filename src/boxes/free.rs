@@ -1,26 +1,32 @@
 use crate::cursor::ReadCursor;
 
+use crate::BmffBox;
 use crate::BoxType;
 use crate::error::*;
 
+use crate::base::codec::DecodeIn;
+
 /// A reference to a Free Space Box (`free`).
+#[derive(Debug)]
 pub struct FreeBoxView<'a> {
     /// The raw data of the Free Space Box (`free`).
     pub data: &'a [u8],
 }
 
-impl<'a> FreeBoxView<'a> {
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<FreeBoxView<'a>> {
-        let data = cur.take(cur.remaining())?;
-        Ok(FreeBoxView { data })
+impl BmffBox for FreeBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::FREE
     }
 
-    /// Parses a `FreeBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<FreeBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = FreeBoxView::parse_in(&mut cursor)?;
+    fn payload_size(&self) -> u64 {
+        self.data.len() as u64
+    }
+}
 
-        Ok(this)
+impl<'de> DecodeIn<'de> for FreeBoxView<'de> {
+    fn decode_in(cur: &mut ReadCursor<'de>) -> Result<Self> {
+        let data = cur.take(cur.remaining())?;
+        Ok(FreeBoxView { data })
     }
 }
 
@@ -34,6 +40,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use super::*;
+    use crate::base::codec::EncodeIn;
 
     /// An owned Free Space Box (`free`).
     #[derive(Debug, Clone)]
@@ -42,58 +49,35 @@ mod owned {
         pub data: Vec<u8>,
     }
 
-    impl FreeBox {
-        /// Creates a `FreeBox` from a `FreeBoxView`.
-        pub fn from_view(view: &FreeBoxView<'_>) -> Self {
-            FreeBox {
-                data: view.data.to_vec(),
-            }
+    impl BmffBox for FreeBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::FREE
         }
 
-        /// Parses a `FreeBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let free_view = FreeBoxView::parse(payload)?;
-            Ok(Self::from_view(&free_view))
+        fn payload_size(&self) -> u64 {
+            self.data.len() as u64
         }
+    }
 
-        /// Returns the size of the `FreeBox` data.
-        pub fn size(&self) -> usize {
-            self.data.len()
+    impl From<&FreeBoxView<'_>> for FreeBox {
+        fn from(view: &FreeBoxView) -> Self {
+            let data = view.data.to_vec();
+            FreeBox { data }
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl DecodeIn<'_> for FreeBox {
+        fn decode_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
+            let view = FreeBoxView::decode_in(cur)?;
+            Ok(FreeBox::from(&view))
+        }
+    }
+
+    impl EncodeIn for FreeBox {
+        fn encode_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            // Write the data
             cur.write_slice(&self.data)?;
-
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::FREE,
-                ));
-            }
-
             Ok(())
-        }
-
-        /// Writes this `FreeBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl FreeBoxView<'_> {
-        /// Converts this `FreeBoxView` into an owned `FreeBox`.
-        pub fn to_owned(&self) -> FreeBox {
-            FreeBox::from_view(self)
-        }
-    }
-
-    impl From<FreeBoxView<'_>> for FreeBox {
-        fn from(view: FreeBoxView) -> Self {
-            Self::from_view(&view)
         }
     }
 }
@@ -101,23 +85,25 @@ mod owned {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::BoxDecode;
 
     #[test]
     fn test_free_box_view_parse() {
         let data = b"example free space data";
-        let free_box_view = FreeBoxView::parse(data).unwrap();
+        let free_box_view = FreeBoxView::decode(data).unwrap();
         assert_eq!(free_box_view.data, data);
     }
 
     #[cfg(feature = "alloc")]
     #[test]
     fn test_free_box_owned_write() {
+        use crate::BoxEncode;
         let free_box = FreeBox {
             data: b"example free space data".to_vec(),
         };
 
-        let mut buffer = vec![0u8; free_box.size()];
-        free_box.write(&mut buffer).unwrap();
+        let mut buffer = vec![0u8; free_box.payload_size() as usize];
+        free_box.encode(&mut buffer).unwrap();
 
         let expected = b"example free space data";
 
