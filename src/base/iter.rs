@@ -3,7 +3,8 @@
 use crate::cursor::ReadCursor;
 
 use crate::error::*;
-use crate::framing::BoxFrame;
+
+use super::frame::BoxFrame;
 
 /// An iterator over BMFF boxes in a byte slice.
 pub struct BoxIter<'a> {

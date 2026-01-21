@@ -79,6 +79,7 @@ impl<'a> ReadCursor<'a> {
         }
     }
 
+    #[allow(dead_code)]
     /// Returns the total length of the inner byte slice.
     #[inline]
     #[track_caller]
@@ -254,6 +255,7 @@ impl<'a> WriteCursor<'a> {
         }
     }
 
+    #[allow(dead_code)]
     /// Returns the total length of the inner byte slice.
     #[inline]
     #[track_caller]
@@ -274,24 +276,28 @@ impl<'a> WriteCursor<'a> {
         self.remaining() == 0
     }
 
+    #[allow(dead_code)]
     /// Returns the entire inner byte slice.
     #[inline]
     pub const fn inner(&self) -> &[u8] {
         self.inner
     }
 
+    #[allow(dead_code)]
     /// Returns the entire inner mutable byte slice.
     #[inline]
     pub fn inner_mut(&mut self) -> &mut [u8] {
         self.inner
     }
 
+    #[allow(dead_code)]
     /// Returns the current position of the cursor.
     #[inline]
     pub const fn position(&self) -> usize {
         self.pos
     }
 
+    #[allow(dead_code)]
     /// Sets the current position of the cursor.
     #[inline]
     pub const fn set_position(&mut self, pos: usize) {

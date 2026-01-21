@@ -39,28 +39,29 @@ pub(crate) mod cursor;
 pub mod types;
 
 // =============================================================================
-// Layer 1 - ISO BMFF Common types and Box Framing (no_std, no_alloc)
+// Layer 1 - ISO BMFF base structures (no_std)
 // =============================================================================
+pub mod base;
 pub mod error;
-pub mod framing;
-pub mod header;
-pub mod iter;
 
-// Re-export for convenience
+// Re-export base structures for convenience
+pub use base::frame::{
+    BoxFrame, //
+    BoxFrameMut,
+};
+pub use base::header::{
+    BoxHeader, //
+    BoxSize,
+    BoxType,
+};
+pub use base::iter::BoxIter;
+
+// Re-export error types for convenience
 pub use error::{
     Error, //
     ErrorKind,
     Result,
 };
-pub use framing::{
-    BoxFrame, //
-    BoxFrameMut,
-};
-pub use header::{
-    BoxSize, //
-    BoxType,
-};
-pub use iter::BoxIter;
 
 // =============================================================================
 // Layer 2 - Typed Box Representations (requires alloc)

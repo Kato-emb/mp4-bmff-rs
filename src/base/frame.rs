@@ -4,11 +4,12 @@ use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
 use crate::error::*;
-use crate::header::BoxSize;
-use crate::header::BoxType;
-use crate::header::boxtype;
-use crate::types::FourCC;
-use crate::types::Uuid;
+
+use super::header::{
+    BoxHeader, //
+    BoxSize,
+    BoxType,
+};
 
 /// A zero-copy frame view into a BMFF box.
 ///
@@ -31,9 +32,20 @@ impl<'a> BoxFrame<'a> {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
-        let (header_len, frame_size) = validate_header(cur.remaining_slice())?;
-        let data = cur.take(frame_size)?;
-        let inner = BoxFrameInner::new(data, header_len);
+        let start_pos = cur.position();
+        let header = BoxHeader::parse_in(cur)?;
+
+        let total_len = if let Some(size) = header.boxsize().value() {
+            size as usize
+        } else {
+            header.header_len() + cur.remaining() // EOF box
+        };
+
+        let payload_len = total_len - header.header_len();
+        cur.advance(payload_len)?;
+
+        let data = &cur.inner()[start_pos..start_pos + total_len];
+        let inner = BoxFrameInner::new(header, data);
         Ok(Self { inner })
     }
 
@@ -58,7 +70,7 @@ impl<'a> BoxFrame<'a> {
     /// Returns the payload (data after the header).
     #[inline]
     pub fn payload(&self) -> &'a [u8] {
-        &self.inner.data[self.inner.header_len..]
+        &self.inner.data[self.inner.header_len()..]
     }
 
     /// Returns the total length of the box.
@@ -93,53 +105,26 @@ impl<'a> BoxFrameMut<'a> {
     /// Calculates the required length of a box with the given type and payload length.
     #[inline]
     pub fn required_len(boxtype: BoxType, payload_len: usize) -> usize {
-        let mut header_len = BASE_HEADER_SIZE;
-
-        if payload_len > u32::MAX as usize {
-            header_len += 8; // Extended size
-        }
-
-        if boxtype.is_uuid() {
-            header_len += 16; // UUID user type
-        }
-
-        header_len + payload_len
+        let header = BoxHeader::new(boxtype, payload_len);
+        header.header_len() + payload_len
     }
 
     /// Creates a new `BoxFrameMut` from a mutable byte slice and header length.
-    pub fn new(bytes: &'a mut [u8], boxtype: BoxType, payload_len: usize) -> Result<Self> {
+    pub fn new(bytes: &'a mut [u8], header: BoxHeader) -> Result<Self> {
         let bytes_len = bytes.len();
-        let required_len = Self::required_len(boxtype, payload_len);
-
-        if bytes_len < required_len {
-            return Err(Error::new(ErrorKind::NotEnoughBytes {
-                expected: required_len,
-                remaining: bytes_len,
-            }));
+        if let Some(required_len) = header.boxsize().value() {
+            if bytes_len < required_len as usize {
+                return Err(Error::new(ErrorKind::NotEnoughBytes {
+                    expected: required_len as usize,
+                    remaining: bytes_len,
+                }));
+            }
         }
 
         let mut cur = WriteCursor::new(bytes);
-        let is_extended = payload_len > u32::MAX as usize;
-        let header_len = required_len - payload_len;
+        header.write_in(&mut cur)?;
 
-        if is_extended {
-            // Write extended size
-            cur.write_u32_be(1)?; // Indicate extended size
-        } else {
-            cur.write_u32_be(bytes_len as u32)?; // Write size
-        }
-
-        cur.write_array(boxtype.type_field().as_bytes())?;
-
-        if is_extended {
-            cur.write_u64_be(bytes_len as u64)?; // Write largesize
-        }
-
-        if boxtype.is_uuid() {
-            cur.write_array(boxtype.user_type().unwrap().as_bytes())?;
-        }
-
-        let inner = BoxFrameInner::new(bytes, header_len);
+        let inner = BoxFrameInner::new(header, bytes);
         Ok(Self { inner })
     }
 
@@ -201,129 +186,42 @@ pub(crate) fn write_box_in<F>(
 where
     F: FnOnce(&mut [u8]) -> Result<()>,
 {
-    let required_len = BoxFrameMut::required_len(boxtype, payload_len);
-    let buf = cur.take_mut(required_len)?;
-    let mut frame = BoxFrameMut::new(buf, boxtype, payload_len)?;
+    let header = BoxHeader::new(boxtype, payload_len);
+    let buf = cur.take_mut(header.boxsize().value().unwrap() as usize)?;
+    let mut frame = BoxFrameMut::new(buf, header)?;
     write_payload(frame.payload_mut())?;
     Ok(())
 }
 
-const BASE_HEADER_SIZE: usize = 8;
-
-/// Validates the header and returns (header_len, frame_size).
-fn validate_header(bytes: &[u8]) -> Result<(usize, usize)> {
-    let mut cur = ReadCursor::new(bytes);
-
-    let size = cur.read_u32_be()?;
-    let fourcc = FourCC::new(cur.read_array()?);
-    let mut header_len = BASE_HEADER_SIZE;
-
-    if size == BoxSize::MARKER_EXTENDED_SIZE {
-        header_len += 8;
-    }
-
-    if fourcc == boxtype::UUID {
-        header_len += 16;
-    }
-
-    if bytes.len() < header_len {
-        return Err(Error::new(ErrorKind::NotEnoughBytes {
-            expected: header_len,
-            remaining: bytes.len(),
-        }));
-    }
-
-    let boxsize = match size {
-        0 => BoxSize::eof(),
-        1 => {
-            let largesize = cur.read_u64_be()?;
-            BoxSize::from_u64(largesize).map_err(|e| Error::at(e.into(), 8))?
-        }
-        _ => BoxSize::from_u32(size).map_err(|e| Error::at(e.into(), 0))?,
-    };
-
-    let frame_size = match boxsize.value() {
-        Some(s) => s.try_into().map_err(|_| {
-            Error::new(ErrorKind::Other {
-                description: "box size too large",
-            })
-        })?,
-        None => bytes.len(),
-    };
-
-    if frame_size > bytes.len() {
-        return Err(Error::new(ErrorKind::NotEnoughBytes {
-            expected: frame_size,
-            remaining: bytes.len(),
-        }));
-    }
-
-    Ok((header_len, frame_size))
-}
-
 #[derive(Debug, Clone, Copy)]
 struct BoxFrameInner<D> {
+    header: BoxHeader,
     data: D,
-    header_len: usize,
 }
 
 impl<D> BoxFrameInner<D> {
-    fn new(data: D, header_len: usize) -> Self {
-        Self { data, header_len }
+    fn new(header: BoxHeader, data: D) -> Self {
+        Self { header, data }
     }
 }
 
 impl<D: AsRef<[u8]>> BoxFrameInner<D> {
     #[inline]
     fn header_len(&self) -> usize {
-        self.header_len
+        self.header.header_len()
     }
 
     fn boxsize(&self) -> BoxSize {
-        let bytes = self.data.as_ref();
-        let size = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-
-        match size {
-            0 => BoxSize::eof(),
-            1 => {
-                let largesize = u64::from_be_bytes([
-                    bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14],
-                    bytes[15],
-                ]);
-                BoxSize::from_u64(largesize).expect("valid extended size")
-            }
-            _ => BoxSize::from_u32(size).expect("valid extended size"),
-        }
+        self.header.boxsize()
     }
 
     fn boxtype(&self) -> BoxType {
-        let bytes = self.data.as_ref();
-        let fourcc = FourCC::new([bytes[4], bytes[5], bytes[6], bytes[7]]);
-
-        if fourcc == boxtype::UUID {
-            let uuid_offset = if self.header_len >= 24 {
-                if u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) == 1 {
-                    16 // After extended size
-                } else {
-                    8 // After basic header
-                }
-            } else {
-                8
-            };
-
-            let uuid_bytes: [u8; 16] = bytes[uuid_offset..uuid_offset + 16]
-                .try_into()
-                .expect("uuid bytes");
-            let usertype = Uuid::from(uuid_bytes);
-            BoxType::from_uuid(usertype)
-        } else {
-            BoxType::from_fourcc(fourcc).expect("valid fourcc")
-        }
+        self.header.boxtype()
     }
 
     #[inline]
     fn payload(&self) -> &[u8] {
-        &self.data.as_ref()[self.header_len..]
+        &self.data.as_ref()[self.header_len()..]
     }
 
     fn len(&self) -> usize {
@@ -347,13 +245,15 @@ impl<D: AsRef<[u8]>> BoxFrameInner<D> {
 impl<D: AsMut<[u8]>> BoxFrameInner<D> {
     #[inline]
     fn payload_mut(&mut self) -> &mut [u8] {
-        let header_len = self.header_len;
+        let header_len = self.header.header_len();
         &mut self.data.as_mut()[header_len..]
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::types::Uuid;
+
     use super::*;
 
     // ========================================================================
@@ -500,9 +400,10 @@ mod tests {
         let mut buf = vec![0u8; 20];
         let payload_len = 12;
 
-        let frame = BoxFrameMut::new(&mut buf, BoxType::FTYP, payload_len).unwrap();
+        let header = BoxHeader::new(BoxType::FTYP, payload_len);
+        let frame = BoxFrameMut::new(&mut buf, header).unwrap();
 
-        assert_eq!(frame.header_len(), 8);
+        assert_eq!(frame.header_len(), 8, "{frame:?}");
         assert_eq!(frame.boxsize().value(), Some(20));
         assert_eq!(frame.boxtype(), BoxType::FTYP);
         assert_eq!(frame.payload().len(), 12);
@@ -519,11 +420,12 @@ mod tests {
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
             0x0f, 0x10,
         ]);
-        let boxtype = BoxType::from_uuid(uuid);
+        let boxtype = BoxType::with_usertype(uuid);
         let payload_len = 4;
         let mut buf = vec![0u8; BoxFrameMut::required_len(boxtype, payload_len)];
 
-        let frame = BoxFrameMut::new(&mut buf, boxtype, payload_len).unwrap();
+        let header = BoxHeader::new(boxtype, payload_len);
+        let frame = BoxFrameMut::new(&mut buf, header).unwrap();
 
         assert_eq!(frame.header_len(), 24); // 8 + 16 (uuid)
         assert_eq!(frame.boxtype(), boxtype);
@@ -540,7 +442,8 @@ mod tests {
         let mut buf = vec![0u8; 16];
         let payload_len = 8;
 
-        let mut frame = BoxFrameMut::new(&mut buf, BoxType::FREE, payload_len).unwrap();
+        let header = BoxHeader::new(BoxType::FREE, payload_len);
+        let mut frame = BoxFrameMut::new(&mut buf, header).unwrap();
 
         // Write to payload
         frame.payload_mut().copy_from_slice(b"testdata");
@@ -554,7 +457,8 @@ mod tests {
         let mut buf = vec![0u8; 10];
         let payload_len = 12; // requires 20 bytes total
 
-        let result = BoxFrameMut::new(&mut buf, BoxType::FTYP, payload_len);
+        let header = BoxHeader::new(BoxType::FTYP, payload_len);
+        let result = BoxFrameMut::new(&mut buf, header);
         assert!(result.is_err());
 
         if let Err(e) = result {
@@ -578,7 +482,7 @@ mod tests {
     #[test]
     fn box_frame_mut_required_len_uuid() {
         let uuid = Uuid::from([0u8; 16]);
-        let boxtype = BoxType::from_uuid(uuid);
+        let boxtype = BoxType::with_usertype(uuid);
 
         assert_eq!(BoxFrameMut::required_len(boxtype, 0), 24); // 8 + 16
         assert_eq!(BoxFrameMut::required_len(boxtype, 10), 34); // 8 + 16 + 10
@@ -593,7 +497,8 @@ mod tests {
         // Create with BoxFrameMut
         let mut buf = vec![0u8; 20];
         {
-            let mut frame = BoxFrameMut::new(&mut buf, BoxType::FTYP, 12).unwrap();
+            let header = BoxHeader::new(BoxType::FTYP, 12);
+            let mut frame = BoxFrameMut::new(&mut buf, header).unwrap();
             frame.payload_mut()[0..4].copy_from_slice(b"isom");
             frame.payload_mut()[4..8].copy_from_slice(&512u32.to_be_bytes());
             frame.payload_mut()[8..12].copy_from_slice(b"iso2");
@@ -614,12 +519,13 @@ mod tests {
             0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18, 0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E,
             0x8F, 0x90,
         ]);
-        let boxtype = BoxType::from_uuid(uuid);
+        let boxtype = BoxType::with_usertype(uuid);
 
         // Create with BoxFrameMut
-        let mut buf = vec![0u8; BoxFrameMut::required_len(boxtype, 8)];
+        let header = BoxHeader::new(boxtype, 8);
+        let mut buf = vec![0u8; header.total_size() as usize];
         {
-            let mut frame = BoxFrameMut::new(&mut buf, boxtype, 8).unwrap();
+            let mut frame = BoxFrameMut::new(&mut buf, header).unwrap();
             frame.payload_mut().copy_from_slice(b"uuiddata");
         }
 
