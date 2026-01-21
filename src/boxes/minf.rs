@@ -1,6 +1,6 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -163,7 +163,7 @@ impl<'a> MinfBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::DINF {
-                let dinf = DinfBoxView::parse(child.payload())?;
+                let dinf = DinfBoxView::parse(child.into_payload())?;
                 return Ok(dinf);
             }
         }
@@ -181,7 +181,7 @@ impl<'a> MinfBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STBL {
-                let stbl = StblBoxView::parse(child.payload())?;
+                let stbl = StblBoxView::parse(child.into_payload())?;
                 return Ok(stbl);
             }
         }
@@ -208,10 +208,10 @@ impl<'a> MinfBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for MinfBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for MinfBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::MINF {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MINF,
@@ -404,10 +404,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<BoxFrame<'_>> for MinfBox {
+    impl TryFrom<RawBoxRef<'_>> for MinfBox {
         type Error = Error;
 
-        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
             if value.boxtype() != BoxType::MINF {
                 return Err(Error::new(ErrorKind::MismatchedBoxType {
                     expected: BoxType::MINF,

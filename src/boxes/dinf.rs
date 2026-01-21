@@ -23,7 +23,7 @@ impl<'a> DinfBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::DREF {
-                let dref = DrefBoxView::parse(child.payload())?;
+                let dref = DrefBoxView::parse(child.into_payload())?;
                 return Ok(dref);
             }
         }
@@ -58,7 +58,6 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use super::*;
-    use crate::BoxFrameMut;
     use crate::base::frame::write_box_in;
 
     use crate::boxes::DrefBox;
@@ -178,7 +177,7 @@ mod tests {
     #[test]
     fn dinf_box_round_trip() {
         use crate::boxes::{DrefBox, DrefEntry, UrlBox, UrlFlags};
-        use crate::{BoxFrame, BoxFrameMut, BoxHeader};
+        use crate::{BoxHeader, RawBoxRef};
 
         let dinf_box = DinfBox {
             dref: DrefBox {
@@ -202,7 +201,7 @@ mod tests {
         }
 
         // Parse back as dinf payload
-        let frame = BoxFrame::parse(&buf).unwrap();
+        let frame = RawBoxRef::parse(&buf).unwrap();
         assert_eq!(frame.boxtype(), BoxType::DINF);
         let reparsed = DinfBoxView::parse(frame.payload()).unwrap();
         let dref = reparsed.dref().unwrap();

@@ -1,7 +1,7 @@
 use crate::types::FourCC;
 
-use crate::BmffBox;
 use crate::BoxType;
+use crate::RawBoxRef;
 use crate::error::*;
 
 use crate::base::codec::DecodeIn;
@@ -65,6 +65,37 @@ impl<'de> DecodeIn<'de> for FtypBoxView<'de> {
             minor_version,
             compatible_brands,
         })
+    }
+
+    /// Parses an `FtypBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<FtypBoxView<'a>> {
+        let mut cursor = ReadCursor::new(payload);
+        let this = FtypBoxView::parse_in(&mut cursor)?;
+
+        Ok(this)
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for FtypBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        FtypBoxView::parse(value)
+    }
+}
+
+impl<'a> TryFrom<RawBoxRef<'a>> for FtypBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
+        if value.boxtype() != BoxType::FTYP {
+            return Err(Error::new(ErrorKind::MismatchedBoxType {
+                expected: BoxType::FTYP,
+                found: value.boxtype(),
+            }));
+        }
+
+        FtypBoxView::parse(value.payload())
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -198,10 +198,10 @@ impl TryFrom<&[u8]> for TfhdBox {
     }
 }
 
-impl TryFrom<BoxFrame<'_>> for TfhdBox {
+impl TryFrom<RawBoxRef<'_>> for TfhdBox {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
         if value.boxtype() != BoxType::TFHD {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::TFHD,

@@ -8,3 +8,4 @@ pub mod codec;
 pub mod frame;
 pub mod header;
 pub mod iter;
+pub mod rawbox;

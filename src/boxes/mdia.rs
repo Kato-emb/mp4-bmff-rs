@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
+use crate::RawBoxRef;
 use crate::error::*;
 
 use crate::boxes::HdlrBoxView;
@@ -47,7 +47,7 @@ impl<'a> MdiaBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::HDLR {
-                let hdlr = HdlrBoxView::parse(child.payload())?;
+                let hdlr = HdlrBoxView::parse(child.into_payload())?;
                 return Ok(hdlr);
             }
         }
@@ -65,7 +65,7 @@ impl<'a> MdiaBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::MINF {
-                let minf = MinfBoxView::parse(child.payload())?;
+                let minf = MinfBoxView::parse(child.into_payload())?;
                 return Ok(minf);
             }
         }
@@ -90,10 +90,10 @@ impl<'a> MdiaBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for MdiaBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for MdiaBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::MDIA {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MDIA,
@@ -252,10 +252,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<BoxFrame<'_>> for MdiaBox {
+    impl TryFrom<RawBoxRef<'_>> for MdiaBox {
         type Error = Error;
 
-        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
             if value.boxtype() != BoxType::MDIA {
                 return Err(Error::new(ErrorKind::MismatchedBoxType {
                     expected: BoxType::MDIA,

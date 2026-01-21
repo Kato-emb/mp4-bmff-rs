@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -112,10 +112,10 @@ impl TryFrom<&[u8]> for MehdBox {
     }
 }
 
-impl TryFrom<BoxFrame<'_>> for MehdBox {
+impl TryFrom<RawBoxRef<'_>> for MehdBox {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
         if value.boxtype() != BoxType::MEHD {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MEHD,

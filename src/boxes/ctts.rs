@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
 use crate::BoxType;
+use crate::RawBoxRef;
 use crate::error::*;
 
 use super::FullBoxFlags;
@@ -115,10 +115,10 @@ impl<'a> TryFrom<&'a [u8]> for CttsBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for CttsBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for CttsBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::CTTS {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::CTTS,
@@ -126,7 +126,7 @@ impl<'a> TryFrom<BoxFrame<'a>> for CttsBoxView<'a> {
             }));
         }
 
-        CttsBoxView::parse(value.payload())
+        CttsBoxView::parse(value.into_payload())
     }
 }
 

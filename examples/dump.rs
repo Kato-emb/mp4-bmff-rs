@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 #[cfg(feature = "std")]
 use mp4_bmff::{
-    BoxFrame, BoxIter, BoxType, Error,
+    BoxIter, BoxType, Error, RawBoxRef,
     boxes::{FreeBoxView, FtypBoxView, HdlrBoxView, MdhdBox, MvhdBox, StypBoxView, TkhdBox},
 };
 
@@ -71,7 +71,7 @@ fn dump_boxes(data: &[u8], depth: usize, base_offset: u64) -> mp4_bmff::Result<(
 }
 
 #[cfg(feature = "std")]
-fn print_box(view: &BoxFrame<'_>, depth: usize, offset: u64, size: u64) -> mp4_bmff::Result<()> {
+fn print_box(view: &RawBoxRef<'_>, depth: usize, offset: u64, size: u64) -> mp4_bmff::Result<()> {
     let indent = "  ".repeat(depth);
     let payload_len = view.payload().len() as u64;
     let header_len = view.header_len() as u64;
@@ -96,7 +96,7 @@ fn print_box(view: &BoxFrame<'_>, depth: usize, offset: u64, size: u64) -> mp4_b
 }
 
 #[cfg(feature = "std")]
-fn print_box_details(view: &BoxFrame<'_>, depth: usize) -> mp4_bmff::Result<()> {
+fn print_box_details(view: &RawBoxRef<'_>, depth: usize) -> mp4_bmff::Result<()> {
     let indent = "  ".repeat(depth + 1);
 
     match view.boxtype() {
@@ -209,7 +209,7 @@ fn should_recurse(box_type: BoxType) -> bool {
 }
 
 #[cfg(feature = "std")]
-fn describe_size(view: &BoxFrame<'_>, actual: u64) -> String {
+fn describe_size(view: &RawBoxRef<'_>, actual: u64) -> String {
     if view.boxsize().is_eof() {
         format!("extends to EOF ({actual} bytes)")
     } else if view.boxsize().is_extended() {

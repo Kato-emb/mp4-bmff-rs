@@ -59,7 +59,7 @@ impl BoxHeader {
             panic!("Box size overflow when creating BoxHeader");
         };
 
-        let size = BoxSize::new(total_len as u64);
+        let size = BoxSize::new(total_len);
         Self { size, type_ }
     }
 
@@ -148,5 +148,11 @@ impl BoxHeader {
         }
 
         Ok(())
+    }
+
+    /// Writes the box header into the given byte slice.
+    pub fn write(&self, buf: &mut [u8]) -> Result<()> {
+        let mut cur = WriteCursor::new(buf);
+        self.write_in(&mut cur)
     }
 }

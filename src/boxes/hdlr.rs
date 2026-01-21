@@ -3,7 +3,7 @@ use core::mem;
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -75,10 +75,10 @@ impl<'a> HdlrBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for HdlrBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for HdlrBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::HDLR {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::HDLR,
@@ -195,10 +195,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<BoxFrame<'_>> for HdlrBox {
+    impl TryFrom<RawBoxRef<'_>> for HdlrBox {
         type Error = Error;
 
-        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
             let view = HdlrBoxView::try_from(value)?;
             Ok(HdlrBox::from_view(&view))
         }

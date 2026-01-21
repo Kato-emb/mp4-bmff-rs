@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -117,10 +117,10 @@ impl TryFrom<&[u8]> for TrexBox {
     }
 }
 
-impl TryFrom<BoxFrame<'_>> for TrexBox {
+impl TryFrom<RawBoxRef<'_>> for TrexBox {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
         if value.boxtype() != BoxType::TREX {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::TREX,
@@ -224,7 +224,7 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
         let trex = TrexBox::try_from(box_view).unwrap();
 
         assert_eq!(trex.track_id, 1);
@@ -241,7 +241,7 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
         let result = TrexBox::try_from(box_view);
 
         assert!(result.is_err());

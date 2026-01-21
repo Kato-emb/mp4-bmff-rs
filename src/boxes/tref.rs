@@ -1,7 +1,7 @@
+use crate::base::rawbox::RawBoxRef;
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
-use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -28,10 +28,10 @@ impl<'a> TrackReferenceTypeBoxView<'a> {
             .map(|chunk| u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
     }
 
-    /// Creates a `TrackReferenceTypeBoxView` from a `BoxFrame`.
-    pub fn from_frame(frame: BoxFrame<'a>) -> Result<Self> {
-        let reference_type = frame.boxtype().type_field();
-        let track_ids = frame.payload();
+    /// Creates a `TrackReferenceTypeBoxView` from a `RawBoxRef`.
+    pub fn from_rawbox(rawbox: RawBoxRef<'a>) -> Result<Self> {
+        let reference_type = rawbox.boxtype().type_field();
+        let track_ids = rawbox.into_payload();
 
         if !track_ids.len().is_multiple_of(Self::TRACK_ID_SIZE) {
             return Err(Error::in_box(
@@ -69,7 +69,7 @@ impl<'a> TrefBoxView<'a> {
     /// Returns an iterator over the track reference types in this box.
     pub fn references(&self) -> impl Iterator<Item = Result<TrackReferenceTypeBoxView<'a>>> + 'a {
         self.children()
-            .map(|result| result.and_then(TrackReferenceTypeBoxView::from_frame))
+            .map(|result| result.and_then(TrackReferenceTypeBoxView::from_rawbox))
     }
 
     /// Finds a track reference by its reference type.
@@ -323,8 +323,8 @@ mod tests {
         box_data.extend_from_slice(b"hint");
         box_data.extend_from_slice(&[1, 2, 3, 4, 5]); // 5 bytes - not multiple of 4
 
-        let frame = BoxFrame::parse(&box_data).unwrap();
-        let result = TrackReferenceTypeBoxView::from_frame(frame);
+        let frame = RawBoxRef::parse(&box_data).unwrap();
+        let result = TrackReferenceTypeBoxView::from_rawbox(frame);
 
         assert!(result.is_err());
         assert!(matches!(

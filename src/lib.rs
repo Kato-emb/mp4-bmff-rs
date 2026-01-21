@@ -45,17 +45,17 @@ pub mod base;
 pub mod error;
 
 // Re-export base structures for convenience
-pub use base::frame::{
-    BoxFrame, //
-    BoxFrameMut,
-    BoxFrameRef,
-};
 pub use base::header::{
     BoxHeader, //
     BoxSize,
     BoxType,
 };
 pub use base::iter::BoxIter;
+pub use base::rawbox::{
+    RawBox,
+    RawBoxMut,
+    RawBoxRef, //
+};
 
 pub use base::codec::{
     BmffBox, //

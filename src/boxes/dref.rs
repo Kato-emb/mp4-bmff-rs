@@ -2,7 +2,7 @@ use crate::BoxIter;
 use crate::BoxType;
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::error::*;
 
 use super::FullBoxFlags;
@@ -35,8 +35,8 @@ impl<'a> DrefBoxView<'a> {
         BoxIter::new(self.entries).map(|box_result| {
             let view = box_result?;
             match view.boxtype() {
-                BoxType::URL_ => UrlBoxView::parse(view.payload()).map(DrefEntryView::Url),
-                BoxType::URN_ => UrnBoxView::parse(view.payload()).map(DrefEntryView::Urn),
+                BoxType::URL_ => UrlBoxView::parse(view.into_payload()).map(DrefEntryView::Url),
+                BoxType::URN_ => UrnBoxView::parse(view.into_payload()).map(DrefEntryView::Urn),
                 other => Err(Error::in_box(
                     ErrorKind::InvalidBoxType {
                         reason: "Unexpected box type in entries",
@@ -56,7 +56,7 @@ impl<'a> DrefBoxView<'a> {
 
         let entries = cur.remaining_slice();
         for _ in 0..entry_count {
-            BoxFrame::parse_in(cur)?;
+            RawBoxRef::parse_in(cur)?;
         }
 
         if !cur.is_empty() {
@@ -227,7 +227,6 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    use crate::BoxFrameMut;
     use crate::base::frame::write_box_in;
 
     use super::*;

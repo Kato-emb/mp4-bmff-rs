@@ -1,6 +1,6 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -202,10 +202,10 @@ impl<'a> TryFrom<&'a [u8]> for TrunBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for TrunBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for TrunBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::TRUN {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::TRUN,
@@ -411,10 +411,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<BoxFrame<'_>> for TrunBox {
+    impl TryFrom<RawBoxRef<'_>> for TrunBox {
         type Error = Error;
 
-        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
             let view = TrunBoxView::try_from(value)?;
             TrunBox::from_view(&view)
         }

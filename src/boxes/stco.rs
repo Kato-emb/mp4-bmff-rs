@@ -1,6 +1,6 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -85,10 +85,10 @@ impl<'a> TryFrom<&'a [u8]> for StcoBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for StcoBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for StcoBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::STCO {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STCO,
@@ -252,7 +252,7 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
         let result = StcoBoxView::try_from(box_view);
         assert!(result.is_err());
     }

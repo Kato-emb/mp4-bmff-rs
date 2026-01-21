@@ -5,7 +5,7 @@ use crate::cursor::WriteCursor;
 use crate::types::LanguageCode;
 use crate::types::QuickTimeDateTime;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -194,10 +194,10 @@ impl TryFrom<&[u8]> for MdhdBox {
     }
 }
 
-impl TryFrom<BoxFrame<'_>> for MdhdBox {
+impl TryFrom<RawBoxRef<'_>> for MdhdBox {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
         if value.boxtype() != BoxType::MDHD {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MDHD,

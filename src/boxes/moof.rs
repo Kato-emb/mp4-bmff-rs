@@ -1,6 +1,6 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -42,7 +42,9 @@ impl<'a> MoofBoxView<'a> {
     /// Returns an iterator over the Track Fragment Boxes (`traf`).
     pub fn trafs(&self) -> impl Iterator<Item = Result<TrafBoxView<'a>>> + 'a {
         self.children().filter_map(|result| match result {
-            Ok(view) if view.boxtype() == BoxType::TRAF => Some(TrafBoxView::parse(view.payload())),
+            Ok(view) if view.boxtype() == BoxType::TRAF => {
+                Some(TrafBoxView::parse(view.into_payload()))
+            }
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
@@ -60,10 +62,10 @@ impl<'a> MoofBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for MoofBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for MoofBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::MOOF {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MOOF,
@@ -164,10 +166,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<BoxFrame<'_>> for MoofBox {
+    impl TryFrom<RawBoxRef<'_>> for MoofBox {
         type Error = Error;
 
-        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
             let view = MoofBoxView::try_from(value)?;
             MoofBox::from_view(&view)
         }
@@ -263,7 +265,7 @@ mod tests {
         box_data.extend_from_slice(&mfhd);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
         let moof = MoofBoxView::try_from(box_view).unwrap();
 
         assert_eq!(moof.mfhd().unwrap().sequence_number, 1);
@@ -280,7 +282,7 @@ mod tests {
         box_data.extend_from_slice(&mfhd);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
         let result = MoofBoxView::try_from(box_view);
 
         assert!(result.is_err());

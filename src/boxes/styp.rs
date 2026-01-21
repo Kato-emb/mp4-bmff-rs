@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -70,10 +70,10 @@ impl<'a> TryFrom<&'a [u8]> for StypBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for StypBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for StypBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::STYP {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STYP,
