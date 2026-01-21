@@ -3,7 +3,7 @@ use core::mem;
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -141,10 +141,10 @@ impl TryFrom<&[u8]> for HmhdBox {
     }
 }
 
-impl TryFrom<BoxFrame<'_>> for HmhdBox {
+impl TryFrom<RawBoxRef<'_>> for HmhdBox {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
         if value.boxtype() != BoxType::HMHD {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::HMHD,

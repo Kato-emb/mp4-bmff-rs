@@ -43,17 +43,20 @@ impl BoxType {
     }
 
     /// Returns the 4-byte `type` field stored in the box header.
-    pub fn type_field(&self) -> FourCC {
+    #[inline]
+    pub const fn type_field(&self) -> FourCC {
         self.boxtype
     }
 
     /// Returns `true` when this `BoxType` stores a UUID extension.
-    pub fn is_uuid(&self) -> bool {
-        self.boxtype == UUID
+    #[inline]
+    pub const fn is_uuid(&self) -> bool {
+        matches!(self.boxtype, UUID)
     }
 
     /// Returns the UUID extension if the type is `uuid`.
-    pub fn user_type(&self) -> Option<Uuid> {
+    #[inline]
+    pub const fn user_type(&self) -> Option<Uuid> {
         self.usertype
     }
 }

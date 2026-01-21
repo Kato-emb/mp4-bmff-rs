@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
+use crate::RawBoxRef;
 use crate::error::*;
 
 use crate::boxes::VisualSampleEntry;
@@ -143,7 +143,7 @@ impl<'a> Avc1BoxView<'a> {
         for child in self.extensions() {
             match child {
                 Ok(c) if c.boxtype() == BoxType::AVCC => {
-                    return AvcCBoxView::parse(c.payload());
+                    return AvcCBoxView::parse(c.into_payload());
                 }
                 Ok(_) => continue,
                 Err(e) => return Err(e),
@@ -182,10 +182,10 @@ impl<'a> TryFrom<&'a [u8]> for Avc1BoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for Avc1BoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for Avc1BoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::AVC1 {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::AVC1,
@@ -193,7 +193,7 @@ impl<'a> TryFrom<BoxFrame<'a>> for Avc1BoxView<'a> {
             }));
         }
 
-        Avc1BoxView::parse(value.payload())
+        Avc1BoxView::parse(value.into_payload())
     }
 }
 
@@ -207,8 +207,7 @@ pub use owned::{
 mod owned {
     use crate::cursor::WriteCursor;
 
-    use crate::BoxFrameMut;
-    use crate::BoxHeader;
+    use crate::{BoxHeader, RawBoxMut};
 
     use super::*;
 
@@ -394,7 +393,11 @@ mod owned {
         /// Returns the size of the `Avc1Box` data.
         #[inline]
         pub fn size(&self) -> usize {
-            VisualSampleEntry::size() + BoxFrameMut::required_len(BoxType::AVCC, self.avcc.size())
+            let mut size = 0;
+            size += VisualSampleEntry::size();
+            let avcc_hd = BoxHeader::new(BoxType::AVCC, self.avcc.size());
+            size += avcc_hd.total_size() as usize;
+            size
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
@@ -404,7 +407,7 @@ mod owned {
             let avcc_payload_len = self.avcc.size();
             let avcc_header = BoxHeader::new(BoxType::AVCC, avcc_payload_len);
             let bytes = cur.take_mut(avcc_header.total_size() as usize)?;
-            let mut frame = BoxFrameMut::new(bytes, avcc_header)?;
+            let mut frame = RawBoxMut::new(bytes, avcc_header)?;
             self.avcc.write(frame.payload_mut())?;
 
             if !cur.is_empty() {

@@ -17,11 +17,11 @@ use super::header::{
 /// validating only the header structure on construction.
 /// The type and size are computed on demand from the underlying bytes.
 #[derive(Debug, Clone, Copy)]
-pub struct BoxFrame<'a> {
+pub struct RawBox<'a> {
     inner: BoxFrameInner<&'a [u8]>,
 }
 
-impl<'a> BoxFrame<'a> {
+impl<'a> RawBox<'a> {
     /// Creates a new `BoxFrame` from a byte slice.
     ///
     /// Validates that the header can be read and truncates the slice
@@ -271,7 +271,7 @@ mod tests {
             b'i', b's', b'o', b'm', // payload: compatible_brand
         ];
 
-        let frame = BoxFrame::parse(&data).unwrap();
+        let frame = RawBox::parse(&data).unwrap();
 
         assert_eq!(frame.header_len(), 8);
         assert_eq!(frame.boxsize().value(), Some(20));
@@ -290,7 +290,7 @@ mod tests {
             b'f', b'r', b'e', b'e', // type = "free"
         ];
 
-        let frame = BoxFrame::parse(&data).unwrap();
+        let frame = RawBox::parse(&data).unwrap();
 
         assert_eq!(frame.header_len(), 8);
         assert_eq!(frame.payload().len(), 0);
@@ -306,7 +306,7 @@ mod tests {
         data[8..16].copy_from_slice(&24u64.to_be_bytes()); // largesize = 24
         data[16..24].copy_from_slice(b"testdata"); // payload
 
-        let frame = BoxFrame::parse(&data).unwrap();
+        let frame = RawBox::parse(&data).unwrap();
 
         assert_eq!(frame.header_len(), 16);
         assert_eq!(frame.boxsize().value(), Some(24));
@@ -324,7 +324,7 @@ mod tests {
             b'd', b'a', b't', b'a',
         ];
 
-        let frame = BoxFrame::parse(&data).unwrap();
+        let frame = RawBox::parse(&data).unwrap();
 
         assert_eq!(frame.header_len(), 8);
         assert!(frame.boxsize().is_eof());
@@ -346,7 +346,7 @@ mod tests {
         data[8..24].copy_from_slice(&uuid_bytes); // usertype
         data[24..28].copy_from_slice(b"test"); // payload
 
-        let frame = BoxFrame::parse(&data).unwrap();
+        let frame = RawBox::parse(&data).unwrap();
 
         assert_eq!(frame.header_len(), 24);
         assert_eq!(frame.boxsize().value(), Some(28));
@@ -365,7 +365,7 @@ mod tests {
             0xDE, 0xAD, 0xBE, 0xEF, // extra data (not part of box)
         ];
 
-        let frame = BoxFrame::parse(&data).unwrap();
+        let frame = RawBox::parse(&data).unwrap();
 
         assert_eq!(frame.len(), 12);
         assert_eq!(frame.as_bytes().len(), 12);
@@ -376,7 +376,7 @@ mod tests {
     fn box_frame_parse_error_insufficient_header() {
         let data: [u8; 4] = [0x00, 0x00, 0x00, 0x10]; // Only 4 bytes, need at least 8
 
-        let result = BoxFrame::parse(&data);
+        let result = RawBox::parse(&data);
         assert!(result.is_err());
     }
 
@@ -387,7 +387,7 @@ mod tests {
             b'f', b'r', b'e', b'e',
         ];
 
-        let result = BoxFrame::parse(&data);
+        let result = RawBox::parse(&data);
         assert!(result.is_err());
     }
 
@@ -505,7 +505,7 @@ mod tests {
         }
 
         // Parse with BoxFrame
-        let frame = BoxFrame::parse(&buf).unwrap();
+        let frame = RawBox::parse(&buf).unwrap();
 
         assert_eq!(frame.boxtype(), BoxType::FTYP);
         assert_eq!(frame.payload().len(), 12);
@@ -530,7 +530,7 @@ mod tests {
         }
 
         // Parse with BoxFrame
-        let frame = BoxFrame::parse(&buf).unwrap();
+        let frame = RawBox::parse(&buf).unwrap();
 
         assert!(frame.boxtype().is_uuid());
         assert_eq!(frame.boxtype().user_type().unwrap(), uuid);

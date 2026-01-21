@@ -1,10 +1,9 @@
 //! Iterator for traversing BMFF boxes.
 
+use crate::base::rawbox::RawBoxRef;
 use crate::cursor::ReadCursor;
 
 use crate::error::*;
-
-use super::frame::BoxFrame;
 
 /// An iterator over BMFF boxes in a byte slice.
 pub struct BoxIter<'a> {
@@ -21,14 +20,14 @@ impl<'a> BoxIter<'a> {
 }
 
 impl<'a> Iterator for BoxIter<'a> {
-    type Item = Result<BoxFrame<'a>>;
+    type Item = Result<RawBoxRef<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.cur.is_empty() {
             return None;
         }
 
-        Some(BoxFrame::parse_in(&mut self.cur))
+        Some(RawBoxRef::parse_in(&mut self.cur))
     }
 }
 

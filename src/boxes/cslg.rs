@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -151,10 +151,10 @@ impl TryFrom<&[u8]> for CslgBox {
     }
 }
 
-impl TryFrom<BoxFrame<'_>> for CslgBox {
+impl TryFrom<RawBoxRef<'_>> for CslgBox {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
         if value.boxtype() != BoxType::CSLG {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::CSLG,
@@ -303,7 +303,7 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
         let cslg = CslgBox::try_from(box_view).unwrap();
 
         assert_eq!(cslg.composition_to_dts_shift, 50);
@@ -320,7 +320,7 @@ mod tests {
         box_data.extend_from_slice(&payload);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
         let result = CslgBox::try_from(box_view);
 
         assert!(result.is_err());

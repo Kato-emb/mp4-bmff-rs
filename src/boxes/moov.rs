@@ -1,6 +1,6 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -26,7 +26,7 @@ impl<'a> MoovBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::MVHD {
-                let mvhd = MvhdBox::parse(child.payload())?;
+                let mvhd = MvhdBox::parse(child.into_payload())?;
                 return Ok(mvhd);
             }
         }
@@ -42,7 +42,9 @@ impl<'a> MoovBoxView<'a> {
     /// Returns an iterator over the Track Boxes (`trak`) contained in this `MoovBoxView`.
     pub fn traks(&self) -> impl Iterator<Item = Result<TrakBoxView<'a>>> + 'a {
         self.children().filter_map(|child| match child {
-            Ok(view) if view.boxtype() == BoxType::TRAK => Some(TrakBoxView::parse(view.payload())),
+            Ok(view) if view.boxtype() == BoxType::TRAK => {
+                Some(TrakBoxView::parse(view.into_payload()))
+            }
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
@@ -53,7 +55,7 @@ impl<'a> MoovBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::MVEX {
-                let mvex = MvexBoxView::parse(child.payload())?;
+                let mvex = MvexBoxView::parse(child.into_payload())?;
                 return Ok(Some(mvex));
             }
         }
@@ -72,10 +74,10 @@ impl<'a> MoovBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for MoovBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for MoovBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::MOOV {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MOOV,
@@ -227,10 +229,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<BoxFrame<'_>> for MoovBox {
+    impl TryFrom<RawBoxRef<'_>> for MoovBox {
         type Error = Error;
 
-        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
             if value.boxtype() != BoxType::MOOV {
                 return Err(Error::new(ErrorKind::MismatchedBoxType {
                     expected: BoxType::MOOV,

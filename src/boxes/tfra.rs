@@ -1,6 +1,6 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -257,10 +257,10 @@ impl<'a> TryFrom<&'a [u8]> for TfraBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for TfraBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for TfraBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::TFRA {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::TFRA,
@@ -399,10 +399,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<BoxFrame<'_>> for TfraBox {
+    impl TryFrom<RawBoxRef<'_>> for TfraBox {
         type Error = Error;
 
-        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
             let view = TfraBoxView::try_from(value)?;
             TfraBox::from_view(&view)
         }

@@ -26,7 +26,6 @@ use crate::error::*;
 pub struct BoxHeader {
     size: BoxSize,
     type_: BoxType,
-    len: usize,
 }
 
 impl fmt::Debug for BoxHeader {
@@ -48,19 +47,6 @@ impl BoxHeader {
     /// Base size of a box header (size + type fields).
     pub const BASE_SIZE: usize = 8;
 
-    fn calculate_len(size: &BoxSize, type_: &BoxType) -> usize {
-        let mut len = Self::BASE_SIZE;
-        if size.is_extended() {
-            len += 8; // Additional 8 bytes for extended size
-        }
-
-        if type_.is_uuid() {
-            len += 16; // Additional 16 bytes for UUID
-        }
-
-        len
-    }
-
     /// Creates a new box header.
     pub fn new(type_: BoxType, payload_len: usize) -> Self {
         // Calculate header length including UUID if applicable
@@ -74,13 +60,23 @@ impl BoxHeader {
         };
 
         let size = BoxSize::new(total_len);
-        let len = Self::calculate_len(&size, &type_);
-        Self { size, type_, len }
+        Self { size, type_ }
     }
 
     /// Returns the total length of the box header in bytes.
-    pub fn header_len(&self) -> usize {
-        self.len
+    #[inline]
+    pub const fn header_len(&self) -> usize {
+        let mut len = Self::BASE_SIZE;
+
+        if self.size.is_extended() {
+            len += 8; // Additional 8 bytes for extended size
+        }
+
+        if self.type_.is_uuid() {
+            len += 16; // Additional 16 bytes for UUID
+        }
+
+        len
     }
 
     /// Returns the box size.
@@ -99,7 +95,6 @@ impl BoxHeader {
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
-        let start_pos = cur.position();
         let size = cur.read_u32_be()?;
         let fourcc = FourCC::from(cur.read_array::<4>()?);
 
@@ -119,8 +114,7 @@ impl BoxHeader {
             BoxType::new(fourcc)
         };
 
-        let len = cur.position() - start_pos;
-        Ok(BoxHeader { size, type_, len })
+        Ok(BoxHeader { size, type_ })
     }
 
     /// Parses a box header from the given byte slice.
@@ -154,5 +148,11 @@ impl BoxHeader {
         }
 
         Ok(())
+    }
+
+    /// Writes the box header into the given byte slice.
+    pub fn write(&self, buf: &mut [u8]) -> Result<()> {
+        let mut cur = WriteCursor::new(buf);
+        self.write_in(&mut cur)
     }
 }

@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
+use crate::RawBoxRef;
 use crate::error::*;
 
 use super::FullBoxFlags;
@@ -18,7 +18,7 @@ pub enum StsdEntryView<'a> {
     /// An Avc1 Box entry.
     Avc1(Avc1BoxView<'a>),
     /// An unrecognized box entry.
-    Other(BoxFrame<'a>),
+    Other(RawBoxRef<'a>),
 }
 
 /// An reference to a Sample Description Box (`stsd`).
@@ -40,8 +40,8 @@ impl<'a> StsdBoxView<'a> {
         BoxIter::new(self.entries).map(|box_result| {
             let view = box_result?;
             match view.boxtype() {
-                BoxType::AVC1 => Avc1BoxView::parse(view.payload()).map(StsdEntryView::Avc1),
-                BoxType::MP4A => Mp4aBoxView::parse(view.payload()).map(StsdEntryView::Mp4a),
+                BoxType::AVC1 => Avc1BoxView::parse(view.into_payload()).map(StsdEntryView::Avc1),
+                BoxType::MP4A => Mp4aBoxView::parse(view.into_payload()).map(StsdEntryView::Mp4a),
                 _ => Ok(StsdEntryView::Other(view)),
             }
         })
@@ -55,7 +55,7 @@ impl<'a> StsdBoxView<'a> {
 
         let entries = cur.remaining_slice();
         for _ in 0..entry_count {
-            BoxFrame::parse_in(cur)?;
+            RawBoxRef::parse_in(cur)?;
         }
 
         if !cur.is_empty() {

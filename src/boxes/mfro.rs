@@ -1,7 +1,7 @@
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::error::*;
 
@@ -101,10 +101,10 @@ impl TryFrom<&[u8]> for MfroBox {
     }
 }
 
-impl TryFrom<BoxFrame<'_>> for MfroBox {
+impl TryFrom<RawBoxRef<'_>> for MfroBox {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
         if value.boxtype() != BoxType::MFRO {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MFRO,

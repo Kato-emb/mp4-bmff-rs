@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
 use crate::BoxIter;
 use crate::BoxType;
+use crate::RawBoxRef;
 use crate::error::*;
 
 use crate::boxes::MfroBox;
@@ -46,7 +46,7 @@ impl<'a> MfraBoxView<'a> {
     pub fn tfras(&self) -> impl Iterator<Item = Result<TfraBoxView<'a>>> + 'a {
         self.children().filter_map(|result| match result {
             Ok(box_view) if box_view.boxtype() == BoxType::TFRA => {
-                Some(TfraBoxView::try_from(box_view.payload()))
+                Some(TfraBoxView::try_from(box_view.into_payload()))
             }
             Ok(_) => None,
             Err(e) => Some(Err(e)),
@@ -65,10 +65,10 @@ impl<'a> MfraBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for MfraBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for MfraBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::MFRA {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::MFRA,
@@ -171,10 +171,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<BoxFrame<'_>> for MfraBox {
+    impl TryFrom<RawBoxRef<'_>> for MfraBox {
         type Error = Error;
 
-        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
             let view = MfraBoxView::try_from(value)?;
             MfraBox::from_view(&view)
         }
@@ -275,7 +275,7 @@ mod tests {
         box_data.extend_from_slice(&mfro);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
         let mfra = MfraBoxView::try_from(box_view).unwrap();
 
         assert_eq!(mfra.mfro().unwrap().size, 512);
@@ -292,7 +292,7 @@ mod tests {
         box_data.extend_from_slice(&mfro);
 
         let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxFrame::parse_in(&mut cursor).unwrap();
+        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
         let result = MfraBoxView::try_from(box_view);
 
         assert!(result.is_err());

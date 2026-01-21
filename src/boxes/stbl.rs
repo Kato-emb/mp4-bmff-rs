@@ -1,6 +1,6 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -41,7 +41,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STSD {
-                let stsd = StsdBoxView::parse(child.payload())?;
+                let stsd = StsdBoxView::parse(child.into_payload())?;
                 return Ok(stsd);
             }
         }
@@ -59,7 +59,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STTS {
-                let stts = SttsBoxView::parse(child.payload())?;
+                let stts = SttsBoxView::parse(child.into_payload())?;
                 return Ok(stts);
             }
         }
@@ -77,7 +77,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STSC {
-                let stsc = StscBoxView::parse(child.payload())?;
+                let stsc = StscBoxView::parse(child.into_payload())?;
                 return Ok(stsc);
             }
         }
@@ -95,7 +95,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::CTTS {
-                let ctts = CttsBoxView::parse(child.payload())?;
+                let ctts = CttsBoxView::parse(child.into_payload())?;
                 return Ok(Some(ctts));
             }
         }
@@ -108,7 +108,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::CSLG {
-                let cslg = CslgBox::parse(child.payload())?;
+                let cslg = CslgBox::parse(child.into_payload())?;
                 return Ok(Some(cslg));
             }
         }
@@ -121,7 +121,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STSZ {
-                let stsz = StszBoxView::parse(child.payload())?;
+                let stsz = StszBoxView::parse(child.into_payload())?;
                 return Ok(Some(stsz));
             }
         }
@@ -134,7 +134,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STSS {
-                let stss = StssBoxView::parse(child.payload())?;
+                let stss = StssBoxView::parse(child.into_payload())?;
                 return Ok(Some(stss));
             }
         }
@@ -147,7 +147,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STCO {
-                let stco = StcoBoxView::parse(child.payload())?;
+                let stco = StcoBoxView::parse(child.into_payload())?;
                 return Ok(Some(stco));
             }
         }
@@ -160,7 +160,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::CO64 {
-                let co64 = Co64BoxView::parse(child.payload())?;
+                let co64 = Co64BoxView::parse(child.into_payload())?;
                 return Ok(Some(co64));
             }
         }
@@ -176,11 +176,11 @@ impl<'a> StblBoxView<'a> {
             let child = child?;
             match child.boxtype() {
                 BoxType::STCO if chunk_offsets.is_none() => {
-                    let stco = StcoBoxView::parse(child.payload())?;
+                    let stco = StcoBoxView::parse(child.into_payload())?;
                     chunk_offsets = Some(ChunkOffsetsView::Stco(stco));
                 }
                 BoxType::CO64 if chunk_offsets.is_none() => {
-                    let co64 = Co64BoxView::parse(child.payload())?;
+                    let co64 = Co64BoxView::parse(child.into_payload())?;
                     chunk_offsets = Some(ChunkOffsetsView::Co64(co64));
                 }
                 BoxType::STCO | BoxType::CO64 => {
@@ -217,10 +217,10 @@ impl<'a> StblBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for StblBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for StblBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::STBL {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::STBL,
@@ -523,10 +523,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<BoxFrame<'_>> for StblBox {
+    impl TryFrom<RawBoxRef<'_>> for StblBox {
         type Error = Error;
 
-        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
             if value.boxtype() != BoxType::STBL {
                 return Err(Error::new(ErrorKind::MismatchedBoxType {
                     expected: BoxType::STBL,

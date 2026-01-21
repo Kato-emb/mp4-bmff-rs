@@ -1,6 +1,6 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -44,7 +44,7 @@ impl<'a> TrakBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::MDIA {
-                let mdia = MdiaBoxView::parse(child.payload())?;
+                let mdia = MdiaBoxView::parse(child.into_payload())?;
                 return Ok(mdia);
             }
         }
@@ -62,7 +62,7 @@ impl<'a> TrakBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::TREF {
-                let tref = TrefBoxView::parse(child.payload())?;
+                let tref = TrefBoxView::parse(child.into_payload())?;
                 return Ok(Some(tref));
             }
         }
@@ -82,10 +82,10 @@ impl<'a> TrakBoxView<'a> {
     }
 }
 
-impl<'a> TryFrom<BoxFrame<'a>> for TrakBoxView<'a> {
+impl<'a> TryFrom<RawBoxRef<'a>> for TrakBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: BoxFrame<'a>) -> Result<Self> {
+    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
         if value.boxtype() != BoxType::TRAK {
             return Err(Error::new(ErrorKind::MismatchedBoxType {
                 expected: BoxType::TRAK,
@@ -245,10 +245,10 @@ mod owned {
         }
     }
 
-    impl TryFrom<BoxFrame<'_>> for TrakBox {
+    impl TryFrom<RawBoxRef<'_>> for TrakBox {
         type Error = Error;
 
-        fn try_from(value: BoxFrame<'_>) -> Result<Self> {
+        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
             if value.boxtype() != BoxType::TRAK {
                 return Err(Error::new(ErrorKind::MismatchedBoxType {
                     expected: BoxType::TRAK,

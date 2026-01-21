@@ -1,4 +1,4 @@
-use crate::BoxFrame;
+use crate::RawBoxRef;
 use crate::BoxType;
 use crate::cursor::ReadCursor;
 
@@ -23,7 +23,7 @@ impl<'a> Mp4aBoxView<'a> {
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
         let base = AudioSampleEntry::parse_in(cur)?;
-        let frame = BoxFrame::parse_in(cur)?;
+        let frame = RawBoxRef::parse_in(cur)?;
         if frame.boxtype() != BoxType::ESDS {
             return Err(Error::in_box(
                 ErrorKind::InvalidBoxType {
