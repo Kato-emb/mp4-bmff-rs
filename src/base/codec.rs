@@ -47,21 +47,21 @@ pub(crate) trait EncodeIn {
 /// Traits for decoding BMFF boxes.
 pub trait BoxDecode<'de>: Sized {
     /// Decodes this box from the given buffer.
-    fn decode(buf: &'de [u8]) -> Result<Self>;
+    fn decode(payload: &'de [u8]) -> Result<Self>;
 }
 
 impl<'de, T> BoxDecode<'de> for T
 where
     T: DecodeIn<'de>,
 {
-    fn decode(buf: &'de [u8]) -> Result<Self> {
-        let mut cursor = ReadCursor::new(buf);
+    fn decode(payload: &'de [u8]) -> Result<Self> {
+        let mut cursor = ReadCursor::new(payload);
         let this = T::decode_in(&mut cursor)?;
 
         if !cursor.is_empty() {
             return Err(Error::new(ErrorKind::MismatchedBoxSize {
-                expected: buf.len() as u64 - cursor.remaining() as u64,
-                found: buf.len() as u64,
+                expected: payload.len() as u64 - cursor.remaining() as u64,
+                found: payload.len() as u64,
             }));
         }
 
@@ -72,14 +72,14 @@ where
 /// Traits for encoding BMFF boxes.
 pub trait BoxEncode {
     /// Encodes this box into the given buffer.
-    fn encode(&self, buf: &mut [u8]) -> Result<()>;
+    fn encode(&self, payload: &mut [u8]) -> Result<()>;
 }
 
 impl<T> BoxEncode for T
 where
     T: EncodeIn + BmffBox,
 {
-    fn encode(&self, buf: &mut [u8]) -> Result<()> {
+    fn encode(&self, payload: &mut [u8]) -> Result<()> {
         let expected = self.payload_size();
 
         // Check for buffer size overflow
@@ -94,17 +94,17 @@ where
         }
 
         // Check buffer size matches expected payload size
-        if buf.len() as u64 != expected {
+        if payload.len() as u64 != expected {
             return Err(Error::in_box(
                 ErrorKind::MismatchedBoxSize {
                     expected: self.payload_size() as u64,
-                    found: buf.len() as u64,
+                    found: payload.len() as u64,
                 },
                 self.boxtype(),
             ));
         }
 
-        let mut cur = WriteCursor::new(buf);
+        let mut cur = WriteCursor::new(payload);
         self.encode_in(&mut cur)?;
 
         // Ensure we've written all bytes

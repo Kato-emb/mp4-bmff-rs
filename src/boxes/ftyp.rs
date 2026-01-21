@@ -1,4 +1,3 @@
-use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
 use crate::BmffBox;
@@ -6,6 +5,7 @@ use crate::BoxType;
 use crate::error::*;
 
 use crate::base::codec::DecodeIn;
+use crate::cursor::ReadCursor;
 
 /// A reference to a File Type Box (`ftyp`).
 #[derive(Debug)]

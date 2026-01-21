@@ -1,10 +1,9 @@
-use crate::cursor::ReadCursor;
-
 use crate::BmffBox;
 use crate::BoxType;
 use crate::error::*;
 
 use crate::base::codec::DecodeIn;
+use crate::cursor::ReadCursor;
 
 /// A reference to a Media Data Box (`mdat`).
 pub struct MdatBoxView<'a> {
@@ -36,10 +35,10 @@ pub use owned::MdatBox;
 mod owned {
     use crate::lib::Vec;
 
-    use crate::cursor::WriteCursor;
-
     use super::*;
+
     use crate::base::codec::EncodeIn;
+    use crate::cursor::WriteCursor;
 
     /// An owned Media Data Box (`mdat`).
     #[derive(Debug, Clone)]
