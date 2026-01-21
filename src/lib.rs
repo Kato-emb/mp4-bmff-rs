@@ -48,6 +48,7 @@ pub mod error;
 pub use base::frame::{
     BoxFrame, //
     BoxFrameMut,
+    BoxFrameRef,
 };
 pub use base::header::{
     BoxHeader, //
@@ -55,6 +56,12 @@ pub use base::header::{
     BoxType,
 };
 pub use base::iter::BoxIter;
+
+pub use base::codec::{
+    BmffBox, //
+    BoxDecode,
+    BoxEncode,
+};
 
 // Re-export error types for convenience
 pub use error::{
@@ -68,6 +75,10 @@ pub use error::{
 // =============================================================================
 pub mod boxes;
 pub mod descriptor;
+
+// Re-export typed box representations for convenience
+#[cfg(feature = "alloc")]
+pub use base::frame::BoxFrameOwned;
 
 // =============================================================================
 // Layer 3 -  I/O (std)

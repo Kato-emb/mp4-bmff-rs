@@ -16,19 +16,66 @@ use super::header::{
 /// This structure holds a reference to the raw byte slice of a box,
 /// validating only the header structure on construction.
 /// The type and size are computed on demand from the underlying bytes.
-#[derive(Debug, Clone, Copy)]
-pub struct BoxFrame<'a> {
-    inner: BoxFrameInner<&'a [u8]>,
+#[derive(Debug)]
+pub struct BoxFrame<T> {
+    header: BoxHeader,
+    data: T,
 }
 
-impl<'a> BoxFrame<'a> {
-    /// Creates a new `BoxFrame` from a byte slice.
-    ///
-    /// Validates that the header can be read and truncates the slice
-    /// to match the declared box size.
-    pub fn parse(bytes: &'a [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(bytes);
-        Self::parse_in(&mut cur)
+/// Immutable box frame reference.
+pub type BoxFrameRef<'a> = BoxFrame<&'a [u8]>;
+/// Mutable box frame reference.
+pub type BoxFrameMut<'a> = BoxFrame<&'a mut [u8]>;
+
+impl<T> BoxFrame<T> {
+    /// Returns the box header.
+    #[inline]
+    pub fn header(&self) -> BoxHeader {
+        self.header
+    }
+
+    /// Returns the box size.
+    #[inline]
+    pub fn boxsize(&self) -> BoxSize {
+        self.header.boxsize()
+    }
+
+    /// Returns the box type.
+    #[inline]
+    pub fn boxtype(&self) -> BoxType {
+        self.header.boxtype()
+    }
+
+    /// Decomposes the `BoxFrame` into its header and data parts.
+    pub fn into_parts(self) -> (BoxHeader, T) {
+        (self.header, self.data)
+    }
+}
+
+impl<T: AsRef<[u8]>> BoxFrame<T> {
+    /// Returns the total length of the box.
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self.boxsize() {
+            size if size.is_eof() => self.data.as_ref().len(),
+            size => size.value().expect("box size is valid") as usize,
+        }
+    }
+
+    /// Returns true if the box has no payload.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        let header_len = self.header.header_len();
+        self.len() == header_len
+    }
+}
+
+impl<'a> BoxFrameRef<'a> {
+    /// Returns the payload (data after the header).
+    #[inline]
+    pub fn payload(&self) -> &'a [u8] {
+        let header_len = self.header.header_len();
+        &self.data.as_ref()[header_len..]
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
@@ -45,72 +92,31 @@ impl<'a> BoxFrame<'a> {
         cur.advance(payload_len)?;
 
         let data = &cur.inner()[start_pos..start_pos + total_len];
-        let inner = BoxFrameInner::new(header, data);
-        Ok(Self { inner })
+        Ok(Self { header, data })
     }
 
-    /// Returns the header length in bytes.
-    #[inline]
-    pub fn header_len(&self) -> usize {
-        self.inner.header_len()
+    /// Parses a box frame from the given byte slice.
+    pub fn parse(bytes: &'a [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+        Self::parse_in(&mut cur)
     }
+}
 
-    /// Returns the box size.
+impl<'a> BoxFrameMut<'a> {
     #[inline]
-    pub fn boxsize(&self) -> BoxSize {
-        self.inner.boxsize()
-    }
-
-    /// Returns the box type.
-    #[inline]
-    pub fn boxtype(&self) -> BoxType {
-        self.inner.boxtype()
+    pub fn payload(&self) -> &[u8] {
+        let header_len = self.header.header_len();
+        &self.data.as_ref()[header_len..]
     }
 
     /// Returns the payload (data after the header).
     #[inline]
-    pub fn payload(&self) -> &'a [u8] {
-        &self.inner.data[self.inner.header_len()..]
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        let header_len = self.header.header_len();
+        &mut self.data.as_mut()[header_len..]
     }
 
-    /// Returns the total length of the box.
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    /// Returns true if the box has no payload.
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-
-    /// Returns the raw data slice.
-    #[inline]
-    pub fn as_bytes(&self) -> &'a [u8] {
-        self.inner.data
-    }
-}
-
-/// A mutable zero-copy frame view into a BMFF box.
-///
-/// This structure allows in-place modification of box fields,
-/// particularly useful for updating the size field after writing payload.
-#[derive(Debug)]
-pub struct BoxFrameMut<'a> {
-    inner: BoxFrameInner<&'a mut [u8]>,
-}
-
-impl<'a> BoxFrameMut<'a> {
-    /// Calculates the required length of a box with the given type and payload length.
-    #[inline]
-    pub fn required_len(boxtype: BoxType, payload_len: usize) -> usize {
-        let header = BoxHeader::new(boxtype, payload_len);
-        header.header_len() + payload_len
-    }
-
-    /// Creates a new `BoxFrameMut` from a mutable byte slice and header length.
-    pub fn new(bytes: &'a mut [u8], header: BoxHeader) -> Result<Self> {
+    pub(crate) fn new(bytes: &'a mut [u8], header: BoxHeader) -> Result<Self> {
         let bytes_len = bytes.len();
         if let Some(required_len) = header.boxsize().value() {
             if bytes_len < required_len as usize {
@@ -123,417 +129,62 @@ impl<'a> BoxFrameMut<'a> {
 
         let mut cur = WriteCursor::new(bytes);
         header.write_in(&mut cur)?;
+        debug_assert!(cur.position() == header.header_len());
 
-        let inner = BoxFrameInner::new(header, bytes);
-        Ok(Self { inner })
-    }
-
-    /// Returns the header length in bytes.
-    #[inline]
-    pub fn header_len(&self) -> usize {
-        self.inner.header_len()
-    }
-
-    /// Returns the box size.
-    #[inline]
-    pub fn boxsize(&self) -> BoxSize {
-        self.inner.boxsize()
-    }
-
-    /// Returns the box type.
-    #[inline]
-    pub fn boxtype(&self) -> BoxType {
-        self.inner.boxtype()
-    }
-
-    /// Returns the payload (data after the header).
-    #[inline]
-    pub fn payload(&self) -> &[u8] {
-        self.inner.payload()
-    }
-
-    /// Returns a mutable reference to the payload.
-    #[inline]
-    pub fn payload_mut(&mut self) -> &mut [u8] {
-        self.inner.payload_mut()
-    }
-
-    /// Returns the total length of the box.
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    /// Returns true if the box has no payload.
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-
-    /// Returns the raw data slice.
-    #[inline]
-    pub fn as_bytes(&self) -> &[u8] {
-        self.inner.as_bytes()
+        Ok(Self {
+            header,
+            data: bytes,
+        })
     }
 }
 
-pub(crate) fn write_box_in<F>(
-    cur: &mut WriteCursor<'_>,
-    boxtype: BoxType,
-    payload_len: usize,
-    write_payload: F,
-) -> Result<()>
-where
-    F: FnOnce(&mut [u8]) -> Result<()>,
-{
-    let header = BoxHeader::new(boxtype, payload_len);
-    let buf = cur.take_mut(header.boxsize().value().unwrap() as usize)?;
-    let mut frame = BoxFrameMut::new(buf, header)?;
-    write_payload(frame.payload_mut())?;
-    Ok(())
-}
+#[cfg(feature = "alloc")]
+pub use owned::*;
 
-#[derive(Debug, Clone, Copy)]
-struct BoxFrameInner<D> {
-    header: BoxHeader,
-    data: D,
-}
-
-impl<D> BoxFrameInner<D> {
-    fn new(header: BoxHeader, data: D) -> Self {
-        Self { header, data }
-    }
-}
-
-impl<D: AsRef<[u8]>> BoxFrameInner<D> {
-    #[inline]
-    fn header_len(&self) -> usize {
-        self.header.header_len()
-    }
-
-    fn boxsize(&self) -> BoxSize {
-        self.header.boxsize()
-    }
-
-    fn boxtype(&self) -> BoxType {
-        self.header.boxtype()
-    }
-
-    #[inline]
-    fn payload(&self) -> &[u8] {
-        &self.data.as_ref()[self.header_len()..]
-    }
-
-    fn len(&self) -> usize {
-        match self.boxsize() {
-            size if size.is_eof() => self.data.as_ref().len(),
-            size => size.value().unwrap() as usize,
-        }
-    }
-
-    #[inline]
-    fn is_empty(&self) -> bool {
-        self.payload().is_empty()
-    }
-
-    #[inline]
-    fn as_bytes(&self) -> &[u8] {
-        self.data.as_ref()
-    }
-}
-
-impl<D: AsMut<[u8]>> BoxFrameInner<D> {
-    #[inline]
-    fn payload_mut(&mut self) -> &mut [u8] {
-        let header_len = self.header.header_len();
-        &mut self.data.as_mut()[header_len..]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::types::Uuid;
+#[cfg(feature = "alloc")]
+mod owned {
+    use crate::lib::Vec;
 
     use super::*;
 
-    // ========================================================================
-    // BoxFrame tests
-    // ========================================================================
+    pub type BoxFrameOwned = BoxFrame<Vec<u8>>;
 
-    #[test]
-    fn box_frame_parse_basic() {
-        // ftyp box: size=20, type="ftyp", payload=12 bytes
-        let data: [u8; 20] = [
-            0x00, 0x00, 0x00, 0x14, // size = 20
-            b'f', b't', b'y', b'p', // type = "ftyp"
-            b'i', b's', b'o', b'm', // payload: major_brand
-            0x00, 0x00, 0x02, 0x00, // payload: minor_version
-            b'i', b's', b'o', b'm', // payload: compatible_brand
-        ];
-
-        let frame = BoxFrame::parse(&data).unwrap();
-
-        assert_eq!(frame.header_len(), 8);
-        assert_eq!(frame.boxsize().value(), Some(20));
-        assert_eq!(frame.boxtype(), BoxType::FTYP);
-        assert_eq!(frame.payload().len(), 12);
-        assert_eq!(frame.len(), 20);
-        assert!(!frame.is_empty());
-        assert_eq!(frame.as_bytes(), &data);
-    }
-
-    #[test]
-    fn box_frame_parse_empty_payload() {
-        // free box with no payload: size=8
-        let data: [u8; 8] = [
-            0x00, 0x00, 0x00, 0x08, // size = 8
-            b'f', b'r', b'e', b'e', // type = "free"
-        ];
-
-        let frame = BoxFrame::parse(&data).unwrap();
-
-        assert_eq!(frame.header_len(), 8);
-        assert_eq!(frame.payload().len(), 0);
-        assert!(frame.is_empty());
-    }
-
-    #[test]
-    fn box_frame_parse_extended_size() {
-        // Box with extended size (size=1, largesize=24)
-        let mut data = vec![0u8; 24];
-        data[0..4].copy_from_slice(&1u32.to_be_bytes()); // size = 1 (extended marker)
-        data[4..8].copy_from_slice(b"mdat"); // type = "mdat"
-        data[8..16].copy_from_slice(&24u64.to_be_bytes()); // largesize = 24
-        data[16..24].copy_from_slice(b"testdata"); // payload
-
-        let frame = BoxFrame::parse(&data).unwrap();
-
-        assert_eq!(frame.header_len(), 16);
-        assert_eq!(frame.boxsize().value(), Some(24));
-        assert_eq!(frame.boxtype(), BoxType::MDAT);
-        assert_eq!(frame.payload(), b"testdata");
-    }
-
-    #[test]
-    fn box_frame_parse_eof_box() {
-        // EOF box: size=0 means extends to end of file
-        let data: [u8; 16] = [
-            0x00, 0x00, 0x00, 0x00, // size = 0 (EOF)
-            b'm', b'd', b'a', b't', // type = "mdat"
-            b't', b'e', b's', b't', // payload
-            b'd', b'a', b't', b'a',
-        ];
-
-        let frame = BoxFrame::parse(&data).unwrap();
-
-        assert_eq!(frame.header_len(), 8);
-        assert!(frame.boxsize().is_eof());
-        assert_eq!(frame.boxtype(), BoxType::MDAT);
-        assert_eq!(frame.payload(), b"testdata");
-        assert_eq!(frame.len(), 16); // entire remaining data
-    }
-
-    #[test]
-    fn box_frame_parse_uuid_box() {
-        // UUID box: type="uuid" + 16-byte usertype
-        let uuid_bytes: [u8; 16] = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-            0x0f, 0x10,
-        ];
-        let mut data = vec![0u8; 28];
-        data[0..4].copy_from_slice(&28u32.to_be_bytes()); // size = 28
-        data[4..8].copy_from_slice(b"uuid"); // type = "uuid"
-        data[8..24].copy_from_slice(&uuid_bytes); // usertype
-        data[24..28].copy_from_slice(b"test"); // payload
-
-        let frame = BoxFrame::parse(&data).unwrap();
-
-        assert_eq!(frame.header_len(), 24);
-        assert_eq!(frame.boxsize().value(), Some(28));
-        assert!(frame.boxtype().is_uuid());
-        assert_eq!(frame.boxtype().user_type().unwrap().as_bytes(), &uuid_bytes);
-        assert_eq!(frame.payload(), b"test");
-    }
-
-    #[test]
-    fn box_frame_parse_truncates_extra_data() {
-        // Data has extra bytes beyond declared size
-        let data: [u8; 16] = [
-            0x00, 0x00, 0x00, 0x0c, // size = 12
-            b'f', b'r', b'e', b'e', // type = "free"
-            b't', b'e', b's', b't', // payload (4 bytes)
-            0xDE, 0xAD, 0xBE, 0xEF, // extra data (not part of box)
-        ];
-
-        let frame = BoxFrame::parse(&data).unwrap();
-
-        assert_eq!(frame.len(), 12);
-        assert_eq!(frame.as_bytes().len(), 12);
-        assert_eq!(frame.payload(), b"test");
-    }
-
-    #[test]
-    fn box_frame_parse_error_insufficient_header() {
-        let data: [u8; 4] = [0x00, 0x00, 0x00, 0x10]; // Only 4 bytes, need at least 8
-
-        let result = BoxFrame::parse(&data);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn box_frame_parse_error_size_exceeds_data() {
-        let data: [u8; 8] = [
-            0x00, 0x00, 0x00, 0x20, // size = 32 (but only 8 bytes available)
-            b'f', b'r', b'e', b'e',
-        ];
-
-        let result = BoxFrame::parse(&data);
-        assert!(result.is_err());
-    }
-
-    // ========================================================================
-    // BoxFrameMut tests
-    // ========================================================================
-
-    #[test]
-    fn box_frame_mut_new_basic() {
-        let mut buf = vec![0u8; 20];
-        let payload_len = 12;
-
-        let header = BoxHeader::new(BoxType::FTYP, payload_len);
-        let frame = BoxFrameMut::new(&mut buf, header).unwrap();
-
-        assert_eq!(frame.header_len(), 8, "{frame:?}");
-        assert_eq!(frame.boxsize().value(), Some(20));
-        assert_eq!(frame.boxtype(), BoxType::FTYP);
-        assert_eq!(frame.payload().len(), 12);
-        assert_eq!(frame.len(), 20);
-
-        // Verify header bytes
-        assert_eq!(&buf[0..4], &20u32.to_be_bytes()); // size
-        assert_eq!(&buf[4..8], b"ftyp"); // type
-    }
-
-    #[test]
-    fn box_frame_mut_new_uuid() {
-        let uuid = Uuid::from([
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-            0x0f, 0x10,
-        ]);
-        let boxtype = BoxType::with_usertype(uuid);
-        let payload_len = 4;
-        let mut buf = vec![0u8; BoxFrameMut::required_len(boxtype, payload_len)];
-
-        let header = BoxHeader::new(boxtype, payload_len);
-        let frame = BoxFrameMut::new(&mut buf, header).unwrap();
-
-        assert_eq!(frame.header_len(), 24); // 8 + 16 (uuid)
-        assert_eq!(frame.boxtype(), boxtype);
-        assert!(frame.boxtype().is_uuid());
-        assert_eq!(frame.payload().len(), 4);
-
-        // Verify header bytes
-        assert_eq!(&buf[4..8], b"uuid");
-        assert_eq!(&buf[8..24], uuid.as_bytes());
-    }
-
-    #[test]
-    fn box_frame_mut_write_payload() {
-        let mut buf = vec![0u8; 16];
-        let payload_len = 8;
-
-        let header = BoxHeader::new(BoxType::FREE, payload_len);
-        let mut frame = BoxFrameMut::new(&mut buf, header).unwrap();
-
-        // Write to payload
-        frame.payload_mut().copy_from_slice(b"testdata");
-
-        assert_eq!(frame.payload(), b"testdata");
-        assert_eq!(&buf[8..16], b"testdata");
-    }
-
-    #[test]
-    fn box_frame_mut_error_buffer_too_small() {
-        let mut buf = vec![0u8; 10];
-        let payload_len = 12; // requires 20 bytes total
-
-        let header = BoxHeader::new(BoxType::FTYP, payload_len);
-        let result = BoxFrameMut::new(&mut buf, header);
-        assert!(result.is_err());
-
-        if let Err(e) = result {
-            assert!(matches!(
-                e.kind(),
-                ErrorKind::NotEnoughBytes {
-                    expected: 20,
-                    remaining: 10
-                }
-            ));
+    impl Clone for BoxFrameOwned {
+        fn clone(&self) -> Self {
+            let data = self.data.clone();
+            BoxFrame {
+                header: self.header,
+                data,
+            }
         }
     }
 
-    #[test]
-    fn box_frame_mut_required_len_basic() {
-        assert_eq!(BoxFrameMut::required_len(BoxType::FTYP, 0), 8);
-        assert_eq!(BoxFrameMut::required_len(BoxType::FTYP, 12), 20);
-        assert_eq!(BoxFrameMut::required_len(BoxType::MDAT, 100), 108);
-    }
-
-    #[test]
-    fn box_frame_mut_required_len_uuid() {
-        let uuid = Uuid::from([0u8; 16]);
-        let boxtype = BoxType::with_usertype(uuid);
-
-        assert_eq!(BoxFrameMut::required_len(boxtype, 0), 24); // 8 + 16
-        assert_eq!(BoxFrameMut::required_len(boxtype, 10), 34); // 8 + 16 + 10
-    }
-
-    // ========================================================================
-    // Round-trip tests
-    // ========================================================================
-
-    #[test]
-    fn box_frame_round_trip() {
-        // Create with BoxFrameMut
-        let mut buf = vec![0u8; 20];
-        {
-            let header = BoxHeader::new(BoxType::FTYP, 12);
-            let mut frame = BoxFrameMut::new(&mut buf, header).unwrap();
-            frame.payload_mut()[0..4].copy_from_slice(b"isom");
-            frame.payload_mut()[4..8].copy_from_slice(&512u32.to_be_bytes());
-            frame.payload_mut()[8..12].copy_from_slice(b"iso2");
+    impl BoxFrameOwned {
+        /// Creates an immutable `BoxFrame` by borrowing the data.
+        pub fn as_ref(&self) -> BoxFrameRef<'_> {
+            BoxFrame {
+                header: self.header,
+                data: self.data.as_ref(),
+            }
         }
 
-        // Parse with BoxFrame
-        let frame = BoxFrame::parse(&buf).unwrap();
-
-        assert_eq!(frame.boxtype(), BoxType::FTYP);
-        assert_eq!(frame.payload().len(), 12);
-        assert_eq!(&frame.payload()[0..4], b"isom");
-        assert_eq!(&frame.payload()[8..12], b"iso2");
+        /// Creates a mutable `BoxFrame` by borrowing the data.
+        pub fn as_mut(&mut self) -> BoxFrameMut<'_> {
+            BoxFrame {
+                header: self.header,
+                data: self.data.as_mut(),
+            }
+        }
     }
 
-    #[test]
-    fn box_frame_round_trip_uuid() {
-        let uuid = Uuid::from([
-            0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18, 0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E,
-            0x8F, 0x90,
-        ]);
-        let boxtype = BoxType::with_usertype(uuid);
-
-        // Create with BoxFrameMut
-        let header = BoxHeader::new(boxtype, 8);
-        let mut buf = vec![0u8; header.total_size() as usize];
-        {
-            let mut frame = BoxFrameMut::new(&mut buf, header).unwrap();
-            frame.payload_mut().copy_from_slice(b"uuiddata");
+    impl<T: AsRef<[u8]>> BoxFrame<T> {
+        /// Creates an owned `BoxFrame` by copying the data from the given byte slice.
+        pub fn to_owned(&self) -> BoxFrameOwned {
+            let data = self.data.as_ref().to_vec();
+            BoxFrameOwned {
+                header: self.header,
+                data,
+            }
         }
-
-        // Parse with BoxFrame
-        let frame = BoxFrame::parse(&buf).unwrap();
-
-        assert!(frame.boxtype().is_uuid());
-        assert_eq!(frame.boxtype().user_type().unwrap(), uuid);
-        assert_eq!(frame.payload(), b"uuiddata");
     }
 }

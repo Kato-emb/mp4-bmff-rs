@@ -25,6 +25,13 @@ pub enum ErrorKind {
         /// Number of bytes remaining.
         remaining: usize,
     },
+    /// The provided buffer is too large.
+    BufferTooLarge {
+        /// Number of bytes expected.
+        expected: u64,
+        /// Maximum allowed size.
+        max: u64,
+    },
     /// Mismatched box size.
     MismatchedBoxSize {
         /// Expected size.
@@ -97,6 +104,12 @@ impl fmt::Display for ErrorKind {
                 f,
                 "not enough bytes: expected {expected}, but only {remaining} remaining"
             ),
+            ErrorKind::BufferTooLarge { expected, max } => {
+                write!(
+                    f,
+                    "buffer too large: expected {expected}, maximum allowed is {max}"
+                )
+            }
             ErrorKind::MismatchedBoxSize { expected, found } => {
                 write!(f, "mismatched box size: expected {expected}, found {found}")
             }
