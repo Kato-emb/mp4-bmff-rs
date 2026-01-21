@@ -43,4 +43,41 @@ impl SizeOfInstance {
 
         None
     }
+
+    pub fn to_bytes(&self) -> ([u8; 4], usize) {
+        let mut size = self.0;
+        let mut bytes = [0u8; 4];
+        let mut num_bytes = 0;
+
+        loop {
+            let byte = (size & 0x7F) as u8;
+            size >>= 7;
+
+            if num_bytes > 0 {
+                bytes[3 - num_bytes] = byte | 0x80;
+            } else {
+                bytes[3 - num_bytes] = byte;
+            }
+
+            num_bytes += 1;
+
+            if size == 0 {
+                break;
+            }
+        }
+
+        (bytes, num_bytes)
+    }
+
+    pub fn size_in_bytes(&self) -> usize {
+        if self.0 < 0x80 {
+            1
+        } else if self.0 < 0x4000 {
+            2
+        } else if self.0 < 0x200000 {
+            3
+        } else {
+            4
+        }
+    }
 }

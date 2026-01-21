@@ -27,7 +27,7 @@ pub struct EsDescriptorView<'a> {
     /// Optional OCR ES ID
     pub ocr_es_id: Option<u16>,
     /// Decoder Config Descriptor
-    pub decoder_config_descriptor: DecoderConfigDescriptorView<'a>,
+    decoder_config_descriptor: DescriptorView<'a>,
     /// SL Config Descriptor
     pub sl_config_descriptor: DescriptorView<'a>,
     /// Other extensions
@@ -35,9 +35,37 @@ pub struct EsDescriptorView<'a> {
 }
 
 impl<'a> EsDescriptorView<'a> {
+    pub fn decoder_config_descriptor(&self) -> Result<DecoderConfigDescriptorView<'a>> {
+        DecoderConfigDescriptorView::parse(&self.decoder_config_descriptor.instance)
+    }
+
     /// Returns an iterator over the extension descriptors
     pub fn extensions(&self) -> DescrptorIter<'_> {
         DescrptorIter::new(self.extensions)
+    }
+
+    pub fn size(&self) -> usize {
+        let mut size = 2 // es_id
+            + 1; // flags
+
+        if self.stream_dependence_flag {
+            size += 2; // depends_on_es_id
+        }
+
+        if let Some(url) = &self.url_string {
+            size += 1; // url_length
+            size += url.len(); // url_string
+        }
+
+        if self.ocr_stream_flag {
+            size += 2; // ocr_es_id
+        }
+
+        size += 1 + self.decoder_config_descriptor.size(); // decoder_config_descriptor
+        size += 1 + self.sl_config_descriptor.size(); // sl_config_descriptor
+        size += self.extensions.len(); // extension
+
+        size
     }
 
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
@@ -79,7 +107,7 @@ impl<'a> EsDescriptorView<'a> {
         let view = DescriptorView::parse_in(cur)?;
 
         let decoder_config_descriptor = if view.tag == Tag::DECODER_CONFIG_DESCR_TAG {
-            DecoderConfigDescriptorView::parse(view.instance)?
+            view
         } else {
             return Err(Error::at(
                 ErrorKind::Other {
@@ -137,6 +165,8 @@ mod owned {
     use crate::descriptor::DecoderConfigDescriptor;
     use crate::descriptor::DescriptorOwned;
 
+    use crate::cursor::WriteCursor;
+
     /// Owned Elementary Stream Descriptor
     #[derive(Debug, Clone)]
     pub struct EsDescriptor {
@@ -157,7 +187,7 @@ mod owned {
         /// Optional OCR ES ID
         pub ocr_es_id: Option<u16>,
         /// Decoder Config Descriptor
-        pub decoder_config_descriptor: DecoderConfigDescriptor,
+        pub decoder_config_descriptor: DescriptorOwned,
         /// SL Config Descriptor
         pub sl_config_descriptor: DescriptorOwned,
         /// Other extensions
@@ -165,13 +195,42 @@ mod owned {
     }
 
     impl EsDescriptor {
+        pub fn decoder_config_descriptor(&self) -> Result<DecoderConfigDescriptor> {
+            DecoderConfigDescriptor::parse(&self.decoder_config_descriptor.instance)
+        }
+
+        pub fn size(&self) -> usize {
+            let mut size = 2 // es_id
+                + 1; // flags
+
+            if self.stream_dependence_flag {
+                size += 2; // depends_on_es_id
+            }
+
+            if let Some(url) = &self.url_string {
+                size += 1; // url_length
+                size += url.len(); // url_string
+            }
+
+            if self.ocr_stream_flag {
+                size += 2; // ocr_es_id
+            }
+
+            size += 1 + self.decoder_config_descriptor.size(); // decoder_config_descriptor
+            size += 1 + self.sl_config_descriptor.size(); // sl_config_descriptor
+
+            for ext in &self.extensions {
+                size += 1 + ext.size(); // extension
+            }
+
+            size
+        }
+
         /// Creates an owned EsDescriptor from a view
         pub fn from_view(view: &EsDescriptorView<'_>) -> Result<Self> {
             let url_string = view.url_string.map(|s| s.to_owned());
 
-            let decoder_config_descriptor =
-                DecoderConfigDescriptor::from_view(&view.decoder_config_descriptor)?;
-
+            let decoder_config_descriptor = view.decoder_config_descriptor.to_owned();
             let sl_config_descriptor = view.sl_config_descriptor.to_owned();
 
             let extensions = view
@@ -192,6 +251,70 @@ mod owned {
                 sl_config_descriptor,
                 extensions,
             })
+        }
+
+        pub fn parse(instance: &[u8]) -> Result<Self> {
+            let view = EsDescriptorView::parse(instance)?;
+            Self::from_view(&view)
+        }
+
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u16_be(self.es_id)?;
+
+            let mut flags_byte = 0u8;
+            if self.stream_dependence_flag {
+                flags_byte |= 0b10000000;
+            }
+            if self.url_flag {
+                flags_byte |= 0b01000000;
+            }
+            if self.ocr_stream_flag {
+                flags_byte |= 0b00100000;
+            }
+            flags_byte |= self.stream_priority & 0b00011111;
+
+            cur.write_u8(flags_byte)?;
+
+            if self.stream_dependence_flag {
+                if let Some(depends_on_es_id) = self.depends_on_es_id {
+                    cur.write_u16_be(depends_on_es_id)?;
+                } else {
+                    return Err(Error::new(ErrorKind::Other {
+                        description: "depends_on_es_id is required when stream_dependence_flag is set",
+                    }));
+                }
+            }
+
+            if self.url_flag {
+                if let Some(url) = &self.url_string {
+                    let url_bytes = url.as_bytes();
+                    cur.write_u8(url_bytes.len() as u8)?;
+                    cur.write_slice(url_bytes)?;
+                } else {
+                    return Err(Error::new(ErrorKind::Other {
+                        description: "url_string is required when url_flag is set",
+                    }));
+                }
+            }
+
+            if self.ocr_stream_flag {
+                if let Some(ocr_es_id) = self.ocr_es_id {
+                    cur.write_u16_be(ocr_es_id)?;
+                } else {
+                    return Err(Error::new(ErrorKind::Other {
+                        description: "ocr_es_id is required when ocr_stream_flag is set",
+                    }));
+                }
+            }
+
+            self.decoder_config_descriptor.to_view().write_in(cur)?;
+            self.sl_config_descriptor.to_view().write_in(cur)?;
+
+            for ext in &self.extensions {
+                ext.to_view().write_in(cur)?;
+            }
+
+            Ok(())
         }
     }
 }
