@@ -166,6 +166,7 @@ mod owned {
     use super::*;
     use crate::descriptor::DecoderConfigDescriptor;
     use crate::descriptor::DescriptorOwned;
+    use crate::descriptor::SizeOfInstance;
 
     use crate::cursor::WriteCursor;
 
@@ -202,8 +203,8 @@ mod owned {
             DecoderConfigDescriptor::parse(&self.decoder_config_descriptor.instance)
         }
 
-        /// Returns the size of the EsDescriptor when serialized
-        pub fn size(&self) -> usize {
+        /// Returns the size of the instance data (excluding tag and size bytes)
+        fn instance_size(&self) -> usize {
             let mut size = 2 // es_id
                 + 1; // flags
 
@@ -220,14 +221,22 @@ mod owned {
                 size += 2; // ocr_es_id
             }
 
-            size += 1 + self.decoder_config_descriptor.size(); // decoder_config_descriptor
-            size += 1 + self.sl_config_descriptor.size(); // sl_config_descriptor
+            size += self.decoder_config_descriptor.size(); // decoder_config_descriptor
+            size += self.sl_config_descriptor.size(); // sl_config_descriptor
 
             for ext in &self.extensions {
-                size += 1 + ext.size(); // extension
+                size += ext.size(); // extension
             }
 
             size
+        }
+
+        /// Returns the total size of the EsDescriptor when serialized (tag + size + instance)
+        pub fn size(&self) -> usize {
+            let instance_size = self.instance_size();
+            let size_of_instance =
+                SizeOfInstance::from_u32(instance_size as u32).expect("instance size overflow");
+            1 + size_of_instance.size_in_bytes() + instance_size
         }
 
         /// Creates an owned EsDescriptor from a view
@@ -264,6 +273,17 @@ mod owned {
         }
 
         pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            // Write tag
+            cur.write_u8(Tag::ES_DESCR_TAG.0)?;
+
+            // Write size
+            let instance_size = self.instance_size();
+            let size_of_instance =
+                SizeOfInstance::from_u32(instance_size as u32).expect("instance size overflow");
+            let (size_bytes, byte_count) = size_of_instance.to_bytes();
+            cur.write_slice(&size_bytes[..byte_count])?;
+
+            // Write instance data
             cur.write_u16_be(self.es_id)?;
 
             let mut flags_byte = 0u8;

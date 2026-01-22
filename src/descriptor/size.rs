@@ -45,25 +45,20 @@ impl SizeOfInstance {
     }
 
     /// Serializes SizeOfInstance to a byte array
+    /// Returns the byte array and the number of bytes used.
+    /// The bytes are stored at the beginning of the array (indices 0..num_bytes).
     pub fn to_bytes(&self) -> ([u8; 4], usize) {
-        let mut size = self.0;
+        let size = self.0;
+        let num_bytes = self.size_in_bytes();
         let mut bytes = [0u8; 4];
-        let mut num_bytes = 0;
 
-        loop {
-            let byte = (size & 0x7F) as u8;
-            size >>= 7;
-
-            if num_bytes > 0 {
-                bytes[3 - num_bytes] = byte | 0x80;
+        for i in 0..num_bytes {
+            let shift = 7 * (num_bytes - 1 - i);
+            let byte = ((size >> shift) & 0x7F) as u8;
+            if i < num_bytes - 1 {
+                bytes[i] = byte | 0x80; // continuation bit
             } else {
-                bytes[3 - num_bytes] = byte;
-            }
-
-            num_bytes += 1;
-
-            if size == 0 {
-                break;
+                bytes[i] = byte; // last byte, no continuation
             }
         }
 

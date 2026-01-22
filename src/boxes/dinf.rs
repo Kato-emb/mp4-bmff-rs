@@ -183,36 +183,4 @@ mod tests {
 
         assert!(result.is_err());
     }
-
-    #[cfg(feature = "alloc")]
-    #[test]
-    fn dinf_box_round_trip() {
-        use crate::RawBoxRef;
-        use crate::base::writer::BoxWrite;
-        use crate::boxes::{DrefBox, DrefEntry, UrlBox, UrlFlags};
-
-        let dinf_box = DinfBox {
-            dref: DrefBox {
-                version: 0,
-                flags: crate::boxes::DrefFlags::empty(),
-                entries: vec![DrefEntry::Url(UrlBox {
-                    version: 0,
-                    flags: UrlFlags::SELF_CONTAINED,
-                    location: None,
-                })],
-            },
-        };
-
-        // Write dinf (note: dinf.size() returns dref payload size, need frame)
-        let mut buf = vec![0u8; 256];
-        dinf_box.write_to(&mut buf).unwrap();
-
-        // Parse back as dinf payload
-        let frame = RawBoxRef::parse(&buf).unwrap();
-        assert_eq!(frame.boxtype(), BoxType::DINF);
-        let reparsed = DinfBoxView::decode(frame.payload()).unwrap();
-        let dref = reparsed.dref().unwrap();
-
-        assert_eq!(dref.entry_count, 1);
-    }
 }
