@@ -1,7 +1,7 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
+use crate::BoxIter;
 use crate::BoxType;
-use crate::RawBoxRef;
 use crate::cursor::ReadCursor;
 
 use crate::error::*;
@@ -13,8 +13,7 @@ use crate::boxes::EsdsBoxView;
 #[derive(Debug)]
 pub struct Mp4aBoxView<'a> {
     base: AudioSampleEntry,
-    /// The ESDS box contained in this Mp4a box.
-    pub esds: EsdsBoxView<'a>,
+    payload: &'a [u8],
 }
 
 impl<'a> Mp4aBoxView<'a> {
@@ -23,29 +22,26 @@ impl<'a> Mp4aBoxView<'a> {
         &self.base
     }
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
-        let base = AudioSampleEntry::parse_in(cur)?;
-        let frame = RawBoxRef::parse_in(cur)?;
-        if frame.boxtype() != BoxType::ESDS {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxType {
-                    reason: "Expected ESDS box in Mp4a box",
-                    got: frame.boxtype().type_field(),
-                },
-                BoxType::MP4A,
-            ));
-        }
-
-        let esds = EsdsBoxView::decode(frame.into_payload())?;
-        Ok(Mp4aBoxView { base, esds })
+    /// Returns an iterator over the child boxes of this Mp4a box.
+    pub fn children(&self) -> BoxIter<'a> {
+        BoxIter::new(self.payload)
     }
 
-    /// Parses an `Mp4aBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(payload);
-        let this = Mp4aBoxView::parse_in(&mut cur)?;
+    /// Returns the ESDS box contained in this Mp4a box.
+    pub fn esds(&self) -> Result<EsdsBoxView<'a>> {
+        for child in self.children() {
+            let child = child?;
+            if child.boxtype() == BoxType::ESDS {
+                return EsdsBoxView::decode(child.into_payload());
+            }
+        }
 
-        Ok(this)
+        Err(Error::in_box(
+            ErrorKind::BoxMissing {
+                required: BoxType::ESDS,
+            },
+            BoxType::MP4A,
+        ))
     }
 }
 
@@ -60,19 +56,9 @@ impl<'de> BoxDecode<'de> for Mp4aBoxView<'de> {
         let mut cur = ReadCursor::new(bytes);
 
         let base = AudioSampleEntry::parse_in(&mut cur)?;
-        let frame = RawBoxRef::parse_in(&mut cur)?;
-        if frame.boxtype() != BoxType::ESDS {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxType {
-                    reason: "Expected ESDS box in Mp4a box",
-                    got: frame.boxtype().type_field(),
-                },
-                BoxType::MP4A,
-            ));
-        }
+        let payload = cur.remaining_slice();
 
-        let esds = EsdsBoxView::decode(frame.into_payload())?;
-        Ok(Mp4aBoxView { base, esds })
+        Ok(Mp4aBoxView { base, payload })
     }
 }
 
@@ -84,7 +70,7 @@ mod owned {
     use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
-    use crate::base::writer::write_box_in;
+    use crate::codec::write_box_in;
 
     use super::*;
     use crate::boxes::EsdsBox;
@@ -102,9 +88,11 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &Mp4aBoxView<'_>) -> Result<Self> {
+            let esds = view.esds()?;
+
             Ok(Mp4aBox {
                 base: view.base,
-                esds: EsdsBox::try_from(&view.esds)?,
+                esds: EsdsBox::try_from(&esds)?,
             })
         }
     }

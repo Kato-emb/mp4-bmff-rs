@@ -82,7 +82,7 @@ pub use owned::MvexBox;
 mod owned {
     use crate::lib::Vec;
 
-    use crate::base::writer::write_box_in;
+    use crate::codec::write_box_in;
 
     use super::*;
     use crate::BoxEncode;

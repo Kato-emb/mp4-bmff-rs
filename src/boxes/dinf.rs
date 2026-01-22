@@ -69,7 +69,7 @@ pub use owned::DinfBox;
 mod owned {
     use super::*;
     use crate::BoxEncode;
-    use crate::base::writer::write_box_in;
+    use crate::codec::write_box_in;
 
     use crate::boxes::DrefBox;
 

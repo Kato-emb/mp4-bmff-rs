@@ -27,7 +27,17 @@ impl<'a> Iterator for BoxIter<'a> {
             return None;
         }
 
-        Some(RawBoxRef::parse_in(&mut self.cur))
+        match RawBoxRef::parse(self.cur.remaining_slice()) {
+            Ok(r) => {
+                let len = r.len();
+                if let Err(e) = self.cur.advance(len) {
+                    return Some(Err(e.into()));
+                }
+
+                Some(Ok(r))
+            }
+            Err(e) => Some(Err(e)),
+        }
     }
 }
 

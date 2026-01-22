@@ -1,8 +1,8 @@
 use crate::cursor::ReadCursor;
 
-use crate::BoxCodec;
-use crate::BoxDecode;
-use crate::BoxType;
+use crate::base::header::BoxType;
+use crate::codec::BoxCodec;
+use crate::codec::BoxDecode;
 use crate::error::*;
 
 use super::FullBoxFlags;

@@ -2,7 +2,6 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::RawBoxRef;
 use crate::error::*;
 
 use crate::cursor::ReadCursor;
@@ -73,17 +72,20 @@ impl<'de> BoxDecode<'de> for DrefBoxView<'de> {
         let entry_count = cur.read_u32_be()?;
 
         let entries = cur.remaining_slice();
-        for _ in 0..entry_count {
-            RawBoxRef::parse_in(&mut cur)?;
+
+        let mut count = 0;
+        for result in BoxIter::new(entries).take(entry_count as usize) {
+            result?;
+            count += 1;
         }
 
-        if !cur.is_empty() {
-            return Err(Error::at(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after parsing all entries",
-                    got: cur.remaining() as u64,
+        if count < entry_count {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxField {
+                    field: "entry_count",
+                    reason: "does not match actual number of entries",
                 },
-                cur.position() as u64,
+                BoxType::DREF,
             ));
         }
 
@@ -232,7 +234,7 @@ mod owned {
     use super::*;
     use crate::BoxEncode;
 
-    use crate::base::writer::write_box_in;
+    use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
 
     /// An owned entry in the Data Reference Box (`dref`).

@@ -1,10 +1,12 @@
+use crate::BoxType;
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxIter;
-use crate::BoxType;
 use crate::error::*;
 
 use crate::boxes::VisualSampleEntry;
+
 use crate::cursor::ReadCursor;
 
 /// AVC Configuration Box (`avcC`)
@@ -205,9 +207,10 @@ mod owned {
     use crate::lib::Vec;
 
     use super::*;
-    use crate::BoxEncode;
 
-    use crate::base::writer::write_box_in;
+    use crate::codec::BoxEncode;
+    use crate::codec::write_box_in;
+
     use crate::cursor::WriteCursor;
 
     /// An owned AVC Configuration Box (`avcC`)
@@ -525,7 +528,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn avc1_box_round_trip() {
-        use crate::BoxEncode;
+        use crate::codec::BoxEncode;
 
         let sps = b"\x67\x64\x00\x1f";
         let pps = b"\x68\xeb\xe3\xcb";

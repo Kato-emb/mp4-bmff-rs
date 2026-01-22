@@ -15,11 +15,12 @@ pub use boxtype::{
     UserType,
 };
 
-use crate::cursor::ReadCursor;
-use crate::cursor::WriteCursor;
 use crate::types::FourCC;
 
 use crate::error::*;
+
+use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
 /// Represents the header of a BMFF box, including its size and type.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -94,7 +95,10 @@ impl BoxHeader {
         self.size.value().unwrap_or(0)
     }
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
+    /// Parses a box header from the given byte slice.
+    pub fn parse(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let size = cur.read_u32_be()?;
         let fourcc = FourCC::from(cur.read_array::<4>()?);
 
@@ -117,13 +121,10 @@ impl BoxHeader {
         Ok(BoxHeader { size, type_ })
     }
 
-    /// Parses a box header from the given byte slice.
-    pub fn parse(bytes: &[u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(bytes);
-        Self::parse_in(&mut cur)
-    }
+    /// Writes the box header into the given byte slice.
+    pub fn write(&self, bytes: &mut [u8]) -> Result<()> {
+        let mut cur = WriteCursor::new(bytes);
 
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         if self.size.is_extended() {
             // Write extended size
             cur.write_u32_be(BoxSize::MARKER_EXTENDED_SIZE)?; // Indicate extended size
@@ -148,11 +149,5 @@ impl BoxHeader {
         }
 
         Ok(())
-    }
-
-    /// Writes the box header into the given byte slice.
-    pub fn write(&self, buf: &mut [u8]) -> Result<()> {
-        let mut cur = WriteCursor::new(buf);
-        self.write_in(&mut cur)
     }
 }

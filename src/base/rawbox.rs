@@ -5,9 +5,6 @@ use crate::BoxSize;
 use crate::BoxType;
 use crate::error::*;
 
-use crate::cursor::ReadCursor;
-use crate::cursor::WriteCursor;
-
 #[cfg(feature = "alloc")]
 use crate::lib::Vec;
 
@@ -60,25 +57,38 @@ impl<T: AsRef<[u8]>> RawBox<T> {
     }
 
     /// Writes the `RawBox` into the given byte slice.
-    pub fn write(&self, bytes: &mut [u8]) -> Result<usize> {
-        let mut cur = WriteCursor::new(bytes);
+    pub fn write(&self, bytes: &mut [u8]) -> Result<()> {
+        let header_len = self.header.header_len();
+        let payload = self.payload.as_ref();
+        let total_size = header_len + payload.len();
 
-        self.header.write_in(&mut cur)?;
-        cur.write_slice(self.payload.as_ref())?;
+        if bytes.len() < total_size {
+            return Err(Error::in_box(
+                ErrorKind::NotEnoughBytes {
+                    expected: total_size,
+                    remaining: bytes.len(),
+                },
+                self.header.boxtype(),
+            ));
+        }
 
-        Ok(cur.position())
+        // write header
+        self.header.write(&mut bytes[..header_len])?;
+
+        // write payload
+        bytes[header_len..total_size].copy_from_slice(payload);
+
+        Ok(())
     }
 
-    /// Returns the total length of the box.
+    /// Returns the total length of the box (header + payload).
     #[inline]
     pub fn len(&self) -> usize {
-        match self.boxsize() {
-            size if size.is_eof() => self.payload.as_ref().len(),
-            size => size.value().expect("box size is valid") as usize,
-        }
+        let payload_len = self.payload.as_ref().len();
+        self.header.header_len() + payload_len
     }
 
-    /// Returns true if the box has no payload.
+    /// Returns true if the box is empty (has zero length).
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -98,12 +108,6 @@ impl<T: AsMut<[u8]>> RawBox<T> {
 }
 
 impl<'a> RawBox<&'a [u8]> {
-    /// Parses a `RawBoxRef` from the given byte slice.
-    pub fn parse(bytes: &'a [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(bytes);
-        Self::parse_in(&mut cur)
-    }
-
     /// Converts the `RawBoxRef` into an owned `RawBox` with a `Vec<u8>` payload.
     #[cfg(feature = "alloc")]
     pub fn to_owned(&self) -> RawBox<Vec<u8>> {
@@ -113,54 +117,55 @@ impl<'a> RawBox<&'a [u8]> {
         }
     }
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
-        let start_pos = cur.position();
-        let header = BoxHeader::parse_in(cur)?;
-        let header_size = cur.position() - start_pos;
+    /// Parses a `RawBoxRef` from the given byte slice.
+    pub fn parse(bytes: &'a [u8]) -> Result<Self> {
+        let header = BoxHeader::parse(bytes)?;
+        let header_len = header.header_len();
 
         let payload_size = match header.boxsize() {
-            size if size.is_eof() => cur.remaining(),
+            size if size.is_eof() => bytes.len().saturating_sub(header_len),
             size => {
-                let value = size.value().expect("box size is valid");
+                let box_size = size.value().expect("box size is valid");
 
-                if value > usize::MAX as u64 {
+                if box_size > usize::MAX as u64 {
                     return Err(Error::in_box(
                         ErrorKind::InvalidBoxSize {
                             reason: "Box size exceeds usize max",
-                            got: value,
+                            got: box_size,
                         },
                         header.boxtype(),
                     ));
                 }
 
-                let box_size = value as usize;
-                if box_size < header_size {
+                let total_size = box_size as usize;
+
+                if total_size < header_len {
                     return Err(Error::in_box(
                         ErrorKind::InvalidBoxSize {
                             reason: "Box size is smaller than header size",
-                            got: value,
+                            got: box_size,
                         },
                         header.boxtype(),
                     ));
                 }
 
-                box_size - header_size
+                total_size - header_len
             }
         };
 
-        if cur.remaining() < payload_size {
+        let total_needed = header_len + payload_size;
+        if bytes.len() < total_needed {
             return Err(Error::in_box(
                 ErrorKind::NotEnoughBytes {
-                    expected: payload_size + header_size,
-                    remaining: cur.remaining() + header_size,
+                    expected: total_needed,
+                    remaining: bytes.len(),
                 },
                 header.boxtype(),
             ));
         }
 
-        let payload = cur.take(payload_size)?;
-
-        Ok(RawBoxRef { header, payload })
+        let payload = &bytes[header_len..total_needed];
+        Ok(RawBox { header, payload })
     }
 }
 

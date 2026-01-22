@@ -209,7 +209,7 @@ pub use owned::MinfBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::base::writer::write_box_in;
+    use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
 
     use super::*;

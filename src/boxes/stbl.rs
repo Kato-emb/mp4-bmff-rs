@@ -230,7 +230,7 @@ pub use owned::StblBox;
 mod owned {
     use crate::cursor::WriteCursor;
 
-    use crate::base::writer::write_box_in;
+    use crate::codec::write_box_in;
 
     use super::*;
     use crate::BoxCodec;

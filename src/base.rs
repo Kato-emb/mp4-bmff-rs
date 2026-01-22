@@ -1,11 +1,6 @@
 //! ISOBMFF base structures:
 //! - `header`: Box headers (size and type).
-//! - `frame`: Box frames (header + payload).
-//! - `iter`: Box iterator over a byte slice.
-//! - `codec`: Traits for encoding/decoding boxes.
+//! - `rawbox`: Raw box representation (header + payload).
 
-pub mod codec;
 pub mod header;
-pub mod iter;
 pub mod rawbox;
-pub mod writer;

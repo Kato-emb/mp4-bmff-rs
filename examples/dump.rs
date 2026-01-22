@@ -74,7 +74,7 @@ fn dump_boxes(data: &[u8], depth: usize, base_offset: u64) -> mp4_bmff::Result<(
 fn print_box(view: &RawBoxRef<'_>, depth: usize, offset: u64, size: u64) -> mp4_bmff::Result<()> {
     let indent = "  ".repeat(depth);
     let payload_len = view.payload().len() as u64;
-    let header_len = view.header_len() as u64;
+    let header_len = view.header().header_len() as u64;
     debug_assert_eq!(payload_len + header_len, size);
 
     println!(
@@ -97,10 +97,12 @@ fn print_box(view: &RawBoxRef<'_>, depth: usize, offset: u64, size: u64) -> mp4_
 
 #[cfg(feature = "std")]
 fn print_box_details(view: &RawBoxRef<'_>, depth: usize) -> mp4_bmff::Result<()> {
+    use mp4_bmff::BoxDecode;
+
     let indent = "  ".repeat(depth + 1);
 
     match view.boxtype() {
-        BoxType::FTYP => match FtypBoxView::parse(view.payload()) {
+        BoxType::FTYP => match FtypBoxView::decode(view.payload()) {
             Ok(ftyp) => {
                 println!("{indent}major_brand: {}", ftyp.major_brand);
                 println!("{indent}minor_version: {}", ftyp.minor_version);
@@ -110,7 +112,7 @@ fn print_box_details(view: &RawBoxRef<'_>, depth: usize) -> mp4_bmff::Result<()>
             }
             Err(err) => print_parse_error(&indent, "ftyp", &err),
         },
-        BoxType::STYP => match StypBoxView::parse(view.payload()) {
+        BoxType::STYP => match StypBoxView::decode(view.payload()) {
             Ok(styp) => {
                 println!("{indent}major_brand: {}", styp.major_brand);
                 println!("{indent}minor_version: {}", styp.minor_version);
@@ -120,7 +122,7 @@ fn print_box_details(view: &RawBoxRef<'_>, depth: usize) -> mp4_bmff::Result<()>
             }
             Err(err) => print_parse_error(&indent, "styp", &err),
         },
-        BoxType::MVHD => match MvhdBox::parse(view.payload()) {
+        BoxType::MVHD => match MvhdBox::decode(view.payload()) {
             Ok(mvhd) => {
                 println!("{indent}timescale: {}", mvhd.timescale);
                 println!(
@@ -139,7 +141,7 @@ fn print_box_details(view: &RawBoxRef<'_>, depth: usize) -> mp4_bmff::Result<()>
             }
             Err(err) => print_parse_error(&indent, "mvhd", &err),
         },
-        BoxType::TKHD => match TkhdBox::parse(view.payload()) {
+        BoxType::TKHD => match TkhdBox::decode(view.payload()) {
             Ok(tkhd) => {
                 println!("{indent}track_id: {}", tkhd.track_id);
                 println!("{indent}duration: {}", tkhd.duration);
@@ -151,7 +153,7 @@ fn print_box_details(view: &RawBoxRef<'_>, depth: usize) -> mp4_bmff::Result<()>
             }
             Err(err) => print_parse_error(&indent, "tkhd", &err),
         },
-        BoxType::MDHD => match MdhdBox::parse(view.payload()) {
+        BoxType::MDHD => match MdhdBox::decode(view.payload()) {
             Ok(mdhd) => {
                 println!("{indent}timescale: {}", mdhd.timescale);
                 println!(
@@ -170,14 +172,14 @@ fn print_box_details(view: &RawBoxRef<'_>, depth: usize) -> mp4_bmff::Result<()>
             }
             Err(err) => print_parse_error(&indent, "mdhd", &err),
         },
-        BoxType::HDLR => match HdlrBoxView::parse(view.payload()) {
+        BoxType::HDLR => match HdlrBoxView::decode(view.payload()) {
             Ok(hdlr) => {
                 println!("{indent}handler_type: {}", hdlr.handler_type);
                 println!("{indent}name: {}", hdlr.name);
             }
             Err(err) => print_parse_error(&indent, "hdlr", &err),
         },
-        BoxType::FREE => match FreeBoxView::parse(view.payload()) {
+        BoxType::FREE => match FreeBoxView::decode(view.payload()) {
             Ok(free) => println!("{indent}free_space: {} bytes", free.data.len()),
             Err(err) => print_parse_error(&indent, "free", &err),
         },

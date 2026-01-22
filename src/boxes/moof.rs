@@ -80,7 +80,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use super::*;
-    use crate::base::writer::write_box_in;
+    use crate::codec::write_box_in;
 
     use crate::BoxCodec;
     use crate::BoxDecode;

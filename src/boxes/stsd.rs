@@ -48,43 +48,6 @@ impl<'a> StsdBoxView<'a> {
             }
         })
     }
-
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> crate::error::Result<Self> {
-        let version = cur.read_u8()?;
-        let flags = StsdFlags::from_bytes(cur.read_array()?);
-
-        let entry_count = cur.read_u32_be()?;
-
-        let entries = cur.remaining_slice();
-        for _ in 0..entry_count {
-            RawBoxRef::parse_in(cur)?;
-        }
-
-        if !cur.is_empty() {
-            return Err(Error::at(
-                ErrorKind::InvalidBoxSize {
-                    reason: "stsd entries size does not match entry_count",
-                    got: cur.remaining() as u64,
-                },
-                cur.position() as u64,
-            ));
-        }
-
-        Ok(StsdBoxView {
-            version,
-            flags,
-            entry_count,
-            entries,
-        })
-    }
-
-    /// Parses an `StsdBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(payload);
-        let this = StsdBoxView::parse_in(&mut cur)?;
-
-        Ok(this)
-    }
 }
 
 /// Specification type for Sample Description Box ('stsd')
@@ -109,8 +72,21 @@ impl<'de> BoxDecode<'de> for StsdBoxView<'de> {
         let entry_count = cur.read_u32_be()?;
 
         let entries = cur.remaining_slice();
-        for _ in 0..entry_count {
-            RawBoxRef::parse_in(&mut cur)?;
+
+        let mut count = 0;
+        for result in BoxIter::new(entries).take(entry_count as usize) {
+            result?;
+            count += 1;
+        }
+
+        if count < entry_count {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxField {
+                    field: "entry_count",
+                    reason: "does not match actual number of entries",
+                },
+                BoxType::STSD,
+            ));
         }
 
         Ok(StsdBoxView {
@@ -133,7 +109,7 @@ mod owned {
     use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
-    use crate::base::writer::write_box_in;
+    use crate::codec::write_box_in;
 
     use super::*;
     use crate::boxes::Avc1Box;

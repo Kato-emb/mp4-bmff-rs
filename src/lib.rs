@@ -42,7 +42,9 @@ pub mod types;
 // Layer 1 - ISO BMFF base structures (no_std)
 // =============================================================================
 pub mod base;
+pub mod codec;
 pub mod error;
+pub mod iter;
 
 // Re-export base structures for convenience
 pub use base::header::{
@@ -50,10 +52,10 @@ pub use base::header::{
     BoxSize,
     BoxType,
 };
-pub use base::iter::BoxIter;
 pub use base::rawbox::RawBoxRef;
+pub use iter::BoxIter;
 
-pub use base::codec::{
+pub use codec::{
     BoxCodec, //
     BoxDecode,
     BoxEncode,
