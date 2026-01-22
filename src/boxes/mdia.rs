@@ -1,8 +1,7 @@
-use crate::cursor::ReadCursor;
-
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::RawBoxRef;
 use crate::error::*;
 
 use crate::boxes::HdlrBoxView;
@@ -29,7 +28,7 @@ impl<'a> MdiaBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::MDHD {
-                let mdhd = MdhdBox::parse(child.payload())?;
+                let mdhd = MdhdBox::decode(child.payload())?;
                 return Ok(mdhd);
             }
         }
@@ -47,7 +46,7 @@ impl<'a> MdiaBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::HDLR {
-                let hdlr = HdlrBoxView::parse(child.into_payload())?;
+                let hdlr = HdlrBoxView::decode(child.into_payload())?;
                 return Ok(hdlr);
             }
         }
@@ -65,7 +64,7 @@ impl<'a> MdiaBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::MINF {
-                let minf = MinfBoxView::parse(child.into_payload())?;
+                let minf = MinfBoxView::decode(child.into_payload())?;
                 return Ok(minf);
             }
         }
@@ -77,31 +76,25 @@ impl<'a> MdiaBoxView<'a> {
             BoxType::MDIA,
         ))
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<MdiaBoxView<'a>> {
-        let payload = cur.take(cur.remaining())?;
-        Ok(MdiaBoxView { payload })
-    }
-
-    /// Parses a `MdiaBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<MdiaBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        MdiaBoxView::parse_in(&mut cursor)
+impl BoxCodec for MdiaBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::MDIA
     }
 }
 
-impl<'a> TryFrom<RawBoxRef<'a>> for MdiaBoxView<'a> {
+impl<'de> BoxDecode<'de> for MdiaBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        Ok(MdiaBoxView { payload: bytes })
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for MdiaBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::MDIA {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::MDIA,
-                found: value.boxtype(),
-            }));
-        }
-
-        MdiaBoxView::parse(value.payload())
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        MdiaBoxView::decode(value)
     }
 }
 
@@ -113,9 +106,11 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use super::*;
-    use crate::BoxFrameMut;
-    use crate::base::frame::write_box_in;
+    use crate::base::writer::write_box_in;
 
+    use crate::BoxCodec;
+    use crate::BoxDecode;
+    use crate::BoxEncode;
     use crate::boxes::HdlrBox;
     use crate::boxes::MinfBox;
 
@@ -129,9 +124,10 @@ mod owned {
         pub minf: MinfBox,
     }
 
-    impl MdiaBox {
-        /// Constructs a `MdiaBox` from a `MdiaBoxView`.
-        pub fn from_view(view: &MdiaBoxView<'_>) -> Result<MdiaBox> {
+    impl TryFrom<&MdiaBoxView<'_>> for MdiaBox {
+        type Error = Error;
+
+        fn try_from(view: &MdiaBoxView<'_>) -> Result<Self> {
             let mut mdhd = None;
             let mut hdlr = None;
             let mut minf = None;
@@ -141,7 +137,7 @@ mod owned {
 
                 match child.boxtype() {
                     BoxType::MDHD if mdhd.is_none() => {
-                        mdhd = Some(MdhdBox::parse(child.payload())?);
+                        mdhd = Some(MdhdBox::decode(child.payload())?);
                     }
                     BoxType::MDHD => {
                         return Err(Error::in_box(
@@ -153,8 +149,8 @@ mod owned {
                         ));
                     }
                     BoxType::HDLR if hdlr.is_none() => {
-                        let hdlr_view = HdlrBoxView::parse(child.payload())?;
-                        hdlr = Some(HdlrBox::from_view(&hdlr_view));
+                        let hdlr_view = HdlrBoxView::decode(child.payload())?;
+                        hdlr = Some(HdlrBox::from(&hdlr_view));
                     }
                     BoxType::HDLR => {
                         return Err(Error::in_box(
@@ -166,8 +162,8 @@ mod owned {
                         ));
                     }
                     BoxType::MINF if minf.is_none() => {
-                        let minf_view = MinfBoxView::parse(child.payload())?;
-                        minf = Some(MinfBox::from_view(&minf_view)?);
+                        let minf_view = MinfBoxView::decode(child.payload())?;
+                        minf = Some(MinfBox::try_from(&minf_view)?);
                     }
                     BoxType::MINF => {
                         return Err(Error::in_box(
@@ -203,68 +199,30 @@ mod owned {
                 ))?,
             })
         }
+    }
 
-        /// Parses a `MdiaBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<MdiaBox> {
-            let view = MdiaBoxView::parse(payload)?;
-            MdiaBox::from_view(&view)
-        }
-
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            let mut size = 0;
-            size += BoxFrameMut::required_len(BoxType::MDHD, self.mdhd.size());
-            size += BoxFrameMut::required_len(BoxType::HDLR, self.hdlr.size());
-            size += BoxFrameMut::required_len(BoxType::MINF, self.minf.size());
-            size
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            write_box_in(cur, BoxType::MDHD, self.mdhd.size(), |p| self.mdhd.write(p))?;
-            write_box_in(cur, BoxType::HDLR, self.hdlr.size(), |p| self.hdlr.write(p))?;
-            write_box_in(cur, BoxType::MINF, self.minf.size(), |p| self.minf.write(p))?;
-
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::MDIA,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `MdiaBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
+    impl BoxCodec for MdiaBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::MDIA
         }
     }
 
-    impl TryFrom<&MdiaBoxView<'_>> for MdiaBox {
-        type Error = Error;
-
-        fn try_from(value: &MdiaBoxView<'_>) -> Result<Self> {
-            MdiaBox::from_view(value)
+    impl BoxDecode<'_> for MdiaBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = MdiaBoxView::decode(bytes)?;
+            MdiaBox::try_from(&view)
         }
     }
 
-    impl TryFrom<RawBoxRef<'_>> for MdiaBox {
-        type Error = Error;
+    impl BoxEncode for MdiaBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
 
-        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-            if value.boxtype() != BoxType::MDIA {
-                return Err(Error::new(ErrorKind::MismatchedBoxType {
-                    expected: BoxType::MDIA,
-                    found: value.boxtype(),
-                }));
-            }
+            write_box_in(&mut cur, &self.mdhd)?;
+            write_box_in(&mut cur, &self.hdlr)?;
+            write_box_in(&mut cur, &self.minf)?;
 
-            let view = MdiaBoxView::parse(value.payload())?;
-            MdiaBox::from_view(&view)
+            Ok(cur.position())
         }
     }
 }
@@ -420,7 +378,7 @@ mod tests {
     #[test]
     fn parse_mdia_view() {
         let payload = make_mdia_payload();
-        let mdia = MdiaBoxView::parse(&payload).unwrap();
+        let mdia = MdiaBoxView::decode(&payload).unwrap();
 
         let mdhd = mdia.mdhd().unwrap();
         assert_eq!(mdhd.timescale, 1000);
@@ -443,7 +401,7 @@ mod tests {
         let minf_payload = make_minf_payload();
         payload.extend_from_slice(&make_box(b"minf", &minf_payload));
 
-        let mdia = MdiaBoxView::parse(&payload).unwrap();
+        let mdia = MdiaBoxView::decode(&payload).unwrap();
         let result = mdia.mdhd();
         assert!(result.is_err());
     }
@@ -460,7 +418,7 @@ mod tests {
         let minf_payload = make_minf_payload();
         payload.extend_from_slice(&make_box(b"minf", &minf_payload));
 
-        let mdia = MdiaBoxView::parse(&payload).unwrap();
+        let mdia = MdiaBoxView::decode(&payload).unwrap();
         let result = mdia.hdlr();
         assert!(result.is_err());
     }
@@ -477,7 +435,7 @@ mod tests {
         let hdlr_payload = make_hdlr_payload(b"vide");
         payload.extend_from_slice(&make_box(b"hdlr", &hdlr_payload));
 
-        let mdia = MdiaBoxView::parse(&payload).unwrap();
+        let mdia = MdiaBoxView::decode(&payload).unwrap();
         let result = mdia.minf();
         assert!(result.is_err());
     }
@@ -486,7 +444,7 @@ mod tests {
     #[test]
     fn parse_mdia_owned() {
         let payload = make_mdia_payload();
-        let mdia = MdiaBox::parse(&payload).unwrap();
+        let mdia = MdiaBox::decode(&payload).unwrap();
 
         assert_eq!(mdia.mdhd.timescale, 1000);
         assert_eq!(mdia.hdlr.handler_type, crate::types::FourCC::new(*b"vide"));

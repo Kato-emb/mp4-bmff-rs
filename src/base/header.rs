@@ -59,7 +59,7 @@ impl BoxHeader {
             panic!("Box size overflow when creating BoxHeader");
         };
 
-        let size = BoxSize::new(total_len);
+        let size = BoxSize::new(total_len as u64);
         Self { size, type_ }
     }
 

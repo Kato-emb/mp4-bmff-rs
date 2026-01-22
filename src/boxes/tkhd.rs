@@ -3,6 +3,9 @@ use core::mem;
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 use crate::types::*;
@@ -62,8 +65,18 @@ impl TkhdBox {
     const RESERVED_1_SIZE: usize = mem::size_of::<u32>();
     const RESERVED_2_SIZE: usize = mem::size_of::<u32>() * 2;
     const RESERVED_3_SIZE: usize = mem::size_of::<u16>();
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TkhdBox> {
+impl BoxCodec for TkhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::TKHD
+    }
+}
+
+impl BoxDecode<'_> for TkhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = TkhdFlags::from_bytes(cur.read_array()?);
 
@@ -124,17 +137,6 @@ impl TkhdBox {
         let height = cur.read_u32_be()?;
         let height = U16F16::from_raw(height);
 
-        if !cur.is_empty() {
-            return Err(Error::at_in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data remaining after parsing",
-                    got: cur.remaining() as u64,
-                },
-                cur.position() as u64,
-                BoxType::TKHD,
-            ));
-        }
-
         Ok(TkhdBox {
             version,
             flags,
@@ -150,31 +152,20 @@ impl TkhdBox {
             height,
         })
     }
+}
 
-    /// Parses a `TkhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<TkhdBox> {
-        let mut cur = ReadCursor::new(payload);
-        let this = TkhdBox::parse_in(&mut cur)?;
+impl<'a> TryFrom<&'a [u8]> for TkhdBox {
+    type Error = Error;
 
-        Ok(this)
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        TkhdBox::decode(value)
     }
+}
 
-    /// Returns the size of the `TkhdBox` payload in bytes.
-    pub fn size(&self) -> usize {
-        let base = 4; // version + flags
-        let version_dependent = match self.version {
-            1 => 8 + 8 + 4 + 4 + 8, // u64 creation_time + u64 modification_time + u32 track_id + reserved + u64 duration
-            _ => 4 + 4 + 4 + 4 + 4, // u32 creation_time + u32 modification_time + u32 track_id + reserved + u32 duration
-        };
-        let common = Self::RESERVED_2_SIZE // reserved[2]
-            + 2 + 2 + 2 // layer + alternate_group + volume
-            + Self::RESERVED_3_SIZE // reserved
-            + 9 * 4 // matrix
-            + 4 + 4; // width + height
-        base + version_dependent + common
-    }
+impl BoxEncode for TkhdBox {
+    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         cur.write_u8(self.version)?;
         cur.write_array(&self.flags.to_bytes())?;
 
@@ -213,23 +204,7 @@ impl TkhdBox {
         cur.write_u32_be(self.width.to_raw())?;
         cur.write_u32_be(self.height.to_raw())?;
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Buffer larger than expected",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::TKHD,
-            ));
-        }
-
-        Ok(())
-    }
-
-    /// Writes this `TkhdBox` into the given payload.
-    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-        let mut cursor = WriteCursor::new(payload);
-        self.write_in(&mut cursor)
+        Ok(cur.position())
     }
 }
 
@@ -291,10 +266,10 @@ mod tests {
             height: U16F16::from_raw(0x0003_0000),
         };
 
-        let mut buf = vec![0u8; tkhd.size()];
-        tkhd.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        let written = tkhd.encode(&mut buf).unwrap();
 
-        let parsed = TkhdBox::parse(&buf).unwrap();
+        let parsed = TkhdBox::decode(&buf[..written]).unwrap();
         assert_eq!(parsed.version, tkhd.version);
         assert_eq!(parsed.flags.get(), tkhd.flags.get());
         assert_eq!(
@@ -342,10 +317,10 @@ mod tests {
             height: U16F16::from_raw(0x000B_0000),
         };
 
-        let mut buf = vec![0u8; tkhd.size()];
-        tkhd.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        let written = tkhd.encode(&mut buf).unwrap();
 
-        let parsed = TkhdBox::parse(&buf).unwrap();
+        let parsed = TkhdBox::decode(&buf[..written]).unwrap();
         assert_eq!(parsed.version, tkhd.version);
         assert_eq!(parsed.flags.get(), tkhd.flags.get());
         assert_eq!(

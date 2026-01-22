@@ -1,7 +1,9 @@
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -22,8 +24,23 @@ pub struct MehdBox {
     pub fragment_duration: u64,
 }
 
-impl MehdBox {
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MehdBox> {
+/// Specification for the Movie Extends Header Box (`mehd`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MehdSpec;
+
+/// Flags for the Movie Extends Header Box (`mehd`).
+pub type MehdFlags = FullBoxFlags<MehdSpec>;
+
+impl BoxCodec for MehdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::MEHD
+    }
+}
+
+impl BoxDecode<'_> for MehdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = MehdFlags::from_bytes(cur.read_array()?);
 
@@ -47,35 +64,20 @@ impl MehdBox {
             fragment_duration,
         })
     }
+}
 
-    /// Parses a `MehdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<MehdBox> {
-        let mut cur = ReadCursor::new(payload);
-        let this = MehdBox::parse_in(&mut cur)?;
+impl TryFrom<&[u8]> for MehdBox {
+    type Error = Error;
 
-        if cur.remaining() > 0 {
-            return Err(Error::at_in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after mehd box",
-                    got: cur.remaining() as u64,
-                },
-                cur.position() as u64,
-                BoxType::MEHD,
-            ));
-        }
-
-        Ok(this)
+    fn try_from(value: &[u8]) -> Result<Self> {
+        MehdBox::decode(value)
     }
+}
 
-    /// Returns the size of the payload in bytes.
-    pub fn size(&self) -> usize {
-        4 + match self.version {
-            0 => 4, // fragment_duration as u32
-            _ => 8, // fragment_duration as u64
-        }
-    }
+impl BoxEncode for MehdBox {
+    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         cur.write_u8(self.version)?;
         cur.write_array(&self.flags.to_bytes())?;
 
@@ -84,55 +86,9 @@ impl MehdBox {
             _ => cur.write_u64_be(self.fragment_duration)?,
         }
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Buffer larger than expected",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::MEHD,
-            ));
-        }
-
-        Ok(())
-    }
-
-    /// Writes this `MehdBox` into the given payload.
-    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-        let mut cur = WriteCursor::new(payload);
-        self.write_in(&mut cur)
+        Ok(cur.position())
     }
 }
-
-impl TryFrom<&[u8]> for MehdBox {
-    type Error = Error;
-
-    fn try_from(value: &[u8]) -> Result<Self> {
-        MehdBox::parse(value)
-    }
-}
-
-impl TryFrom<RawBoxRef<'_>> for MehdBox {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-        if value.boxtype() != BoxType::MEHD {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::MEHD,
-                found: value.boxtype(),
-            }));
-        }
-
-        MehdBox::parse(value.payload())
-    }
-}
-
-/// Specification for the Movie Extends Header Box (`mehd`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MehdSpec;
-
-/// Flags for the Movie Extends Header Box (`mehd`).
-pub type MehdFlags = FullBoxFlags<MehdSpec>;
 
 #[cfg(test)]
 mod tests {
@@ -146,10 +102,10 @@ mod tests {
             fragment_duration: 12345,
         };
 
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 32];
+        original.encode(&mut buf).unwrap();
 
-        let parsed = MehdBox::parse(&buf).unwrap();
+        let parsed = MehdBox::decode(&buf).unwrap();
         assert_eq!(parsed, original);
     }
 
@@ -161,10 +117,10 @@ mod tests {
             fragment_duration: 0x1_0000_0000,
         };
 
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 32];
+        original.encode(&mut buf).unwrap();
 
-        let parsed = MehdBox::parse(&buf).unwrap();
+        let parsed = MehdBox::decode(&buf).unwrap();
         assert_eq!(parsed, original);
     }
 }

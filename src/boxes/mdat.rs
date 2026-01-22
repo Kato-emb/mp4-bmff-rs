@@ -1,9 +1,7 @@
-use crate::BmffBox;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
-
-use crate::base::codec::DecodeIn;
-use crate::cursor::ReadCursor;
 
 /// A reference to a Media Data Box (`mdat`).
 pub struct MdatBoxView<'a> {
@@ -11,20 +9,15 @@ pub struct MdatBoxView<'a> {
     pub data: &'a [u8],
 }
 
-impl BmffBox for MdatBoxView<'_> {
+impl BoxCodec for MdatBoxView<'_> {
     fn boxtype(&self) -> BoxType {
         BoxType::MDAT
     }
-
-    fn payload_size(&self) -> u64 {
-        self.data.len() as u64
-    }
 }
 
-impl<'de> DecodeIn<'de> for MdatBoxView<'de> {
-    fn decode_in(cur: &mut ReadCursor<'de>) -> Result<Self> {
-        let data = cur.take(cur.remaining())?;
-        Ok(MdatBoxView { data })
+impl<'de> BoxDecode<'de> for MdatBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        Ok(MdatBoxView { data: bytes })
     }
 }
 
@@ -36,8 +29,8 @@ mod owned {
     use crate::lib::Vec;
 
     use super::*;
+    use crate::BoxEncode;
 
-    use crate::base::codec::EncodeIn;
     use crate::cursor::WriteCursor;
 
     /// An owned Media Data Box (`mdat`).
@@ -45,16 +38,6 @@ mod owned {
     pub struct MdatBox {
         /// The raw data of the Media Data Box (`mdat`).
         pub data: Vec<u8>,
-    }
-
-    impl BmffBox for MdatBox {
-        fn boxtype(&self) -> BoxType {
-            BoxType::MDAT
-        }
-
-        fn payload_size(&self) -> u64 {
-            self.data.len() as u64
-        }
     }
 
     impl From<&MdatBoxView<'_>> for MdatBox {
@@ -65,18 +48,25 @@ mod owned {
         }
     }
 
-    impl DecodeIn<'_> for MdatBox {
-        fn decode_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
-            let view = MdatBoxView::decode_in(cur)?;
+    impl BoxCodec for MdatBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::MDAT
+        }
+    }
+
+    impl BoxDecode<'_> for MdatBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = MdatBoxView::decode(bytes)?;
             Ok(MdatBox::from(&view))
         }
     }
 
-    impl EncodeIn for MdatBox {
-        fn encode_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            // Write the raw data
+    impl BoxEncode for MdatBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
             cur.write_slice(&self.data)?;
-            Ok(())
+
+            Ok(cur.position())
         }
     }
 }
@@ -101,7 +91,7 @@ mod tests {
         let mdat_box = MdatBox {
             data: b"example media data".to_vec(),
         };
-        let mut buffer = vec![0u8; mdat_box.payload_size() as usize];
+        let mut buffer = vec![0u8; 18];
         mdat_box.encode(&mut buffer).unwrap();
         assert_eq!(&buffer, b"example media data");
     }

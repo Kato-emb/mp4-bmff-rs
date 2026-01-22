@@ -1,5 +1,5 @@
-use crate::cursor::ReadCursor;
-
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -13,6 +13,11 @@ pub struct DinfBoxView<'a> {
 }
 
 impl<'a> DinfBoxView<'a> {
+    /// Parses a `DinfBoxView` from the given payload.
+    pub fn parse(payload: &'a [u8]) -> Result<DinfBoxView<'a>> {
+        Ok(DinfBoxView { payload })
+    }
+
     /// Returns an iterator over the child boxes of this `DinfBoxView`.
     pub fn children(&self) -> BoxIter<'a> {
         BoxIter::new(self.payload)
@@ -23,7 +28,7 @@ impl<'a> DinfBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::DREF {
-                let dref = DrefBoxView::parse(child.into_payload())?;
+                let dref = DrefBoxView::decode(child.into_payload())?;
                 return Ok(dref);
             }
         }
@@ -35,18 +40,25 @@ impl<'a> DinfBoxView<'a> {
             BoxType::DINF,
         ))
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<DinfBoxView<'a>> {
-        let payload = cur.take(cur.remaining())?;
-        Ok(DinfBoxView { payload })
+impl BoxCodec for DinfBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::DINF
     }
+}
 
-    /// Parses a `DinfBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<DinfBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = DinfBoxView::parse_in(&mut cursor)?;
+impl<'de> BoxDecode<'de> for DinfBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        Ok(DinfBoxView { payload: bytes })
+    }
+}
 
-        Ok(this)
+impl<'a> TryFrom<&'a [u8]> for DinfBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        DinfBoxView::decode(value)
     }
 }
 
@@ -55,12 +67,13 @@ pub use owned::DinfBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::cursor::WriteCursor;
-
     use super::*;
-    use crate::base::frame::write_box_in;
+    use crate::BoxEncode;
+    use crate::base::writer::write_box_in;
 
     use crate::boxes::DrefBox;
+
+    use crate::cursor::WriteCursor;
 
     /// An owned Data Information Box (`dinf`).
     pub struct DinfBox {
@@ -69,15 +82,35 @@ mod owned {
     }
 
     impl DinfBox {
-        /// Creates a `DinfBox` from a `DinfBoxView`.
+        /// Constructs a `DinfBox` from a `DinfBoxView`.
         pub fn from_view(view: &DinfBoxView<'_>) -> Result<DinfBox> {
+            DinfBox::try_from(view)
+        }
+
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            // dref box header (8 bytes) + dref payload
+            8 + self.dref.size()
+        }
+    }
+
+    impl BoxCodec for DinfBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::DINF
+        }
+    }
+
+    impl TryFrom<&DinfBoxView<'_>> for DinfBox {
+        type Error = Error;
+
+        fn try_from(view: &DinfBoxView<'_>) -> Result<Self> {
             let mut dref = None;
 
             for child in view.children() {
                 let child = child?;
                 if child.boxtype() == BoxType::DREF {
-                    let dref_view = DrefBoxView::parse(child.payload())?;
-                    dref = Some(DrefBox::from_view(&dref_view)?);
+                    let dref_view = DrefBoxView::decode(child.payload())?;
+                    dref = Some(DrefBox::try_from(&dref_view)?);
                 }
             }
 
@@ -90,42 +123,20 @@ mod owned {
                 ))?,
             })
         }
+    }
 
-        /// Parses a `DinfBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<DinfBox> {
-            let view = DinfBoxView::parse(payload)?;
-            DinfBox::from_view(&view)
-        }
-
-        /// Returns the size of this `DinfBox` payload (child boxes total size).
-        #[inline]
-        pub fn size(&self) -> usize {
-            BoxFrameMut::required_len(BoxType::DREF, self.dref.size())
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            // Write dref box
-            write_box_in(cur, BoxType::DREF, self.dref.size(), |p| self.dref.write(p))?;
-            Ok(())
-        }
-
-        /// Writes this `DinfBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
+    impl BoxDecode<'_> for DinfBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = DinfBoxView::decode(bytes)?;
+            DinfBox::try_from(&view)
         }
     }
 
-    impl DinfBoxView<'_> {
-        /// Converts this `DinfBoxView` into an owned `DinfBox`.
-        pub fn to_owned(&self) -> DinfBox {
-            DinfBox::from_view(self).unwrap()
-        }
-    }
-
-    impl From<DinfBoxView<'_>> for DinfBox {
-        fn from(view: DinfBoxView<'_>) -> Self {
-            DinfBox::from_view(&view).unwrap()
+    impl BoxEncode for DinfBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+            write_box_in(&mut cur, &self.dref)?;
+            Ok(cur.position())
         }
     }
 }
@@ -156,7 +167,7 @@ mod tests {
         let dref_box = make_box(b"dref", &make_dref_payload_self_contained());
         let dinf_payload = dref_box;
 
-        let dinf = DinfBoxView::parse(&dinf_payload).unwrap();
+        let dinf = DinfBoxView::decode(&dinf_payload).unwrap();
         let dref = dinf.dref().unwrap();
 
         assert_eq!(dref.entry_count, 1);
@@ -167,7 +178,7 @@ mod tests {
         // dinf with no children
         let dinf_payload: Vec<u8> = vec![];
 
-        let dinf = DinfBoxView::parse(&dinf_payload).unwrap();
+        let dinf = DinfBoxView::decode(&dinf_payload).unwrap();
         let result = dinf.dref();
 
         assert!(result.is_err());
@@ -176,8 +187,9 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn dinf_box_round_trip() {
+        use crate::RawBoxRef;
+        use crate::base::writer::BoxWrite;
         use crate::boxes::{DrefBox, DrefEntry, UrlBox, UrlFlags};
-        use crate::{BoxHeader, RawBoxRef};
 
         let dinf_box = DinfBox {
             dref: DrefBox {
@@ -192,18 +204,13 @@ mod tests {
         };
 
         // Write dinf (note: dinf.size() returns dref payload size, need frame)
-        let dinf_payload_size = dinf_box.size();
-        let dinf_header = BoxHeader::new(BoxType::DINF, dinf_payload_size);
-        let mut buf = vec![0u8; dinf_header.total_size() as usize];
-        {
-            let mut frame = BoxFrameMut::new(&mut buf, dinf_header).unwrap();
-            dinf_box.write(frame.payload_mut()).unwrap();
-        }
+        let mut buf = vec![0u8; 256];
+        dinf_box.write_to(&mut buf).unwrap();
 
         // Parse back as dinf payload
         let frame = RawBoxRef::parse(&buf).unwrap();
         assert_eq!(frame.boxtype(), BoxType::DINF);
-        let reparsed = DinfBoxView::parse(frame.payload()).unwrap();
+        let reparsed = DinfBoxView::decode(frame.payload()).unwrap();
         let dref = reparsed.dref().unwrap();
 
         assert_eq!(dref.entry_count, 1);

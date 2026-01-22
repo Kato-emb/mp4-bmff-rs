@@ -4,7 +4,9 @@ use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 use crate::types::I8F8;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -36,8 +38,18 @@ impl Default for SmhdBox {
 
 impl SmhdBox {
     const RESERVED_SIZE: usize = mem::size_of::<u16>();
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<SmhdBox> {
+impl BoxCodec for SmhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::SMHD
+    }
+}
+
+impl BoxDecode<'_> for SmhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = SmhdFlags::from_bytes(cur.read_array()?);
 
@@ -47,36 +59,26 @@ impl SmhdBox {
         // Skip reserved (2 bytes)
         cur.advance(Self::RESERVED_SIZE)?;
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after parsing smhd",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::SMHD,
-            ));
-        }
-
         Ok(SmhdBox {
             version,
             flags,
             balance,
         })
     }
+}
 
-    /// Parses a `SmhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<SmhdBox> {
-        let mut cursor = ReadCursor::new(payload);
-        SmhdBox::parse_in(&mut cursor)
+impl TryFrom<&[u8]> for SmhdBox {
+    type Error = Error;
+
+    fn try_from(payload: &[u8]) -> Result<Self> {
+        SmhdBox::decode(payload)
     }
+}
 
-    /// Returns the size of the payload in bytes.
-    pub fn size(&self) -> usize {
-        // version(1) + flags(3) + balance(2) + reserved(2) = 8
-        8
-    }
+impl BoxEncode for SmhdBox {
+    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         // Write version (1 byte)
         cur.write_u8(self.version)?;
 
@@ -89,46 +91,7 @@ impl SmhdBox {
         // Write reserved (2 bytes)
         cur.reserve_zeros(Self::RESERVED_SIZE)?;
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Buffer larger than expected",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::SMHD,
-            ));
-        }
-
-        Ok(())
-    }
-
-    /// Writes this `SmhdBox` into the given payload.
-    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-        let mut cursor = WriteCursor::new(payload);
-        self.write_in(&mut cursor)
-    }
-}
-
-impl TryFrom<&[u8]> for SmhdBox {
-    type Error = Error;
-
-    fn try_from(payload: &[u8]) -> Result<Self> {
-        SmhdBox::parse(payload)
-    }
-}
-
-impl TryFrom<RawBoxRef<'_>> for SmhdBox {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-        if value.boxtype() != BoxType::SMHD {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::SMHD,
-                found: value.boxtype(),
-            }));
-        }
-
-        SmhdBox::parse(value.payload())
+        Ok(cur.position())
     }
 }
 
@@ -150,10 +113,10 @@ mod tests {
             balance: I8F8::from_raw(0x0080), // 0.5 (slightly right)
         };
 
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 32];
+        let written = original.encode(&mut buf).unwrap();
 
-        let reparsed = SmhdBox::parse(&buf).unwrap();
+        let reparsed = SmhdBox::decode(&buf[..written]).unwrap();
         assert_eq!(reparsed.version, original.version);
         assert_eq!(reparsed.flags.get(), original.flags.get());
         assert_eq!(reparsed.balance.to_raw(), original.balance.to_raw());

@@ -1,7 +1,8 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::RawBoxRef;
 use crate::error::*;
 
 use super::FullBoxFlags;
@@ -58,8 +59,24 @@ impl<'a> CttsBoxView<'a> {
                 })
             })
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<CttsBoxView<'a>> {
+/// Specification for the Composition Time to Sample Box (`ctts`).
+pub struct CttsSpec;
+
+/// Flags for the Composition Time to Sample Box (`ctts`).
+pub type CttsFlags = FullBoxFlags<CttsSpec>;
+
+impl BoxCodec for CttsBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::CTTS
+    }
+}
+
+impl<'de> BoxDecode<'de> for CttsBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = CttsFlags::from_bytes(cur.read_array()?);
 
@@ -97,50 +114,22 @@ impl<'a> CttsBoxView<'a> {
             entries,
         })
     }
-
-    /// Parses a `CttsBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<CttsBoxView<'a>> {
-        let mut cur = ReadCursor::new(payload);
-        let this = CttsBoxView::parse_in(&mut cur)?;
-
-        Ok(this)
-    }
 }
 
 impl<'a> TryFrom<&'a [u8]> for CttsBoxView<'a> {
     type Error = Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self> {
-        CttsBoxView::parse(value)
+        CttsBoxView::decode(value)
     }
 }
-
-impl<'a> TryFrom<RawBoxRef<'a>> for CttsBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::CTTS {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::CTTS,
-                found: value.boxtype(),
-            }));
-        }
-
-        CttsBoxView::parse(value.into_payload())
-    }
-}
-
-/// Specification for the Composition Time to Sample Box (`ctts`).
-pub struct CttsSpec;
-
-/// Flags for the Composition Time to Sample Box (`ctts`).
-pub type CttsFlags = FullBoxFlags<CttsSpec>;
 
 #[cfg(feature = "alloc")]
 pub use owned::CttsBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
     use super::*;
@@ -155,11 +144,10 @@ mod owned {
         pub entries: Vec<CttsEntry>,
     }
 
-    impl CttsBox {
-        const ENTRY_SIZE: usize = 8;
+    impl TryFrom<&CttsBoxView<'_>> for CttsBox {
+        type Error = Error;
 
-        /// Creates a `CttsBox` from a `CttsBoxView`.
-        pub fn from_view(view: &CttsBoxView<'_>) -> Result<CttsBox> {
+        fn try_from(view: &CttsBoxView<'_>) -> Result<Self> {
             let entries: Result<Vec<CttsEntry>> = view.entries().collect();
             Ok(CttsBox {
                 version: view.version,
@@ -167,20 +155,25 @@ mod owned {
                 entries: entries?,
             })
         }
+    }
 
-        /// Parses a `CttsBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<CttsBox> {
-            let view = CttsBoxView::parse(payload)?;
-            CttsBox::from_view(&view)
+    impl BoxCodec for CttsBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::CTTS
         }
+    }
 
-        /// Returns the size of the `CttsBox` data.
-        #[inline]
-        pub fn size(&self) -> usize {
-            4 + 4 + self.entries.len() * Self::ENTRY_SIZE // version/flags + count + entries
+    impl BoxDecode<'_> for CttsBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = CttsBoxView::decode(bytes)?;
+            CttsBox::try_from(&view)
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for CttsBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_bytes())?;
             cur.write_u32_be(self.entries.len() as u32)?;
@@ -195,31 +188,7 @@ mod owned {
                 }
             }
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::CTTS,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `CttsBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl TryFrom<&CttsBoxView<'_>> for CttsBox {
-        type Error = Error;
-
-        fn try_from(value: &CttsBoxView<'_>) -> Result<Self> {
-            CttsBox::from_view(value)
+            Ok(cur.position())
         }
     }
 }
@@ -250,6 +219,8 @@ mod tests {
     #[test]
     fn ctts_box_write_and_round_trip() {
         // Multiple entries with positive and negative offsets (v1)
+
+        use crate::BoxEncode;
         let entries = vec![
             CttsEntry {
                 sample_count: 10,
@@ -265,15 +236,15 @@ mod tests {
             },
         ];
         let payload = make_ctts_payload_v1(entries.clone());
-        let view = CttsBoxView::parse(&payload).unwrap();
-        let owned = CttsBox::from_view(&view).unwrap();
+        let view = CttsBoxView::decode(&payload).unwrap();
+        let owned = CttsBox::try_from(&view).unwrap();
 
         // Write to buffer
-        let mut buf = vec![0u8; owned.size()];
-        owned.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        let written = owned.encode(&mut buf).unwrap();
 
         // Parse again and compare
-        let reparsed = CttsBox::parse(&buf).unwrap();
+        let reparsed = CttsBox::decode(&buf[..written]).unwrap();
         assert_eq!(reparsed.version, 1);
         assert_eq!(reparsed.entries.len(), 3);
         for (i, entry) in reparsed.entries.iter().enumerate() {
@@ -282,14 +253,14 @@ mod tests {
         }
 
         // Error case: buffer too small
-        let mut small_buf = vec![0u8; owned.size() - 1];
-        assert!(owned.write(&mut small_buf).is_err());
+        let mut small_buf = vec![0u8; 10];
+        assert!(owned.encode(&mut small_buf).is_err());
 
         // Error case: entry count mismatch
         let mut bad_payload = make_full_box_header(0, 0);
         bad_payload.extend_from_slice(&2u32.to_be_bytes());
         bad_payload.extend_from_slice(&10u32.to_be_bytes());
         bad_payload.extend_from_slice(&100u32.to_be_bytes());
-        assert!(CttsBoxView::parse(&bad_payload).is_err());
+        assert!(CttsBoxView::decode(&bad_payload).is_err());
     }
 }

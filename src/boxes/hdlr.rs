@@ -3,7 +3,8 @@ use core::mem;
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -26,10 +27,26 @@ pub struct HdlrBoxView<'a> {
 }
 
 impl<'a> HdlrBoxView<'a> {
-    pub(crate) const PRE_DEFINED_SIZE: usize = mem::size_of::<u32>();
-    pub(crate) const RESERVED_SIZE: usize = 3 * mem::size_of::<u32>();
+    const PRE_DEFINED_SIZE: usize = mem::size_of::<u32>();
+    const RESERVED_SIZE: usize = 3 * mem::size_of::<u32>();
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<HdlrBoxView<'a>> {
+/// Specification for Handler Reference Box (`hdlr`).
+pub struct HdlrSpec;
+
+/// Flags for Handler Reference Box (`hdlr`).
+pub type HdlrFlags = FullBoxFlags<HdlrSpec>;
+
+impl BoxCodec for HdlrBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::HDLR
+    }
+}
+
+impl<'de> BoxDecode<'de> for HdlrBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = HdlrFlags::from_bytes(cur.read_array()?);
 
@@ -67,34 +84,15 @@ impl<'a> HdlrBoxView<'a> {
             name,
         })
     }
-
-    /// Parses a `HdlrBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<HdlrBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        HdlrBoxView::parse_in(&mut cursor)
-    }
 }
 
-impl<'a> TryFrom<RawBoxRef<'a>> for HdlrBoxView<'a> {
+impl<'a> TryFrom<&'a [u8]> for HdlrBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::HDLR {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::HDLR,
-                found: value.boxtype(),
-            }));
-        }
-
-        HdlrBoxView::parse(value.payload())
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        HdlrBoxView::decode(value)
     }
 }
-
-/// Specification for Handler Reference Box (`hdlr`).
-pub struct HdlrSpec;
-
-/// Flags for Handler Reference Box (`hdlr`).
-pub type HdlrFlags = FullBoxFlags<HdlrSpec>;
 
 #[cfg(feature = "alloc")]
 pub use owned::HdlrBox;
@@ -104,6 +102,9 @@ mod owned {
     extern crate alloc;
     use alloc::string::String;
 
+    use crate::BoxCodec;
+    use crate::BoxDecode;
+    use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
     use super::*;
@@ -121,9 +122,8 @@ mod owned {
         pub name: String,
     }
 
-    impl HdlrBox {
-        /// Creates a `HdlrBox` from a `HdlrBoxView`.
-        pub fn from_view(view: &HdlrBoxView<'_>) -> HdlrBox {
+    impl From<&HdlrBoxView<'_>> for HdlrBox {
+        fn from(view: &HdlrBoxView) -> Self {
             HdlrBox {
                 version: view.version,
                 flags: view.flags,
@@ -131,25 +131,25 @@ mod owned {
                 name: String::from(view.name),
             }
         }
+    }
 
-        /// Parses a `HdlrBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<HdlrBox> {
-            let view = HdlrBoxView::parse(payload)?;
-            Ok(HdlrBox::from_view(&view))
+    impl BoxCodec for HdlrBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::HDLR
         }
+    }
 
-        /// Returns the size of the `HdlrBox` data.
-        pub fn size(&self) -> usize {
-            1  // version
-            + 3  // flags
-            + HdlrBoxView::<'_>::PRE_DEFINED_SIZE  // pre_defined
-            + 4  // handler_type
-            + HdlrBoxView::<'_>::RESERVED_SIZE  // reserved
-            + self.name.len()  // name
-            + 1 // null terminator
+    impl BoxDecode<'_> for HdlrBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = HdlrBoxView::decode(bytes)?;
+            Ok(HdlrBox::from(&view))
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for HdlrBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             // Write version (1 byte)
             cur.write_u8(self.version)?;
 
@@ -169,38 +169,7 @@ mod owned {
             cur.write_slice(self.name.as_bytes())?;
             cur.write_u8(0)?;
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::HDLR,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `HdlrBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl From<&HdlrBoxView<'_>> for HdlrBox {
-        fn from(view: &HdlrBoxView<'_>) -> Self {
-            HdlrBox::from_view(view)
-        }
-    }
-
-    impl TryFrom<RawBoxRef<'_>> for HdlrBox {
-        type Error = Error;
-
-        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-            let view = HdlrBoxView::try_from(value)?;
-            Ok(HdlrBox::from_view(&view))
+            Ok(cur.position())
         }
     }
 }
@@ -212,6 +181,8 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn hdlr_box_round_trip() {
+        use crate::BoxEncode;
+
         let original = HdlrBox {
             version: 0,
             flags: HdlrFlags::empty(),
@@ -220,11 +191,11 @@ mod tests {
         };
 
         // Write
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        let written = original.encode(&mut buf).unwrap();
 
         // Parse
-        let reparsed = HdlrBox::parse(&buf).unwrap();
+        let reparsed = HdlrBox::decode(&buf[..written]).unwrap();
 
         assert_eq!(reparsed.version, original.version);
         assert_eq!(reparsed.flags.get(), original.flags.get());
@@ -235,6 +206,8 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn hdlr_box_round_trip_empty_name() {
+        use crate::BoxEncode;
+
         let original = HdlrBox {
             version: 0,
             flags: HdlrFlags::empty(),
@@ -243,12 +216,11 @@ mod tests {
         };
 
         // Write
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        let written = original.encode(&mut buf).unwrap();
 
         // Parse
-        let reparsed = HdlrBox::parse(&buf).unwrap();
-
+        let reparsed = HdlrBox::decode(&buf[..written]).unwrap();
         assert_eq!(reparsed.handler_type, original.handler_type);
         assert_eq!(reparsed.name, original.name);
     }

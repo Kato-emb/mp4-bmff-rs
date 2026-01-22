@@ -1,6 +1,5 @@
-use crate::cursor::ReadCursor;
-
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -41,7 +40,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STSD {
-                let stsd = StsdBoxView::parse(child.into_payload())?;
+                let stsd = StsdBoxView::decode(child.into_payload())?;
                 return Ok(stsd);
             }
         }
@@ -59,7 +58,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STTS {
-                let stts = SttsBoxView::parse(child.into_payload())?;
+                let stts = SttsBoxView::decode(child.into_payload())?;
                 return Ok(stts);
             }
         }
@@ -77,7 +76,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STSC {
-                let stsc = StscBoxView::parse(child.into_payload())?;
+                let stsc = StscBoxView::decode(child.into_payload())?;
                 return Ok(stsc);
             }
         }
@@ -95,7 +94,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::CTTS {
-                let ctts = CttsBoxView::parse(child.into_payload())?;
+                let ctts = CttsBoxView::decode(child.into_payload())?;
                 return Ok(Some(ctts));
             }
         }
@@ -108,7 +107,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::CSLG {
-                let cslg = CslgBox::parse(child.into_payload())?;
+                let cslg = CslgBox::decode(child.into_payload())?;
                 return Ok(Some(cslg));
             }
         }
@@ -121,7 +120,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STSZ {
-                let stsz = StszBoxView::parse(child.into_payload())?;
+                let stsz = StszBoxView::decode(child.into_payload())?;
                 return Ok(Some(stsz));
             }
         }
@@ -134,7 +133,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STSS {
-                let stss = StssBoxView::parse(child.into_payload())?;
+                let stss = StssBoxView::decode(child.into_payload())?;
                 return Ok(Some(stss));
             }
         }
@@ -147,7 +146,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STCO {
-                let stco = StcoBoxView::parse(child.into_payload())?;
+                let stco = StcoBoxView::decode(child.into_payload())?;
                 return Ok(Some(stco));
             }
         }
@@ -160,7 +159,7 @@ impl<'a> StblBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::CO64 {
-                let co64 = Co64BoxView::parse(child.into_payload())?;
+                let co64 = Co64BoxView::decode(child.into_payload())?;
                 return Ok(Some(co64));
             }
         }
@@ -176,11 +175,11 @@ impl<'a> StblBoxView<'a> {
             let child = child?;
             match child.boxtype() {
                 BoxType::STCO if chunk_offsets.is_none() => {
-                    let stco = StcoBoxView::parse(child.into_payload())?;
+                    let stco = StcoBoxView::decode(child.into_payload())?;
                     chunk_offsets = Some(ChunkOffsetsView::Stco(stco));
                 }
                 BoxType::CO64 if chunk_offsets.is_none() => {
-                    let co64 = Co64BoxView::parse(child.into_payload())?;
+                    let co64 = Co64BoxView::decode(child.into_payload())?;
                     chunk_offsets = Some(ChunkOffsetsView::Co64(co64));
                 }
                 BoxType::STCO | BoxType::CO64 => {
@@ -202,33 +201,25 @@ impl<'a> StblBoxView<'a> {
             .with_box_type(BoxType::STBL)
         })
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StblBoxView<'a>> {
-        let payload = cur.take(cur.remaining())?;
-        Ok(StblBoxView { payload })
-    }
-
-    /// Parses a `StblBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<StblBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = StblBoxView::parse_in(&mut cursor)?;
-
-        Ok(this)
+impl BoxCodec for StblBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::STBL
     }
 }
 
-impl<'a> TryFrom<RawBoxRef<'a>> for StblBoxView<'a> {
+impl<'de> BoxDecode<'de> for StblBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        Ok(StblBoxView { payload: bytes })
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for StblBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::STBL {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::STBL,
-                found: value.boxtype(),
-            }));
-        }
-
-        StblBoxView::parse(value.payload())
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        StblBoxView::decode(value)
     }
 }
 
@@ -239,10 +230,12 @@ pub use owned::StblBox;
 mod owned {
     use crate::cursor::WriteCursor;
 
-    use crate::BoxFrameMut;
-    use crate::base::frame::write_box_in;
+    use crate::base::writer::write_box_in;
 
     use super::*;
+    use crate::BoxCodec;
+    use crate::BoxDecode;
+    use crate::BoxEncode;
     use crate::boxes::Co64Box;
     use crate::boxes::CttsBox;
     use crate::boxes::StcoBox;
@@ -266,30 +259,6 @@ mod owned {
                 ChunkOffsets::Co64(_) => BoxType::CO64,
             }
         }
-
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            match self {
-                ChunkOffsets::Stco(stco) => stco.size(),
-                ChunkOffsets::Co64(co64) => co64.size(),
-            }
-        }
-
-        /// Returns the total frame size (including box header).
-        pub fn frame_size(&self) -> usize {
-            BoxFrameMut::required_len(self.boxtype(), self.size())
-        }
-
-        fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            let boxtype = self.boxtype();
-            let payload_len = self.size();
-            write_box_in(cur, boxtype, payload_len, |p| match self {
-                ChunkOffsets::Stco(stco) => stco.write(p),
-                ChunkOffsets::Co64(co64) => co64.write(p),
-            })?;
-
-            Ok(())
-        }
     }
 
     /// An owned Sample Table Box (`stbl`).
@@ -312,9 +281,10 @@ mod owned {
         pub chunk_offsets: ChunkOffsets,
     }
 
-    impl StblBox {
-        /// Constructs a `StblBox` from a `StblBoxView`.
-        pub fn from_view(view: &StblBoxView<'_>) -> Result<StblBox> {
+    impl TryFrom<&StblBoxView<'_>> for StblBox {
+        type Error = Error;
+
+        fn try_from(view: &StblBoxView<'_>) -> Result<Self> {
             let mut stsd = None;
             let mut stts = None;
             let mut ctts = None;
@@ -329,39 +299,39 @@ mod owned {
 
                 match child.boxtype() {
                     BoxType::STSD if stsd.is_none() => {
-                        let stsd_view = StsdBoxView::parse(child.payload())?;
-                        stsd = Some(StsdBox::from_view(&stsd_view)?);
+                        let stsd_view = StsdBoxView::decode(child.payload())?;
+                        stsd = Some(StsdBox::try_from(&stsd_view)?);
                     }
                     BoxType::STTS if stts.is_none() => {
-                        let stts_view = SttsBoxView::parse(child.payload())?;
-                        stts = Some(SttsBox::from_view(&stts_view)?);
+                        let stts_view = SttsBoxView::decode(child.payload())?;
+                        stts = Some(SttsBox::try_from(&stts_view)?);
                     }
                     BoxType::CTTS if ctts.is_none() => {
-                        let ctts_view = CttsBoxView::parse(child.payload())?;
-                        ctts = Some(CttsBox::from_view(&ctts_view)?);
+                        let ctts_view = CttsBoxView::decode(child.payload())?;
+                        ctts = Some(CttsBox::try_from(&ctts_view)?);
                     }
                     BoxType::CSLG if cslg.is_none() => {
-                        cslg = Some(CslgBox::parse(child.payload())?);
+                        cslg = Some(CslgBox::decode(child.payload())?);
                     }
                     BoxType::STSC if stsc.is_none() => {
-                        let stsc_view = StscBoxView::parse(child.payload())?;
-                        stsc = Some(StscBox::from_view(&stsc_view)?);
+                        let stsc_view = StscBoxView::decode(child.payload())?;
+                        stsc = Some(StscBox::try_from(&stsc_view)?);
                     }
                     BoxType::STSZ if stsz.is_none() => {
-                        let stsz_view = StszBoxView::parse(child.payload())?;
-                        stsz = Some(StszBox::from_view(&stsz_view)?);
+                        let stsz_view = StszBoxView::decode(child.payload())?;
+                        stsz = Some(StszBox::try_from(&stsz_view)?);
                     }
                     BoxType::STSS if stss.is_none() => {
-                        let stss_view = StssBoxView::parse(child.payload())?;
-                        stss = Some(StssBox::from_view(&stss_view)?);
+                        let stss_view = StssBoxView::decode(child.payload())?;
+                        stss = Some(StssBox::try_from(&stss_view)?);
                     }
                     BoxType::STCO if chunk_offsets.is_none() => {
-                        let stco_view = StcoBoxView::parse(child.payload())?;
-                        chunk_offsets = Some(ChunkOffsets::Stco(StcoBox::from_view(&stco_view)?));
+                        let stco_view = StcoBoxView::decode(child.payload())?;
+                        chunk_offsets = Some(ChunkOffsets::Stco(StcoBox::try_from(&stco_view)?));
                     }
                     BoxType::CO64 if chunk_offsets.is_none() => {
-                        let co64_view = Co64BoxView::parse(child.payload())?;
-                        chunk_offsets = Some(ChunkOffsets::Co64(Co64Box::from_view(&co64_view)?));
+                        let co64_view = Co64BoxView::decode(child.payload())?;
+                        chunk_offsets = Some(ChunkOffsets::Co64(Co64Box::try_from(&co64_view)?));
                     }
                     BoxType::STSD
                     | BoxType::STTS
@@ -416,126 +386,61 @@ mod owned {
                 ))?,
             })
         }
+    }
 
-        /// Parses a `StblBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<StblBox> {
-            let view = StblBoxView::parse(payload)?;
-            StblBox::from_view(&view)
+    impl BoxCodec for StblBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::STBL
         }
+    }
 
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            let mut size = 0;
-
-            // stsd (required)
-            size += BoxFrameMut::required_len(BoxType::STSD, self.stsd.size());
-
-            // stts (required)
-            size += BoxFrameMut::required_len(BoxType::STTS, self.stts.size());
-
-            // ctts (optional)
-            if let Some(ref ctts) = self.ctts {
-                size += BoxFrameMut::required_len(BoxType::CTTS, ctts.size());
-            }
-
-            // cslg (optional)
-            if let Some(ref cslg) = self.cslg {
-                size += BoxFrameMut::required_len(BoxType::CSLG, cslg.size());
-            }
-
-            // stsc (required)
-            size += BoxFrameMut::required_len(BoxType::STSC, self.stsc.size());
-
-            // stsz (optional)
-            if let Some(ref stsz) = self.stsz {
-                size += BoxFrameMut::required_len(BoxType::STSZ, stsz.size());
-            }
-
-            // stss (optional)
-            if let Some(ref stss) = self.stss {
-                size += BoxFrameMut::required_len(BoxType::STSS, stss.size());
-            }
-
-            // chunk_offsets (required)
-            size += self.chunk_offsets.frame_size();
-
-            size
+    impl BoxDecode<'_> for StblBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = StblBoxView::decode(bytes)?;
+            StblBox::try_from(&view)
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for StblBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             // stsd
-            write_box_in(cur, BoxType::STSD, self.stsd.size(), |p| self.stsd.write(p))?;
+            write_box_in(&mut cur, &self.stsd)?;
 
             // stts
-            write_box_in(cur, BoxType::STTS, self.stts.size(), |p| self.stts.write(p))?;
+            write_box_in(&mut cur, &self.stts)?;
 
             // ctts (optional)
             if let Some(ref ctts) = self.ctts {
-                write_box_in(cur, BoxType::CTTS, ctts.size(), |p| ctts.write(p))?;
+                write_box_in(&mut cur, ctts)?;
             }
 
             // cslg (optional)
             if let Some(ref cslg) = self.cslg {
-                write_box_in(cur, BoxType::CSLG, cslg.size(), |p| cslg.write(p))?;
+                write_box_in(&mut cur, cslg)?;
             }
 
             // stsc
-            write_box_in(cur, BoxType::STSC, self.stsc.size(), |p| self.stsc.write(p))?;
+            write_box_in(&mut cur, &self.stsc)?;
 
             // stsz (optional)
             if let Some(ref stsz) = self.stsz {
-                write_box_in(cur, BoxType::STSZ, stsz.size(), |p| stsz.write(p))?;
+                write_box_in(&mut cur, stsz)?;
             }
 
             // stss (optional)
             if let Some(ref stss) = self.stss {
-                write_box_in(cur, BoxType::STSS, stss.size(), |p| stss.write(p))?;
+                write_box_in(&mut cur, stss)?;
             }
 
             // chunk_offsets
-            self.chunk_offsets.write_in(cur)?;
-
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::STBL,
-                ));
+            match &self.chunk_offsets {
+                ChunkOffsets::Stco(stco) => write_box_in(&mut cur, stco)?,
+                ChunkOffsets::Co64(co64) => write_box_in(&mut cur, co64)?,
             }
 
-            Ok(())
-        }
-
-        /// Writes this `StblBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl TryFrom<&StblBoxView<'_>> for StblBox {
-        type Error = Error;
-
-        fn try_from(value: &StblBoxView<'_>) -> Result<Self> {
-            StblBox::from_view(value)
-        }
-    }
-
-    impl TryFrom<RawBoxRef<'_>> for StblBox {
-        type Error = Error;
-
-        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-            if value.boxtype() != BoxType::STBL {
-                return Err(Error::new(ErrorKind::MismatchedBoxType {
-                    expected: BoxType::STBL,
-                    found: value.boxtype(),
-                }));
-            }
-
-            let view = StblBoxView::parse(value.payload())?;
-            StblBox::from_view(&view)
+            Ok(cur.position())
         }
     }
 }

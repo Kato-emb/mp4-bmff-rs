@@ -1,8 +1,7 @@
-use crate::cursor::ReadCursor;
-
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::RawBoxRef;
 use crate::error::*;
 
 use crate::boxes::MfroBox;
@@ -52,31 +51,25 @@ impl<'a> MfraBoxView<'a> {
             Err(e) => Some(Err(e)),
         })
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<MfraBoxView<'a>> {
-        let payload = cur.take(cur.remaining())?;
-        Ok(MfraBoxView { payload })
-    }
-
-    /// Parses a `MfraBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<MfraBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        MfraBoxView::parse_in(&mut cursor)
+impl BoxCodec for MfraBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::MFRA
     }
 }
 
-impl<'a> TryFrom<RawBoxRef<'a>> for MfraBoxView<'a> {
+impl<'de> BoxDecode<'de> for MfraBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        Ok(MfraBoxView { payload: bytes })
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for MfraBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::MFRA {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::MFRA,
-                found: value.boxtype(),
-            }));
-        }
-
-        MfraBoxView::parse(value.payload())
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        MfraBoxView::decode(value)
     }
 }
 
@@ -90,9 +83,9 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use super::*;
-    use crate::BoxFrameMut;
-    use crate::base::frame::write_box_in;
+    use crate::base::writer::write_box_in;
 
+    use crate::BoxEncode;
     use crate::boxes::TfraBox;
 
     /// An owned Movie Fragment Random Access Box (`mfra`).
@@ -104,85 +97,54 @@ mod owned {
         pub mfro: MfroBox,
     }
 
-    impl MfraBox {
-        /// Creates a `MfraBox` from a `MfraBoxView`.
-        pub fn from_view(view: &MfraBoxView<'_>) -> Result<MfraBox> {
+    impl TryFrom<&MfraBoxView<'_>> for MfraBox {
+        type Error = Error;
+
+        fn try_from(view: &MfraBoxView<'_>) -> Result<Self> {
             let mfro = view.mfro()?;
 
             let mut tfras = Vec::new();
             for tfra_result in view.tfras() {
                 let tfra_view = tfra_result?;
-                tfras.push(TfraBox::from_view(&tfra_view)?);
+                tfras.push(TfraBox::from(&tfra_view));
             }
 
             Ok(MfraBox { tfras, mfro })
         }
+    }
 
-        /// Parses a `MfraBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<MfraBox> {
-            let view = MfraBoxView::parse(payload)?;
-            MfraBox::from_view(&view)
-        }
-
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            let mut size = 0;
-            for tfra in &self.tfras {
-                size += BoxFrameMut::required_len(BoxType::TFRA, tfra.size());
-            }
-            size += BoxFrameMut::required_len(BoxType::MFRO, self.mfro.payload_size());
-            size
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            for tfra in &self.tfras {
-                write_box_in(cur, BoxType::TFRA, tfra.size(), |p| tfra.write(p))?;
-            }
-
-            write_box_in(cur, BoxType::MFRO, self.mfro.payload_size(), |p| {
-                self.mfro.write(p)
-            })?;
-
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::MFRA,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `MfraBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
+    impl BoxCodec for MfraBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::MFRA
         }
     }
 
-    impl TryFrom<&MfraBoxView<'_>> for MfraBox {
-        type Error = Error;
-
-        fn try_from(value: &MfraBoxView<'_>) -> Result<Self> {
-            MfraBox::from_view(value)
+    impl BoxDecode<'_> for MfraBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = MfraBoxView::decode(bytes)?;
+            MfraBox::try_from(&view)
         }
     }
 
-    impl TryFrom<RawBoxRef<'_>> for MfraBox {
-        type Error = Error;
+    impl BoxEncode for MfraBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
 
-        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-            let view = MfraBoxView::try_from(value)?;
-            MfraBox::from_view(&view)
+            for tfra in &self.tfras {
+                write_box_in(&mut cur, tfra)?;
+            }
+
+            write_box_in(&mut cur, &self.mfro)?;
+
+            Ok(cur.position())
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::RawBoxRef;
+
     use super::*;
 
     fn make_box(fourcc: &[u8; 4], payload: &[u8]) -> Vec<u8> {
@@ -223,7 +185,7 @@ mod tests {
     fn parse_mfra_minimal() {
         let mfro = make_box(b"mfro", &make_mfro_payload(1024));
 
-        let mfra = MfraBoxView::parse(&mfro).unwrap();
+        let mfra = MfraBoxView::decode(&mfro).unwrap();
 
         let mfro_box = mfra.mfro().unwrap();
         assert_eq!(mfro_box.size, 1024);
@@ -241,7 +203,7 @@ mod tests {
         payload.extend_from_slice(&tfra2);
         payload.extend_from_slice(&mfro);
 
-        let mfra = MfraBoxView::parse(&payload).unwrap();
+        let mfra = MfraBoxView::decode(&payload).unwrap();
 
         assert_eq!(mfra.mfro().unwrap().size, 2048);
 
@@ -255,7 +217,7 @@ mod tests {
     fn parse_mfra_missing_mfro() {
         let tfra = make_box(b"tfra", &make_tfra_payload_minimal(1));
 
-        let mfra = MfraBoxView::parse(&tfra).unwrap();
+        let mfra = MfraBoxView::decode(&tfra).unwrap();
         let result = mfra.mfro();
 
         assert!(result.is_err());
@@ -274,28 +236,10 @@ mod tests {
         box_data.extend_from_slice(b"mfra");
         box_data.extend_from_slice(&mfro);
 
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
-        let mfra = MfraBoxView::try_from(box_view).unwrap();
+        let raw = RawBoxRef::parse(&box_data).unwrap();
+        let mfra = MfraBoxView::try_from(raw.payload()).unwrap();
 
         assert_eq!(mfra.mfro().unwrap().size, 512);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let mfro = make_box(b"mfro", &make_mfro_payload(512));
-
-        let mut box_data = Vec::new();
-        let size = 8 + mfro.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"moof");
-        box_data.extend_from_slice(&mfro);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
-        let result = MfraBoxView::try_from(box_view);
-
-        assert!(result.is_err());
     }
 
     #[cfg(feature = "alloc")]
@@ -311,8 +255,8 @@ mod tests {
             payload.extend_from_slice(&tfra);
             payload.extend_from_slice(&mfro);
 
-            let view = MfraBoxView::parse(&payload).unwrap();
-            let owned = MfraBox::from_view(&view).unwrap();
+            let view = MfraBoxView::decode(&payload).unwrap();
+            let owned = MfraBox::try_from(&view).unwrap();
 
             assert_eq!(owned.mfro.size, 4096);
             assert_eq!(owned.tfras.len(), 1);
@@ -323,7 +267,7 @@ mod tests {
         fn mfra_box_parse() {
             let mfro = make_box(b"mfro", &make_mfro_payload(8192));
 
-            let owned = MfraBox::parse(&mfro).unwrap();
+            let owned = MfraBox::decode(&mfro).unwrap();
 
             assert_eq!(owned.mfro.size, 8192);
             assert_eq!(owned.tfras.len(), 0);

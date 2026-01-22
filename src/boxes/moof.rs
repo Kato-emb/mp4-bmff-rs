@@ -1,6 +1,5 @@
-use crate::cursor::ReadCursor;
-
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -27,7 +26,7 @@ impl<'a> MoofBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::MFHD {
-                return MfhdBox::parse(child.payload());
+                return MfhdBox::decode(child.payload());
             }
         }
 
@@ -43,37 +42,31 @@ impl<'a> MoofBoxView<'a> {
     pub fn trafs(&self) -> impl Iterator<Item = Result<TrafBoxView<'a>>> + 'a {
         self.children().filter_map(|result| match result {
             Ok(view) if view.boxtype() == BoxType::TRAF => {
-                Some(TrafBoxView::parse(view.into_payload()))
+                Some(TrafBoxView::decode(view.into_payload()))
             }
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<MoofBoxView<'a>> {
-        let payload = cur.take(cur.remaining())?;
-        Ok(MoofBoxView { payload })
-    }
-
-    /// Parses a `MoofBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<MoofBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        MoofBoxView::parse_in(&mut cursor)
+impl BoxCodec for MoofBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::MOOF
     }
 }
 
-impl<'a> TryFrom<RawBoxRef<'a>> for MoofBoxView<'a> {
+impl<'de> BoxDecode<'de> for MoofBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        Ok(MoofBoxView { payload: bytes })
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for MoofBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::MOOF {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::MOOF,
-                found: value.boxtype(),
-            }));
-        }
-
-        MoofBoxView::parse(value.payload())
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        MoofBoxView::decode(value)
     }
 }
 
@@ -87,9 +80,11 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use super::*;
-    use crate::BoxFrameMut;
-    use crate::base::frame::write_box_in;
+    use crate::base::writer::write_box_in;
 
+    use crate::BoxCodec;
+    use crate::BoxDecode;
+    use crate::BoxEncode;
     use crate::boxes::TrafBox;
 
     /// An owned Movie Fragment Box (`moof`).
@@ -101,83 +96,54 @@ mod owned {
         pub trafs: Vec<TrafBox>,
     }
 
-    impl MoofBox {
-        /// Creates a `MoofBox` from a `MoofBoxView`.
-        pub fn from_view(view: &MoofBoxView<'_>) -> Result<MoofBox> {
+    impl TryFrom<&MoofBoxView<'_>> for MoofBox {
+        type Error = Error;
+
+        fn try_from(view: &MoofBoxView<'_>) -> Result<Self> {
             let mfhd = view.mfhd()?;
 
             let mut trafs = Vec::new();
             for traf_result in view.trafs() {
                 let traf_view = traf_result?;
-                trafs.push(TrafBox::from_view(&traf_view)?);
+                trafs.push(TrafBox::try_from(&traf_view)?);
             }
 
             Ok(MoofBox { mfhd, trafs })
         }
+    }
 
-        /// Parses a `MoofBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<MoofBox> {
-            let view = MoofBoxView::parse(payload)?;
-            MoofBox::from_view(&view)
-        }
-
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            let mut size = 0;
-            size += BoxFrameMut::required_len(BoxType::MFHD, self.mfhd.size());
-            for traf in &self.trafs {
-                size += BoxFrameMut::required_len(BoxType::TRAF, traf.size());
-            }
-            size
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            write_box_in(cur, BoxType::MFHD, self.mfhd.size(), |p| self.mfhd.write(p))?;
-
-            for traf in &self.trafs {
-                write_box_in(cur, BoxType::TRAF, traf.size(), |p| traf.write(p))?;
-            }
-
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::MOOF,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `MoofBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
+    impl BoxCodec for MoofBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::MOOF
         }
     }
 
-    impl TryFrom<&MoofBoxView<'_>> for MoofBox {
-        type Error = Error;
-
-        fn try_from(value: &MoofBoxView<'_>) -> Result<Self> {
-            MoofBox::from_view(value)
+    impl BoxDecode<'_> for MoofBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = MoofBoxView::decode(bytes)?;
+            MoofBox::try_from(&view)
         }
     }
 
-    impl TryFrom<RawBoxRef<'_>> for MoofBox {
-        type Error = Error;
+    impl BoxEncode for MoofBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
 
-        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-            let view = MoofBoxView::try_from(value)?;
-            MoofBox::from_view(&view)
+            write_box_in(&mut cur, &self.mfhd)?;
+
+            for traf in &self.trafs {
+                write_box_in(&mut cur, traf)?;
+            }
+
+            Ok(cur.position())
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::RawBoxRef;
+
     use super::*;
 
     fn make_box(fourcc: &[u8; 4], payload: &[u8]) -> Vec<u8> {
@@ -213,7 +179,7 @@ mod tests {
     fn parse_moof_minimal() {
         let mfhd = make_box(b"mfhd", &make_mfhd_payload(1));
 
-        let moof = MoofBoxView::parse(&mfhd).unwrap();
+        let moof = MoofBoxView::decode(&mfhd).unwrap();
 
         let mfhd_box = moof.mfhd().unwrap();
         assert_eq!(mfhd_box.sequence_number, 1);
@@ -231,7 +197,7 @@ mod tests {
         payload.extend_from_slice(&traf1);
         payload.extend_from_slice(&traf2);
 
-        let moof = MoofBoxView::parse(&payload).unwrap();
+        let moof = MoofBoxView::decode(&payload).unwrap();
 
         assert_eq!(moof.mfhd().unwrap().sequence_number, 5);
 
@@ -245,7 +211,7 @@ mod tests {
     fn parse_moof_missing_mfhd() {
         let traf = make_box(b"traf", &make_traf_payload(1));
 
-        let moof = MoofBoxView::parse(&traf).unwrap();
+        let moof = MoofBoxView::decode(&traf).unwrap();
         let result = moof.mfhd();
 
         assert!(result.is_err());
@@ -264,28 +230,10 @@ mod tests {
         box_data.extend_from_slice(b"moof");
         box_data.extend_from_slice(&mfhd);
 
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
-        let moof = MoofBoxView::try_from(box_view).unwrap();
+        let raw = RawBoxRef::parse(&box_data).unwrap();
+        let moof = MoofBoxView::try_from(raw.payload()).unwrap();
 
         assert_eq!(moof.mfhd().unwrap().sequence_number, 1);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let mfhd = make_box(b"mfhd", &make_mfhd_payload(1));
-
-        let mut box_data = Vec::new();
-        let size = 8 + mfhd.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"moov");
-        box_data.extend_from_slice(&mfhd);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
-        let result = MoofBoxView::try_from(box_view);
-
-        assert!(result.is_err());
     }
 
     #[cfg(feature = "alloc")]
@@ -301,22 +249,12 @@ mod tests {
             payload.extend_from_slice(&mfhd);
             payload.extend_from_slice(&traf);
 
-            let view = MoofBoxView::parse(&payload).unwrap();
-            let owned = MoofBox::from_view(&view).unwrap();
+            let moof_view = MoofBoxView::decode(&payload).unwrap();
+            let owned = MoofBox::try_from(&moof_view).unwrap();
 
             assert_eq!(owned.mfhd.sequence_number, 10);
             assert_eq!(owned.trafs.len(), 1);
             assert_eq!(owned.trafs[0].tfhd.track_id, 3);
-        }
-
-        #[test]
-        fn moof_box_parse() {
-            let mfhd = make_box(b"mfhd", &make_mfhd_payload(100));
-
-            let owned = MoofBox::parse(&mfhd).unwrap();
-
-            assert_eq!(owned.mfhd.sequence_number, 100);
-            assert_eq!(owned.trafs.len(), 0);
         }
     }
 }

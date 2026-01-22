@@ -1,11 +1,11 @@
-use crate::cursor::ReadCursor;
-
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::RawBoxRef;
 use crate::error::*;
 
 use crate::boxes::VisualSampleEntry;
+use crate::cursor::ReadCursor;
 
 /// AVC Configuration Box (`avcC`)
 #[derive(Debug)]
@@ -40,8 +40,18 @@ impl<'a> AvcCBoxView<'a> {
     pub fn pps(&self) -> impl Iterator<Item = &'a [u8]> {
         NalUnitIter { data: self.pps }
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<AvcCBoxView<'a>> {
+impl BoxCodec for AvcCBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::AVCC
+    }
+}
+
+impl<'de> BoxDecode<'de> for AvcCBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let configuration_version = cur.read_u8()?;
         let avc_profile_indication = cur.read_u8()?;
         let avc_profile_compatibility = cur.read_u8()?;
@@ -86,13 +96,13 @@ impl<'a> AvcCBoxView<'a> {
             ext,
         })
     }
+}
 
-    /// Parses an `AvcCBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<AvcCBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = AvcCBoxView::parse_in(&mut cursor)?;
+impl<'a> TryFrom<&'a [u8]> for AvcCBoxView<'a> {
+    type Error = Error;
 
-        Ok(this)
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        AvcCBoxView::decode(value)
     }
 }
 
@@ -143,7 +153,7 @@ impl<'a> Avc1BoxView<'a> {
         for child in self.extensions() {
             match child {
                 Ok(c) if c.boxtype() == BoxType::AVCC => {
-                    return AvcCBoxView::parse(c.into_payload());
+                    return AvcCBoxView::decode(c.into_payload());
                 }
                 Ok(_) => continue,
                 Err(e) => return Err(e),
@@ -157,20 +167,22 @@ impl<'a> Avc1BoxView<'a> {
             BoxType::AVC1,
         ))
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Avc1BoxView<'a>> {
-        let base = VisualSampleEntry::parse_in(cur)?;
+impl BoxCodec for Avc1BoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::AVC1
+    }
+}
+
+impl<'de> BoxDecode<'de> for Avc1BoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let base = VisualSampleEntry::parse_in(&mut cur)?;
         let extensions = cur.take(cur.remaining())?;
 
         Ok(Avc1BoxView { base, extensions })
-    }
-
-    /// Parses an `Avc1BoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<Avc1BoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = Avc1BoxView::parse_in(&mut cursor)?;
-
-        Ok(this)
     }
 }
 
@@ -178,22 +190,7 @@ impl<'a> TryFrom<&'a [u8]> for Avc1BoxView<'a> {
     type Error = Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self> {
-        Avc1BoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<RawBoxRef<'a>> for Avc1BoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::AVC1 {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::AVC1,
-                found: value.boxtype(),
-            }));
-        }
-
-        Avc1BoxView::parse(value.into_payload())
+        Avc1BoxView::decode(value)
     }
 }
 
@@ -205,11 +202,13 @@ pub use owned::{
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::cursor::WriteCursor;
-
-    use crate::{BoxHeader, RawBoxMut};
+    use crate::lib::Vec;
 
     use super::*;
+    use crate::BoxEncode;
+
+    use crate::base::writer::write_box_in;
+    use crate::cursor::WriteCursor;
 
     /// An owned AVC Configuration Box (`avcC`)
     #[derive(Debug, Clone)]
@@ -232,9 +231,8 @@ mod owned {
         pub ext: Option<Vec<u8>>,
     }
 
-    impl AvcCBox {
-        /// Creates an `AvcCBox` from an `AvcCBoxView`.
-        pub fn from_view(view: &AvcCBoxView<'_>) -> Self {
+    impl From<&AvcCBoxView<'_>> for AvcCBox {
+        fn from(view: &AvcCBoxView<'_>) -> Self {
             let sps = view.sps().map(|nalu| nalu.to_vec()).collect();
             let pps = view.pps().map(|nalu| nalu.to_vec()).collect();
             let ext = view.ext.map(|e| e.to_vec());
@@ -250,36 +248,25 @@ mod owned {
                 ext,
             }
         }
+    }
 
-        /// Parses an `AvcCBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let view = AvcCBoxView::parse(payload)?;
-            Ok(Self::from_view(&view))
+    impl BoxCodec for AvcCBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::AVCC
         }
+    }
 
-        /// Returns the size of the `AvcCBox` data.
-        #[inline]
-        pub fn size(&self) -> usize {
-            let mut size = 6; // header fields (version + profile + compat + level + length_size + nb_sps)
-
-            for sps in &self.sps {
-                size += 2 + sps.len(); // length (2 bytes) + data
-            }
-
-            size += 1; // nb_pps
-
-            for pps in &self.pps {
-                size += 2 + pps.len(); // length (2 bytes) + data
-            }
-
-            if let Some(ext) = &self.ext {
-                size += ext.len();
-            }
-
-            size
+    impl BoxDecode<'_> for AvcCBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = AvcCBoxView::decode(bytes)?;
+            Ok(AvcCBox::from(&view))
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for AvcCBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             cur.write_u8(self.configuration_version)?;
             cur.write_u8(self.avc_profile_indication)?;
             cur.write_u8(self.avc_profile_compatibility)?;
@@ -310,29 +297,7 @@ mod owned {
                 cur.write_slice(ext)?;
             }
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::AVCC,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `AvcCBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl From<AvcCBoxView<'_>> for AvcCBox {
-        fn from(view: AvcCBoxView) -> Self {
-            Self::from_view(&view)
+            Ok(cur.position())
         }
     }
 
@@ -357,16 +322,19 @@ mod owned {
                 self.avcc.avc_level_indication
             )
         }
+    }
 
-        /// Creates an `Avc1Box` from an `Avc1BoxView`.
-        pub fn from_view(view: &Avc1BoxView<'_>) -> Result<Self> {
+    impl TryFrom<&Avc1BoxView<'_>> for Avc1Box {
+        type Error = Error;
+
+        fn try_from(view: &Avc1BoxView<'_>) -> Result<Self> {
             let mut avcc = None;
 
             for extention in view.extensions() {
                 match extention {
                     Ok(c) if c.boxtype() == BoxType::AVCC => {
-                        let avcc_view = AvcCBoxView::parse(c.payload())?;
-                        avcc = Some(AvcCBox::from_view(&avcc_view));
+                        let avcc_view = AvcCBoxView::decode(c.payload())?;
+                        avcc = Some(AvcCBox::from(&avcc_view));
                     }
                     Ok(_) => continue,
                     Err(e) => return Err(e),
@@ -383,59 +351,29 @@ mod owned {
                 ))?,
             })
         }
+    }
 
-        /// Parses an `Avc1Box` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let avc1_view = Avc1BoxView::parse(payload)?;
-            Self::from_view(&avc1_view)
-        }
-
-        /// Returns the size of the `Avc1Box` data.
-        #[inline]
-        pub fn size(&self) -> usize {
-            let mut size = 0;
-            size += VisualSampleEntry::size();
-            let avcc_hd = BoxHeader::new(BoxType::AVCC, self.avcc.size());
-            size += avcc_hd.total_size() as usize;
-            size
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            self.base.write_in(cur)?;
-
-            // Write avcC box
-            let avcc_payload_len = self.avcc.size();
-            let avcc_header = BoxHeader::new(BoxType::AVCC, avcc_payload_len);
-            let bytes = cur.take_mut(avcc_header.total_size() as usize)?;
-            let mut frame = RawBoxMut::new(bytes, avcc_header)?;
-            self.avcc.write(frame.payload_mut())?;
-
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::AVC1,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `Avc1Box` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-                .map_err(|e| e.with_box_type(BoxType::AVC1))
+    impl BoxCodec for Avc1Box {
+        fn boxtype(&self) -> BoxType {
+            BoxType::AVC1
         }
     }
 
-    impl TryFrom<&Avc1BoxView<'_>> for Avc1Box {
-        type Error = Error;
+    impl BoxDecode<'_> for Avc1Box {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = Avc1BoxView::decode(bytes)?;
+            Avc1Box::try_from(&view)
+        }
+    }
 
-        fn try_from(view: &Avc1BoxView) -> Result<Self> {
-            Self::from_view(view)
+    impl BoxEncode for Avc1Box {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+            self.base.write_in(&mut cur)?;
+
+            write_box_in(&mut cur, &self.avcc)?;
+
+            Ok(cur.position())
         }
     }
 }
@@ -519,7 +457,7 @@ mod tests {
         let pps2 = b"pps_two";
 
         let payload = make_avcc_payload(100, 0, 31, &[sps1, sps2], &[pps1, pps2]);
-        let avcc = AvcCBoxView::parse(&payload).unwrap();
+        let avcc = AvcCBoxView::decode(&payload).unwrap();
 
         assert_eq!(avcc.avc_profile_indication, 100);
         assert_eq!(avcc.avc_level_indication, 31);
@@ -534,7 +472,7 @@ mod tests {
     #[test]
     fn avcc_parse_truncated() {
         let payload = [1, 100, 0, 31, 0xFF];
-        assert!(AvcCBoxView::parse(&payload).is_err());
+        assert!(AvcCBoxView::decode(&payload).is_err());
     }
 
     #[test]
@@ -550,7 +488,7 @@ mod tests {
         let mut payload = make_visual_sample_entry(1920, 1080);
         payload.extend_from_slice(&avcc_box);
 
-        let avc1 = Avc1BoxView::parse(&payload).unwrap();
+        let avc1 = Avc1BoxView::decode(&payload).unwrap();
 
         assert_eq!(avc1.visual_sample_entry().width, 1920);
         assert_eq!(avc1.visual_sample_entry().height, 1080);
@@ -562,7 +500,7 @@ mod tests {
     #[test]
     fn avc1_missing_avcc() {
         let payload = make_visual_sample_entry(1920, 1080);
-        let avc1 = Avc1BoxView::parse(&payload).unwrap();
+        let avc1 = Avc1BoxView::decode(&payload).unwrap();
         assert!(avc1.avcc().is_err());
     }
 
@@ -580,13 +518,15 @@ mod tests {
         let mut payload = make_visual_sample_entry(1920, 1080);
         payload.extend_from_slice(&avcc_box);
 
-        let avc1 = Avc1Box::parse(&payload).unwrap();
+        let avc1 = Avc1Box::decode(&payload).unwrap();
         assert_eq!(avc1.codec(), "avc1.64001F");
     }
 
     #[cfg(feature = "alloc")]
     #[test]
     fn avc1_box_round_trip() {
+        use crate::BoxEncode;
+
         let sps = b"\x67\x64\x00\x1f";
         let pps = b"\x68\xeb\xe3\xcb";
         let avcc_payload = make_avcc_payload(100, 0, 31, &[sps], &[pps]);
@@ -599,14 +539,14 @@ mod tests {
         original_payload.extend_from_slice(&avcc_box);
 
         // Parse
-        let original = Avc1Box::parse(&original_payload).unwrap();
+        let original = Avc1Box::decode(&original_payload).unwrap();
 
         // Write
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        original.encode(&mut buf).unwrap();
 
         // Parse again
-        let reparsed = Avc1Box::parse(&buf).unwrap();
+        let reparsed = Avc1Box::decode(&buf).unwrap();
 
         assert_eq!(reparsed.base.width, original.base.width);
         assert_eq!(reparsed.base.height, original.base.height);

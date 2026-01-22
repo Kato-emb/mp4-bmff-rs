@@ -1,7 +1,9 @@
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -30,8 +32,24 @@ pub struct TrexBox {
     pub default_sample_flags: u32,
 }
 
-impl TrexBox {
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TrexBox> {
+impl TryFrom<&[u8]> for TrexBox {
+    type Error = Error;
+
+    fn try_from(value: &[u8]) -> Result<Self> {
+        TrexBox::decode(value)
+    }
+}
+
+impl BoxCodec for TrexBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::TREX
+    }
+}
+
+impl BoxDecode<'_> for TrexBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = TrexFlags::from_bytes(cur.read_array()?);
 
@@ -55,32 +73,12 @@ impl TrexBox {
             default_sample_flags,
         })
     }
+}
 
-    /// Parses a `TrexBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<TrexBox> {
-        let mut cur = ReadCursor::new(payload);
-        let this = TrexBox::parse_in(&mut cur)?;
+impl BoxEncode for TrexBox {
+    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-        if cur.remaining() > 0 {
-            return Err(Error::at_in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after trex box",
-                    got: cur.remaining() as u64,
-                },
-                cur.position() as u64,
-                BoxType::TREX,
-            ));
-        }
-
-        Ok(this)
-    }
-
-    /// Returns the size of the payload in bytes.
-    pub fn size(&self) -> usize {
-        4 + 4 + 4 + 4 + 4 + 4 // version(1) + flags(3) + track_id(4) + 4 x u32 fields
-    }
-
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         cur.write_u8(self.version)?;
         cur.write_array(&self.flags.to_bytes())?;
         cur.write_u32_be(self.track_id)?;
@@ -89,46 +87,7 @@ impl TrexBox {
         cur.write_u32_be(self.default_sample_size)?;
         cur.write_u32_be(self.default_sample_flags)?;
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Buffer larger than expected",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::TREX,
-            ));
-        }
-
-        Ok(())
-    }
-
-    /// Writes this `TrexBox` into the given payload.
-    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-        let mut cur = WriteCursor::new(payload);
-        self.write_in(&mut cur)
-    }
-}
-
-impl TryFrom<&[u8]> for TrexBox {
-    type Error = Error;
-
-    fn try_from(value: &[u8]) -> Result<Self> {
-        TrexBox::parse(value)
-    }
-}
-
-impl TryFrom<RawBoxRef<'_>> for TrexBox {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-        if value.boxtype() != BoxType::TREX {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::TREX,
-                found: value.boxtype(),
-            }));
-        }
-
-        TrexBox::parse(value.payload())
+        Ok(cur.position())
     }
 }
 
@@ -141,6 +100,8 @@ pub type TrexFlags = FullBoxFlags<TrexSpec>;
 
 #[cfg(test)]
 mod tests {
+    use crate::RawBoxRef;
+
     use super::*;
 
     fn make_full_box_header(version: u8, flags: u32) -> Vec<u8> {
@@ -170,7 +131,7 @@ mod tests {
     #[test]
     fn parse_trex_basic() {
         let payload = make_trex_payload(1, 1, 1024, 512, 0x00010000);
-        let trex = TrexBox::parse(&payload).unwrap();
+        let trex = TrexBox::decode(&payload).unwrap();
 
         assert_eq!(trex.version, 0);
         assert_eq!(trex.track_id, 1);
@@ -183,7 +144,7 @@ mod tests {
     #[test]
     fn parse_trex_zeros() {
         let payload = make_trex_payload(2, 0, 0, 0, 0);
-        let trex = TrexBox::parse(&payload).unwrap();
+        let trex = TrexBox::decode(&payload).unwrap();
 
         assert_eq!(trex.track_id, 2);
         assert_eq!(trex.default_sample_description_index, 0);
@@ -193,23 +154,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_trex_extra_data() {
-        let mut payload = make_trex_payload(1, 1, 1024, 512, 0);
-        payload.extend_from_slice(&[0, 0, 0, 0]); // extra data
-
-        let result = TrexBox::parse(&payload);
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::InvalidBoxSize { .. }));
-        }
-    }
-
-    #[test]
     fn parse_trex_truncated() {
         let mut payload = make_full_box_header(0, 0);
         payload.extend_from_slice(&1u32.to_be_bytes()); // only track_id
 
-        let result = TrexBox::parse(&payload);
+        let result = TrexBox::decode(&payload);
         assert!(result.is_err());
     }
 
@@ -223,31 +172,10 @@ mod tests {
         box_data.extend_from_slice(b"trex");
         box_data.extend_from_slice(&payload);
 
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
-        let trex = TrexBox::try_from(box_view).unwrap();
+        let raw = RawBoxRef::parse(&box_data).unwrap();
+        let trex = TrexBox::try_from(raw.payload()).unwrap();
 
         assert_eq!(trex.track_id, 1);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_trex_payload(1, 1, 1000, 100, 0);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"trak"); // Wrong type
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
-        let result = TrexBox::try_from(box_view);
-
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::MismatchedBoxType { .. }));
-        }
     }
 
     #[test]

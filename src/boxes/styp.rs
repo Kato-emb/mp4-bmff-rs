@@ -1,7 +1,8 @@
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -22,8 +23,26 @@ impl<'a> StypBoxView<'a> {
             .chunks_exact(4)
             .map(|chunk| FourCC::new([chunk[0], chunk[1], chunk[2], chunk[3]]))
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StypBoxView<'a>> {
+impl<'a> TryFrom<&'a [u8]> for StypBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        StypBoxView::decode(value)
+    }
+}
+
+impl BoxCodec for StypBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::STYP
+    }
+}
+
+impl<'de> BoxDecode<'de> for StypBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         // Read major_brand (4 bytes)
         let major_brand = cur.read_array::<4>()?;
         let major_brand = FourCC::new(major_brand);
@@ -52,37 +71,6 @@ impl<'a> StypBoxView<'a> {
             compatible_brands,
         })
     }
-
-    /// Parses a `StypBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<StypBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = StypBoxView::parse_in(&mut cursor)?;
-
-        Ok(this)
-    }
-}
-
-impl<'a> TryFrom<&'a [u8]> for StypBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &'a [u8]) -> Result<Self> {
-        StypBoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<RawBoxRef<'a>> for StypBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::STYP {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::STYP,
-                found: value.boxtype(),
-            }));
-        }
-
-        StypBoxView::parse(value.payload())
-    }
 }
 
 #[cfg(feature = "alloc")]
@@ -92,6 +80,7 @@ pub use owned::StypBox;
 mod owned {
     use crate::lib::Vec;
 
+    use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
     use super::*;
@@ -107,9 +96,8 @@ mod owned {
         pub compatible_brands: Vec<FourCC>,
     }
 
-    impl StypBox {
-        /// Creates a `StypBox` from a `StypBoxView`.
-        pub fn from_view(view: &StypBoxView) -> Self {
+    impl From<StypBoxView<'_>> for StypBox {
+        fn from(view: StypBoxView) -> Self {
             let compatible_brands = view.compatible_brands().collect::<Vec<FourCC>>();
 
             StypBox {
@@ -118,19 +106,25 @@ mod owned {
                 compatible_brands,
             }
         }
+    }
 
-        /// Parses a `StypBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let styp_view = StypBoxView::parse(payload)?;
-            Ok(Self::from_view(&styp_view))
+    impl BoxCodec for StypBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::STYP
         }
+    }
 
-        /// Returns the size of the `StypBox` data.
-        pub fn size(&self) -> usize {
-            4 + 4 + self.compatible_brands.len() * 4
+    impl BoxDecode<'_> for StypBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = StypBoxView::decode(bytes)?;
+            Ok(StypBox::from(view))
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for StypBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             // Write major_brand (4 bytes)
             cur.write_array(self.major_brand.as_bytes())?;
 
@@ -142,36 +136,7 @@ mod owned {
                 cur.write_array(brand.as_bytes())?;
             }
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::STYP,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `StypBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl StypBoxView<'_> {
-        /// Converts this `StypBoxView` into an owned `StypBox`.
-        pub fn to_owned(&self) -> StypBox {
-            StypBox::from_view(self)
-        }
-    }
-
-    impl From<StypBoxView<'_>> for StypBox {
-        fn from(view: StypBoxView) -> Self {
-            Self::from_view(&view)
+            Ok(cur.position())
         }
     }
 }
@@ -183,6 +148,8 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn styp_box_round_trip() {
+        use crate::BoxEncode;
+
         let original = StypBox {
             major_brand: FourCC::new(*b"isom"),
             minor_version: 512,
@@ -194,11 +161,11 @@ mod tests {
         };
 
         // Write
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        let written = original.encode(&mut buf).unwrap();
 
         // Parse
-        let reparsed = StypBox::parse(&buf).unwrap();
+        let reparsed = StypBox::decode(&buf[..written]).unwrap();
 
         assert_eq!(reparsed.major_brand, original.major_brand);
         assert_eq!(reparsed.minor_version, original.minor_version);

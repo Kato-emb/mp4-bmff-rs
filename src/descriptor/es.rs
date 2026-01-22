@@ -35,6 +35,7 @@ pub struct EsDescriptorView<'a> {
 }
 
 impl<'a> EsDescriptorView<'a> {
+    /// Returns the Decoder Config Descriptor
     pub fn decoder_config_descriptor(&self) -> Result<DecoderConfigDescriptorView<'a>> {
         DecoderConfigDescriptorView::parse(&self.decoder_config_descriptor.instance)
     }
@@ -44,6 +45,7 @@ impl<'a> EsDescriptorView<'a> {
         DescrptorIter::new(self.extensions)
     }
 
+    /// Returns the size of the EsDescriptor when serialized
     pub fn size(&self) -> usize {
         let mut size = 2 // es_id
             + 1; // flags
@@ -195,10 +197,12 @@ mod owned {
     }
 
     impl EsDescriptor {
+        /// Returns the Decoder Config Descriptor
         pub fn decoder_config_descriptor(&self) -> Result<DecoderConfigDescriptor> {
             DecoderConfigDescriptor::parse(&self.decoder_config_descriptor.instance)
         }
 
+        /// Returns the size of the EsDescriptor when serialized
         pub fn size(&self) -> usize {
             let mut size = 2 // es_id
                 + 1; // flags
@@ -253,6 +257,7 @@ mod owned {
             })
         }
 
+        /// Parses EsDescriptor from a byte slice
         pub fn parse(instance: &[u8]) -> Result<Self> {
             let view = EsDescriptorView::parse(instance)?;
             Self::from_view(&view)

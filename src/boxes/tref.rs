@@ -1,9 +1,10 @@
-use crate::base::rawbox::RawBoxRef;
-use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
+use crate::RawBoxRef;
 use crate::error::*;
 
 /// A reference to a Track Reference Type Box.
@@ -85,16 +86,17 @@ impl<'a> TrefBoxView<'a> {
         }
         Ok(None)
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<TrefBoxView<'a>> {
-        let payload = cur.take(cur.remaining())?;
-        Ok(TrefBoxView { payload })
+impl BoxCodec for TrefBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::TREF
     }
+}
 
-    /// Parses a `TrefBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<TrefBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        TrefBoxView::parse_in(&mut cursor)
+impl<'de> BoxDecode<'de> for TrefBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        Ok(TrefBoxView { payload: bytes })
     }
 }
 
@@ -105,10 +107,12 @@ pub use owned::*;
 mod owned {
     use crate::cursor::WriteCursor;
 
-    use crate::BoxFrameMut;
-    use crate::base::frame::write_box_in;
+    use crate::base::writer::write_box_in;
 
     use super::*;
+    use crate::BoxCodec;
+    use crate::BoxDecode;
+    use crate::BoxEncode;
 
     /// An owned Track Reference Type Box.
     #[derive(Debug, Clone)]
@@ -119,51 +123,32 @@ mod owned {
         pub track_ids: Vec<u32>,
     }
 
-    impl TrackReferenceTypeBox {
-        /// Creates a `TrackReferenceTypeBox` from a `TrackReferenceTypeView`.
-        pub fn from_view(view: &TrackReferenceTypeBoxView<'_>) -> Result<Self> {
+    impl TryFrom<&TrackReferenceTypeBoxView<'_>> for TrackReferenceTypeBox {
+        type Error = Error;
+
+        fn try_from(view: &TrackReferenceTypeBoxView<'_>) -> Result<Self> {
             let track_ids: Vec<u32> = view.track_ids().collect();
             Ok(TrackReferenceTypeBox {
                 reference_type: view.reference_type,
                 track_ids,
             })
         }
+    }
 
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            self.track_ids.len() * 4
-        }
-
-        /// Returns the box type for this track reference.
-        pub fn boxtype(&self) -> BoxType {
+    impl BoxCodec for TrackReferenceTypeBox {
+        fn boxtype(&self) -> BoxType {
             // Track reference types are always valid FourCC values
             BoxType::new(self.reference_type)
         }
+    }
 
-        /// Returns the total frame size (including box header).
-        pub fn frame_size(&self) -> usize {
-            BoxFrameMut::required_len(self.boxtype(), self.size())
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for TrackReferenceTypeBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
             for &track_id in &self.track_ids {
                 cur.write_u32_be(track_id)?;
             }
-            Ok(())
-        }
-
-        /// Writes this `TrackReferenceTypeBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl TryFrom<&TrackReferenceTypeBoxView<'_>> for TrackReferenceTypeBox {
-        type Error = Error;
-
-        fn try_from(value: &TrackReferenceTypeBoxView<'_>) -> Result<Self> {
-            TrackReferenceTypeBox::from_view(value)
+            Ok(cur.position())
         }
     }
 
@@ -174,66 +159,48 @@ mod owned {
         pub references: Vec<TrackReferenceTypeBox>,
     }
 
-    impl TrefBox {
-        /// Creates a `TrefBox` from a `TrefBoxView`.
-        pub fn from_view(view: &TrefBoxView<'_>) -> Result<Self> {
+    impl TryFrom<&TrefBoxView<'_>> for TrefBox {
+        type Error = Error;
+
+        fn try_from(view: &TrefBoxView<'_>) -> Result<Self> {
             let mut references = Vec::new();
             for result in view.references() {
-                references.push(TrackReferenceTypeBox::from_view(&result?)?);
+                references.push(TrackReferenceTypeBox::try_from(&result?)?);
             }
             Ok(TrefBox { references })
         }
+    }
 
-        /// Parses a `TrefBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let view = TrefBoxView::parse(payload)?;
-            TrefBox::from_view(&view)
-        }
-
+    impl TrefBox {
         /// Finds a track reference by its reference type.
         pub fn find_reference(&self, reference_type: FourCC) -> Option<&TrackReferenceTypeBox> {
             self.references
                 .iter()
                 .find(|r| r.reference_type == reference_type)
         }
+    }
 
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            self.references.iter().map(|r| r.frame_size()).sum()
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            for reference in &self.references {
-                let boxtype = reference.boxtype();
-                let payload_size = reference.size();
-                write_box_in(cur, boxtype, payload_size, |p| reference.write(p))?;
-            }
-
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::TREF,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `TrefBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
+    impl BoxCodec for TrefBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::TREF
         }
     }
 
-    impl TryFrom<&TrefBoxView<'_>> for TrefBox {
-        type Error = Error;
+    impl BoxDecode<'_> for TrefBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = TrefBoxView::decode(bytes)?;
+            TrefBox::try_from(&view)
+        }
+    }
 
-        fn try_from(value: &TrefBoxView<'_>) -> Result<Self> {
-            TrefBox::from_view(value)
+    impl BoxEncode for TrefBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+            for reference in &self.references {
+                write_box_in(&mut cur, reference)?;
+            }
+
+            Ok(cur.position())
         }
     }
 }
@@ -272,12 +239,12 @@ mod tests {
     fn parse_and_iterate_references() {
         // Empty case
         let payload = make_tref_payload(&[]);
-        let tref = TrefBoxView::parse(&payload).unwrap();
+        let tref = TrefBoxView::decode(&payload).unwrap();
         assert_eq!(tref.references().count(), 0);
 
         // Single reference
         let payload = make_tref_payload(&[(b"hint", &[2])]);
-        let tref = TrefBoxView::parse(&payload).unwrap();
+        let tref = TrefBoxView::decode(&payload).unwrap();
         let references: Vec<_> = tref.references().collect();
         assert_eq!(references.len(), 1);
         let hint_ref = references[0].as_ref().unwrap();
@@ -287,7 +254,7 @@ mod tests {
         // Multiple references
         let payload =
             make_tref_payload(&[(b"hint", &[2, 3]), (b"cdsc", &[4]), (b"vdep", &[5, 6, 7])]);
-        let tref = TrefBoxView::parse(&payload).unwrap();
+        let tref = TrefBoxView::decode(&payload).unwrap();
         let references: Vec<_> = tref.references().map(|r| r.unwrap()).collect();
         assert_eq!(references.len(), 3);
         assert_eq!(references[0].track_ids().count(), 2);
@@ -298,7 +265,7 @@ mod tests {
     #[test]
     fn find_reference() {
         let payload = make_tref_payload(&[(b"hint", &[2]), (b"cdsc", &[4, 5])]);
-        let tref = TrefBoxView::parse(&payload).unwrap();
+        let tref = TrefBoxView::decode(&payload).unwrap();
 
         // Found cases
         let hint_ref = tref.find_reference(FourCC::new(*b"hint")).unwrap().unwrap();
@@ -337,8 +304,8 @@ mod tests {
     #[test]
     fn owned_conversion() {
         let payload = make_tref_payload(&[(b"hint", &[2, 3]), (b"cdsc", &[4])]);
-        let view = TrefBoxView::parse(&payload).unwrap();
-        let owned = TrefBox::from_view(&view).unwrap();
+        let view = TrefBoxView::decode(&payload).unwrap();
+        let owned = TrefBox::try_from(&view).unwrap();
 
         assert_eq!(owned.references.len(), 2);
         assert_eq!(owned.references[0].track_ids, vec![2, 3]);

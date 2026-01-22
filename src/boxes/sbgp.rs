@@ -1,7 +1,8 @@
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -55,8 +56,25 @@ impl<'a> SbgpBoxView<'a> {
                 })
             })
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<SbgpBoxView<'a>> {
+/// Specification for the Sample to Group Box (`sbgp`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SbgpSpec;
+
+/// Flags for the Sample to Group Box (`sbgp`).
+pub type SbgpFlags = FullBoxFlags<SbgpSpec>;
+
+impl BoxCodec for SbgpBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::SBGP
+    }
+}
+
+impl<'de> BoxDecode<'de> for SbgpBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = SbgpFlags::from_bytes(cur.read_array()?);
 
@@ -103,43 +121,15 @@ impl<'a> SbgpBoxView<'a> {
             entries,
         })
     }
-
-    /// Parses a `SbgpBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<SbgpBoxView<'a>> {
-        let mut cur = ReadCursor::new(payload);
-        SbgpBoxView::parse_in(&mut cur)
-    }
 }
 
 impl<'a> TryFrom<&'a [u8]> for SbgpBoxView<'a> {
     type Error = Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self> {
-        SbgpBoxView::parse(value)
+        SbgpBoxView::decode(value)
     }
 }
-
-impl<'a> TryFrom<RawBoxRef<'a>> for SbgpBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::SBGP {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::SBGP,
-                found: value.boxtype(),
-            }));
-        }
-
-        SbgpBoxView::parse(value.payload())
-    }
-}
-
-/// Specification for the Sample to Group Box (`sbgp`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SbgpSpec;
-
-/// Flags for the Sample to Group Box (`sbgp`).
-pub type SbgpFlags = FullBoxFlags<SbgpSpec>;
 
 #[cfg(feature = "alloc")]
 pub use owned::SbgpBox;
@@ -149,6 +139,7 @@ mod owned {
     extern crate alloc;
     use alloc::vec::Vec;
 
+    use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
     use super::*;
@@ -168,9 +159,10 @@ mod owned {
         pub entries: Vec<SbgpEntry>,
     }
 
-    impl SbgpBox {
-        /// Creates a `SbgpBox` from a `SbgpBoxView`.
-        pub fn from_view(view: &SbgpBoxView<'_>) -> Result<SbgpBox> {
+    impl TryFrom<&SbgpBoxView<'_>> for SbgpBox {
+        type Error = Error;
+
+        fn try_from(view: &SbgpBoxView<'_>) -> Result<Self> {
             let entries: Result<Vec<SbgpEntry>> = view.entries().collect();
             Ok(SbgpBox {
                 version: view.version,
@@ -180,21 +172,25 @@ mod owned {
                 entries: entries?,
             })
         }
+    }
 
-        /// Parses a `SbgpBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<SbgpBox> {
-            let view = SbgpBoxView::parse(payload)?;
-            SbgpBox::from_view(&view)
+    impl BoxCodec for SbgpBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::SBGP
         }
+    }
 
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            // version(1) + flags(3) + grouping_type(4) + [grouping_type_parameter(4)] + entry_count(4) + entries(8 * n)
-            let param_size = if self.version == 1 { 4 } else { 0 };
-            1 + 3 + 4 + param_size + 4 + self.entries.len() * 8
+    impl BoxDecode<'_> for SbgpBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = SbgpBoxView::decode(bytes)?;
+            SbgpBox::try_from(&view)
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for SbgpBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_bytes())?;
             cur.write_array(self.grouping_type.as_bytes())?;
@@ -210,40 +206,7 @@ mod owned {
                 cur.write_u32_be(entry.group_description_index)?;
             }
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::SBGP,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `SbgpBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl TryFrom<&SbgpBoxView<'_>> for SbgpBox {
-        type Error = Error;
-
-        fn try_from(value: &SbgpBoxView<'_>) -> Result<Self> {
-            SbgpBox::from_view(value)
-        }
-    }
-
-    impl TryFrom<RawBoxRef<'_>> for SbgpBox {
-        type Error = Error;
-
-        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-            let view = SbgpBoxView::try_from(value)?;
-            SbgpBox::from_view(&view)
+            Ok(cur.position())
         }
     }
 }
@@ -269,14 +232,14 @@ mod tests {
     fn parse_and_iterate_entries() {
         // Empty v0
         let payload = make_sbgp_payload_v0(b"roll", &[]);
-        let sbgp = SbgpBoxView::parse(&payload).unwrap();
+        let sbgp = SbgpBoxView::decode(&payload).unwrap();
         assert_eq!(sbgp.version, 0);
         assert!(sbgp.grouping_type_parameter.is_none());
         assert_eq!(sbgp.entries().count(), 0);
 
         // With entries v0
         let payload = make_sbgp_payload_v0(b"seig", &[(10, 1), (20, 2), (30, 0)]);
-        let sbgp = SbgpBoxView::parse(&payload).unwrap();
+        let sbgp = SbgpBoxView::decode(&payload).unwrap();
         assert_eq!(sbgp.entry_count, 3);
         let parsed: Vec<_> = sbgp.entries().map(|r| r.unwrap()).collect();
         assert_eq!(parsed.len(), 3);
@@ -292,7 +255,7 @@ mod tests {
         payload.extend_from_slice(&1u32.to_be_bytes());
         payload.extend_from_slice(&5u32.to_be_bytes());
         payload.extend_from_slice(&1u32.to_be_bytes());
-        let sbgp = SbgpBoxView::parse(&payload).unwrap();
+        let sbgp = SbgpBoxView::decode(&payload).unwrap();
         assert_eq!(sbgp.version, 1);
         assert_eq!(sbgp.grouping_type_parameter, Some(0x12345678));
     }
@@ -304,29 +267,15 @@ mod tests {
         data.extend_from_slice(&[0, 0, 0]);
         data.extend_from_slice(b"roll");
         data.extend_from_slice(&0u32.to_be_bytes());
-        assert!(SbgpBoxView::parse(&data).is_err());
-    }
-
-    #[test]
-    fn wrong_box_type() {
-        let payload = make_sbgp_payload_v0(b"roll", &[]);
-        let mut box_data = Vec::new();
-        box_data.extend_from_slice(&(8 + payload.len() as u32).to_be_bytes());
-        box_data.extend_from_slice(b"sgpd");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = RawBoxRef::parse_in(&mut cursor).unwrap();
-        let result = SbgpBoxView::try_from(box_view);
-        assert!(result.is_err());
+        assert!(SbgpBoxView::decode(&data).is_err());
     }
 
     #[cfg(feature = "alloc")]
     #[test]
     fn owned_conversion() {
         let payload = make_sbgp_payload_v0(b"roll", &[(10, 1), (20, 2)]);
-        let view = SbgpBoxView::parse(&payload).unwrap();
-        let owned = SbgpBox::from_view(&view).unwrap();
+        let view = SbgpBoxView::decode(&payload).unwrap();
+        let owned = SbgpBox::try_from(&view).unwrap();
 
         assert_eq!(owned.entries.len(), 2);
         assert_eq!(owned.entries[0].sample_count, 10);

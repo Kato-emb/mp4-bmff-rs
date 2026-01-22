@@ -51,14 +51,10 @@ pub use base::header::{
     BoxType,
 };
 pub use base::iter::BoxIter;
-pub use base::rawbox::{
-    RawBox,
-    RawBoxMut,
-    RawBoxRef, //
-};
+pub use base::rawbox::RawBoxRef;
 
 pub use base::codec::{
-    BmffBox, //
+    BoxCodec, //
     BoxDecode,
     BoxEncode,
 };
@@ -75,10 +71,6 @@ pub use error::{
 // =============================================================================
 pub mod boxes;
 pub mod descriptor;
-
-// Re-export typed box representations for convenience
-#[cfg(feature = "alloc")]
-pub use base::frame::BoxFrameOwned;
 
 // =============================================================================
 // Layer 3 -  I/O (std)

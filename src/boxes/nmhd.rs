@@ -1,7 +1,9 @@
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -28,60 +30,26 @@ impl Default for NmhdBox {
     }
 }
 
-impl NmhdBox {
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<NmhdBox> {
+/// Specification for Null Media Header Box (`nmhd`).
+pub struct NmhdSpec;
+
+/// Flags for Null Media Header Box (`nmhd`).
+pub type NmhdFlags = FullBoxFlags<NmhdSpec>;
+
+impl BoxCodec for NmhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::NMHD
+    }
+}
+
+impl BoxDecode<'_> for NmhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = NmhdFlags::from_bytes(cur.read_array()?);
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after parsing nmhd",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::NMHD,
-            ));
-        }
-
         Ok(NmhdBox { version, flags })
-    }
-
-    /// Parses a `NmhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<NmhdBox> {
-        let mut cursor = ReadCursor::new(payload);
-        NmhdBox::parse_in(&mut cursor)
-    }
-
-    /// Returns the size of the payload in bytes.
-    pub fn size(&self) -> usize {
-        // version(1) + flags(3) = 4
-        4
-    }
-
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-        // Write version (1 byte)
-        cur.write_u8(self.version)?;
-
-        // Write flags (3 bytes)
-        cur.write_array(&self.flags.to_bytes())?;
-
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Buffer larger than expected",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::NMHD,
-            ));
-        }
-
-        Ok(())
-    }
-
-    /// Writes this `NmhdBox` into the given payload.
-    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-        let mut cursor = WriteCursor::new(payload);
-        self.write_in(&mut cursor)
     }
 }
 
@@ -89,30 +57,20 @@ impl TryFrom<&[u8]> for NmhdBox {
     type Error = Error;
 
     fn try_from(payload: &[u8]) -> Result<Self> {
-        NmhdBox::parse(payload)
+        NmhdBox::decode(payload)
     }
 }
 
-impl TryFrom<RawBoxRef<'_>> for NmhdBox {
-    type Error = Error;
+impl BoxEncode for NmhdBox {
+    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-        if value.boxtype() != BoxType::NMHD {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::NMHD,
-                found: value.boxtype(),
-            }));
-        }
+        cur.write_u8(self.version)?;
+        cur.write_array(&self.flags.to_bytes())?;
 
-        NmhdBox::parse(value.payload())
+        Ok(cur.position())
     }
 }
-
-/// Specification for Null Media Header Box (`nmhd`).
-pub struct NmhdSpec;
-
-/// Flags for Null Media Header Box (`nmhd`).
-pub type NmhdFlags = FullBoxFlags<NmhdSpec>;
 
 #[cfg(test)]
 mod tests {
@@ -125,10 +83,10 @@ mod tests {
             flags: NmhdFlags::new(1),
         };
 
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 4];
+        original.encode(&mut buf).unwrap();
 
-        let reparsed = NmhdBox::parse(&buf).unwrap();
+        let reparsed = NmhdBox::decode(&buf).unwrap();
         assert_eq!(reparsed.version, original.version);
         assert_eq!(reparsed.flags.get(), original.flags.get());
     }

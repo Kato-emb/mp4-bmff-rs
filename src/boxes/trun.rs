@@ -1,6 +1,7 @@
 use crate::cursor::ReadCursor;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -135,8 +136,26 @@ impl<'a> TrunBoxView<'a> {
             version: self.version,
         }
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<TrunBoxView<'a>> {
+impl<'a> TryFrom<&'a [u8]> for TrunBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        TrunBoxView::decode(value)
+    }
+}
+
+impl BoxCodec for TrunBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::TRUN
+    }
+}
+
+impl<'de> BoxDecode<'de> for TrunBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = TrunFlags::from_bytes(cur.read_array()?);
 
@@ -185,35 +204,6 @@ impl<'a> TrunBoxView<'a> {
             first_sample_flags,
             samples,
         })
-    }
-
-    /// Parses a `TrunBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<TrunBoxView<'a>> {
-        let mut cur = ReadCursor::new(payload);
-        TrunBoxView::parse_in(&mut cur)
-    }
-}
-
-impl<'a> TryFrom<&'a [u8]> for TrunBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &'a [u8]) -> Result<Self> {
-        TrunBoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<RawBoxRef<'a>> for TrunBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::TRUN {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::TRUN,
-                found: value.boxtype(),
-            }));
-        }
-
-        TrunBoxView::parse(value.payload())
     }
 }
 
@@ -296,6 +286,7 @@ mod owned {
     extern crate alloc;
     use alloc::vec::Vec;
 
+    use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
     use super::*;
@@ -317,25 +308,22 @@ mod owned {
         samples: Vec<u8>,
     }
 
-    impl TrunBox {
-        /// Creates a `TrunBox` from a `TrunBoxView`.
-        pub fn from_view(view: &TrunBoxView<'_>) -> Result<TrunBox> {
-            Ok(TrunBox {
+    impl From<&TrunBoxView<'_>> for TrunBox {
+        fn from(view: &TrunBoxView<'_>) -> Self {
+            let samples = view.samples.to_vec();
+
+            TrunBox {
                 version: view.version,
                 flags: view.flags,
                 sample_count: view.sample_count,
                 data_offset: view.data_offset,
                 first_sample_flags: view.first_sample_flags,
-                samples: view.samples.to_vec(),
-            })
+                samples,
+            }
         }
+    }
 
-        /// Parses a `TrunBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<TrunBox> {
-            let view = TrunBoxView::parse(payload)?;
-            TrunBox::from_view(&view)
-        }
-
+    impl TrunBox {
         /// Returns an iterator over the samples in the Track Run Box.
         ///
         /// Each sample yields a tuple of (duration, size, flags, composition_time_offset).
@@ -346,27 +334,25 @@ mod owned {
                 version: self.version,
             }
         }
+    }
 
-        /// Returns the size of the `TrunBox` payload in bytes.
-        #[inline]
-        pub fn size(&self) -> usize {
-            let mut size = 4 + 4; // version/flags + sample_count
-
-            if self.flags.data_offset_present() {
-                size += 4; // data_offset
-            }
-
-            if self.flags.first_sample_flags_present() {
-                size += 4; // first_sample_flags
-            }
-
-            // Per-sample data
-            size += self.samples.len();
-
-            size
+    impl BoxCodec for TrunBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::TRUN
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxDecode<'_> for TrunBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = TrunBoxView::decode(bytes)?;
+            Ok(TrunBox::from(&view))
+        }
+    }
+
+    impl BoxEncode for TrunBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_bytes())?;
 
@@ -380,43 +366,9 @@ mod owned {
                 cur.write_u32_be(first_sample_flags)?;
             }
 
-            // Write raw sample data
             cur.write_slice(&self.samples)?;
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::TRUN,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `TrunBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl TryFrom<&TrunBoxView<'_>> for TrunBox {
-        type Error = Error;
-
-        fn try_from(value: &TrunBoxView<'_>) -> Result<Self> {
-            TrunBox::from_view(value)
-        }
-    }
-
-    impl TryFrom<RawBoxRef<'_>> for TrunBox {
-        type Error = Error;
-
-        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-            let view = TrunBoxView::try_from(value)?;
-            TrunBox::from_view(&view)
+            Ok(cur.position())
         }
     }
 }
@@ -453,7 +405,7 @@ mod tests {
         samples.extend_from_slice(&50u32.to_be_bytes()); // composition offset
 
         let payload = make_trun_payload(0, flags, 1, &[], &samples);
-        let trun = TrunBoxView::parse(&payload).unwrap();
+        let trun = TrunBoxView::decode(&payload).unwrap();
 
         let sample = trun.samples().next().unwrap().unwrap();
         assert_eq!(sample.duration, Some(100));
@@ -470,7 +422,7 @@ mod tests {
         samples.extend_from_slice(&(-100i32).to_be_bytes()); // negative offset
 
         let payload = make_trun_payload(1, flags, 1, &[], &samples);
-        let trun = TrunBoxView::parse(&payload).unwrap();
+        let trun = TrunBoxView::decode(&payload).unwrap();
 
         let sample = trun.samples().next().unwrap().unwrap();
         assert_eq!(sample.composition_time_offset, Some(-100));
@@ -479,7 +431,7 @@ mod tests {
     #[test]
     fn parse_trun_invalid_version() {
         let payload = make_trun_payload(2, 0, 0, &[], &[]);
-        let result = TrunBoxView::parse(&payload);
+        let result = TrunBoxView::decode(&payload);
 
         assert!(result.is_err());
         assert!(matches!(
@@ -492,6 +444,8 @@ mod tests {
     #[test]
     fn trun_box_round_trip() {
         // Create payload with data_offset, first_sample_flags, and multiple samples with all fields
+
+        use crate::BoxEncode;
         let flags = 0x000001 | 0x000004 | 0x000100 | 0x000200 | 0x000400 | 0x000800;
 
         let mut header = Vec::new();
@@ -513,14 +467,14 @@ mod tests {
         let original_payload = make_trun_payload(1, flags, 2, &header, &samples);
 
         // Parse
-        let original = TrunBox::parse(&original_payload).unwrap();
+        let original = TrunBox::decode(&original_payload).unwrap();
 
         // Write
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        let written = original.encode(&mut buf).unwrap();
 
         // Parse again
-        let reparsed = TrunBox::parse(&buf).unwrap();
+        let reparsed = TrunBox::decode(&buf[..written]).unwrap();
 
         // Compare
         assert_eq!(reparsed.version, original.version);

@@ -5,7 +5,9 @@ use crate::cursor::WriteCursor;
 use crate::types::LanguageCode;
 use crate::types::QuickTimeDateTime;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -49,8 +51,24 @@ impl Default for MdhdBox {
 
 impl MdhdBox {
     const PRE_DEFINED_SIZE: usize = mem::size_of::<u16>();
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MdhdBox> {
+/// Specification for Media Header Box (`mdhd`).
+pub struct MdhdSpec;
+
+/// Flags for Media Header Box (`mdhd`).
+pub type MdhdFlags = FullBoxFlags<MdhdSpec>;
+
+impl BoxCodec for MdhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::MDHD
+    }
+}
+
+impl BoxDecode<'_> for MdhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = MdhdFlags::from_bytes(cur.read_array()?);
 
@@ -103,16 +121,6 @@ impl MdhdBox {
         // Skip pre_defined (2 bytes)
         cur.advance(Self::PRE_DEFINED_SIZE)?;
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after parsing mdhd",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::MDHD,
-            ));
-        }
-
         Ok(MdhdBox {
             version,
             flags,
@@ -123,26 +131,20 @@ impl MdhdBox {
             language,
         })
     }
+}
 
-    /// Parses a `MdhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<MdhdBox> {
-        let mut cursor = ReadCursor::new(payload);
-        MdhdBox::parse_in(&mut cursor)
+impl TryFrom<&[u8]> for MdhdBox {
+    type Error = Error;
+
+    fn try_from(value: &[u8]) -> Result<Self> {
+        MdhdBox::decode(value)
     }
+}
 
-    /// Returns the size of the `MdhdBox` payload in bytes.
-    pub fn size(&self) -> usize {
-        let base = 4; // version + flags
-        let version_dependent = match self.version {
-            1 => 8 + 8 + 4 + 8, // u64 creation_time + u64 modification_time + u32 timescale + u64 duration
-            _ => 4 + 4 + 4 + 4, // u32 creation_time + u32 modification_time + u32 timescale + u32 duration
-        };
-        let common = 2 // language
-            + Self::PRE_DEFINED_SIZE; // pre_defined
-        base + version_dependent + common
-    }
+impl BoxEncode for MdhdBox {
+    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         cur.write_u8(self.version)?;
         cur.write_array(&self.flags.to_bytes())?;
 
@@ -166,54 +168,9 @@ impl MdhdBox {
         // pre_defined
         cur.reserve_zeros(Self::PRE_DEFINED_SIZE)?;
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Buffer larger than expected",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::MDHD,
-            ));
-        }
-
-        Ok(())
-    }
-
-    /// Writes this `MdhdBox` into the given payload.
-    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-        let mut cursor = WriteCursor::new(payload);
-        self.write_in(&mut cursor)
+        Ok(cur.position())
     }
 }
-
-impl TryFrom<&[u8]> for MdhdBox {
-    type Error = Error;
-
-    fn try_from(payload: &[u8]) -> Result<Self> {
-        MdhdBox::parse(payload)
-    }
-}
-
-impl TryFrom<RawBoxRef<'_>> for MdhdBox {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-        if value.boxtype() != BoxType::MDHD {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::MDHD,
-                found: value.boxtype(),
-            }));
-        }
-
-        MdhdBox::parse(value.payload())
-    }
-}
-
-/// Specification for Media Header Box (`mdhd`).
-pub struct MdhdSpec;
-
-/// Flags for Media Header Box (`mdhd`).
-pub type MdhdFlags = FullBoxFlags<MdhdSpec>;
 
 #[cfg(test)]
 mod tests {
@@ -231,10 +188,10 @@ mod tests {
             language: LanguageCode::new(*b"eng"),
         };
 
-        let mut buf = vec![0u8; mdhd.size()];
-        mdhd.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        mdhd.encode(&mut buf).unwrap();
 
-        let parsed = MdhdBox::parse(&buf).unwrap();
+        let parsed = MdhdBox::decode(&buf).unwrap();
         assert_eq!(parsed.version, mdhd.version);
         assert_eq!(
             parsed.creation_time.to_quicktime_seconds(),
@@ -261,10 +218,10 @@ mod tests {
             language: LanguageCode::new(*b"jpn"),
         };
 
-        let mut buf = vec![0u8; mdhd.size()];
-        mdhd.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        mdhd.encode(&mut buf).unwrap();
 
-        let parsed = MdhdBox::parse(&buf).unwrap();
+        let parsed = MdhdBox::decode(&buf).unwrap();
         assert_eq!(parsed.version, mdhd.version);
         assert_eq!(
             parsed.creation_time.to_quicktime_seconds(),

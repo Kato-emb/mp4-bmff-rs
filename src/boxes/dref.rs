@@ -1,9 +1,11 @@
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
-use crate::cursor::ReadCursor;
-
 use crate::RawBoxRef;
 use crate::error::*;
+
+use crate::cursor::ReadCursor;
 
 use super::FullBoxFlags;
 
@@ -35,8 +37,8 @@ impl<'a> DrefBoxView<'a> {
         BoxIter::new(self.entries).map(|box_result| {
             let view = box_result?;
             match view.boxtype() {
-                BoxType::URL_ => UrlBoxView::parse(view.into_payload()).map(DrefEntryView::Url),
-                BoxType::URN_ => UrnBoxView::parse(view.into_payload()).map(DrefEntryView::Urn),
+                BoxType::URL_ => UrlBoxView::decode(view.into_payload()).map(DrefEntryView::Url),
+                BoxType::URN_ => UrnBoxView::decode(view.into_payload()).map(DrefEntryView::Urn),
                 other => Err(Error::in_box(
                     ErrorKind::InvalidBoxType {
                         reason: "Unexpected box type in entries",
@@ -47,8 +49,24 @@ impl<'a> DrefBoxView<'a> {
             }
         })
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<DrefBoxView<'a>> {
+/// Specification type for Data Reference Box (`dref`).
+pub struct DrefSpec;
+
+/// The flags for the Data Reference Box (`dref`).
+pub type DrefFlags = FullBoxFlags<DrefSpec>;
+
+impl BoxCodec for DrefBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::DREF
+    }
+}
+
+impl<'de> BoxDecode<'de> for DrefBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = DrefFlags::from_bytes(cur.read_array()?);
 
@@ -56,7 +74,7 @@ impl<'a> DrefBoxView<'a> {
 
         let entries = cur.remaining_slice();
         for _ in 0..entry_count {
-            RawBoxRef::parse_in(cur)?;
+            RawBoxRef::parse_in(&mut cur)?;
         }
 
         if !cur.is_empty() {
@@ -76,21 +94,7 @@ impl<'a> DrefBoxView<'a> {
             entries,
         })
     }
-
-    /// Parses a `DrefBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(payload);
-        let this = DrefBoxView::parse_in(&mut cur)?;
-
-        Ok(this)
-    }
 }
-
-/// Specification type for Data Reference Box (`dref`).
-pub struct DrefSpec;
-
-/// The flags for the Data Reference Box (`dref`).
-pub type DrefFlags = FullBoxFlags<DrefSpec>;
 
 /// A reference to a Data Entry URL Box (`url `).
 #[derive(Debug)]
@@ -103,8 +107,27 @@ pub struct UrlBoxView<'a> {
     pub location: Option<&'a str>,
 }
 
-impl<'a> UrlBoxView<'a> {
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<UrlBoxView<'a>> {
+/// Specification type for Data Entry URL Box (`url `).
+pub struct UrlSpec;
+
+/// The flags for the Data Entry URL Box (`url `).
+pub type UrlFlags = FullBoxFlags<UrlSpec>;
+
+impl UrlFlags {
+    /// Indicates that the resource is contained within the same file as the `mdat` box.
+    pub const SELF_CONTAINED: Self = UrlFlags::from_bits_truncate(0x000001);
+}
+
+impl BoxCodec for UrlBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::URL_
+    }
+}
+
+impl<'de> BoxDecode<'de> for UrlBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = UrlFlags::from_bytes(cur.read_array()?);
 
@@ -129,25 +152,6 @@ impl<'a> UrlBoxView<'a> {
             location,
         })
     }
-
-    /// Parses an `UrlBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(payload);
-        let this = UrlBoxView::parse_in(&mut cur)?;
-
-        Ok(this)
-    }
-}
-
-/// Specification type for Data Entry URL Box (`url `).
-pub struct UrlSpec;
-
-/// The flags for the Data Entry URL Box (`url `).
-pub type UrlFlags = FullBoxFlags<UrlSpec>;
-
-impl UrlFlags {
-    /// Indicates that the resource is contained within the same file as the `mdat` box.
-    pub const SELF_CONTAINED: Self = UrlFlags::from_bits_truncate(0x000001);
 }
 
 /// A reference to a Data Entry URN Box (`urn `).
@@ -163,8 +167,22 @@ pub struct UrnBoxView<'a> {
     pub location: &'a str,
 }
 
-impl<'a> UrnBoxView<'a> {
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<UrnBoxView<'a>> {
+/// Specification type for Data Entry URN Box (`urn `).
+pub struct UrnSpec;
+
+/// The flags for the Data Entry URN Box (`urn `).
+pub type UrnFlags = FullBoxFlags<UrnSpec>;
+
+impl BoxCodec for UrnBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::URN_
+    }
+}
+
+impl<'de> BoxDecode<'de> for UrnBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = UrnFlags::from_bytes(cur.read_array()?);
 
@@ -197,21 +215,7 @@ impl<'a> UrnBoxView<'a> {
             location,
         })
     }
-
-    /// Parses an `UrnBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(payload);
-        let this = UrnBoxView::parse_in(&mut cur)?;
-
-        Ok(this)
-    }
 }
-
-/// Specification type for Data Entry URN Box (`urn `).
-pub struct UrnSpec;
-
-/// The flags for the Data Entry URN Box (`urn `).
-pub type UrnFlags = FullBoxFlags<UrnSpec>;
 
 #[cfg(feature = "alloc")]
 pub use owned::{
@@ -225,11 +229,11 @@ pub use owned::{
 mod owned {
     use crate::lib::String;
 
-    use crate::cursor::WriteCursor;
-
-    use crate::base::frame::write_box_in;
-
     use super::*;
+    use crate::BoxEncode;
+
+    use crate::base::writer::write_box_in;
+    use crate::cursor::WriteCursor;
 
     /// An owned entry in the Data Reference Box (`dref`).
     #[derive(Debug, Clone)]
@@ -240,11 +244,11 @@ mod owned {
         Urn(UrnBox),
     }
 
-    impl From<DrefEntryView<'_>> for DrefEntry {
-        fn from(view: DrefEntryView<'_>) -> Self {
+    impl From<&DrefEntryView<'_>> for DrefEntry {
+        fn from(view: &DrefEntryView<'_>) -> Self {
             match view {
-                DrefEntryView::Url(url_view) => DrefEntry::Url(UrlBox::from_view(&url_view)),
-                DrefEntryView::Urn(urn_view) => DrefEntry::Urn(UrnBox::from_view(&urn_view)),
+                DrefEntryView::Url(url_view) => DrefEntry::Url(UrlBox::from(url_view)),
+                DrefEntryView::Urn(urn_view) => DrefEntry::Urn(UrnBox::from(urn_view)),
             }
         }
     }
@@ -261,13 +265,41 @@ mod owned {
     }
 
     impl DrefBox {
-        /// Creates a `DrefBox` from a `DrefBoxView`.
-        pub fn from_view(view: &DrefBoxView) -> Result<Self> {
+        /// Returns the size of the payload in bytes.
+        pub fn size(&self) -> usize {
+            let mut size = 4 + 4; // version(1) + flags(3) + entry_count(4)
+            for entry in &self.entries {
+                size += 8 + entry.size(); // header + payload
+            }
+            size
+        }
+    }
+
+    impl DrefEntry {
+        /// Returns the size of the entry payload in bytes.
+        pub fn size(&self) -> usize {
+            match self {
+                DrefEntry::Url(url) => url.size(),
+                DrefEntry::Urn(urn) => urn.size(),
+            }
+        }
+    }
+
+    impl BoxCodec for DrefBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::DREF
+        }
+    }
+
+    impl TryFrom<&DrefBoxView<'_>> for DrefBox {
+        type Error = Error;
+
+        fn try_from(view: &DrefBoxView<'_>) -> Result<Self> {
             let mut entries = Vec::with_capacity(view.entry_count as usize);
 
             for entry_view in view.entries() {
                 let entry = entry_view?;
-                entries.push(DrefEntry::from(entry));
+                entries.push(DrefEntry::from(&entry));
             }
 
             Ok(DrefBox {
@@ -276,33 +308,19 @@ mod owned {
                 entries,
             })
         }
+    }
 
-        /// Parses a `DrefBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let view = DrefBoxView::parse(payload)?;
-            Self::from_view(&view)
+    impl BoxDecode<'_> for DrefBox {
+        fn decode(bytes: &'_ [u8]) -> Result<Self> {
+            let view = DrefBoxView::decode(bytes)?;
+            Self::try_from(&view)
         }
+    }
 
-        /// Returns the size of the `DrefBox` data.
-        #[inline]
-        pub fn size(&self) -> usize {
-            let mut size = 4 + 4; // version/flags + entry_count
+    impl BoxEncode for DrefBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
 
-            for entry in &self.entries {
-                size += match entry {
-                    DrefEntry::Url(url_box) => {
-                        BoxFrameMut::required_len(BoxType::URL_, url_box.size())
-                    }
-                    DrefEntry::Urn(urn_box) => {
-                        BoxFrameMut::required_len(BoxType::URN_, urn_box.size())
-                    }
-                };
-            }
-
-            size
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_bytes())?;
 
@@ -310,40 +328,12 @@ mod owned {
 
             for entry in &self.entries {
                 match entry {
-                    DrefEntry::Url(url_box) => {
-                        write_box_in(cur, BoxType::URL_, url_box.size(), |p| url_box.write(p))?;
-                    }
-                    DrefEntry::Urn(urn_box) => {
-                        write_box_in(cur, BoxType::URN_, urn_box.size(), |p| urn_box.write(p))?;
-                    }
+                    DrefEntry::Url(url_box) => write_box_in(&mut cur, url_box)?,
+                    DrefEntry::Urn(urn_box) => write_box_in(&mut cur, urn_box)?,
                 }
             }
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::DREF,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `DrefBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl TryFrom<&DrefBoxView<'_>> for DrefBox {
-        type Error = Error;
-
-        fn try_from(view: &DrefBoxView<'_>) -> Result<Self> {
-            Self::from_view(view)
+            Ok(cur.position())
         }
     }
 
@@ -358,29 +348,44 @@ mod owned {
         pub location: Option<String>,
     }
 
-    impl UrlBox {
-        /// Creates an `UrlBox` from an `UrlBoxView`.
-        pub fn from_view(view: &UrlBoxView) -> Self {
+    impl From<&UrlBoxView<'_>> for UrlBox {
+        fn from(value: &UrlBoxView<'_>) -> Self {
             UrlBox {
-                version: view.version,
-                flags: view.flags,
-                location: view.location.map(|s| s.to_string()),
+                version: value.version,
+                flags: value.flags,
+                location: value.location.map(|s| s.to_string()),
             }
         }
+    }
 
-        /// Parses an `UrlBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let url_view = UrlBoxView::parse(payload)?;
-            Ok(Self::from_view(&url_view))
-        }
-
-        /// Returns the size of the `UrlBox` data.
-        #[inline]
+    impl UrlBox {
+        /// Returns the size of the payload in bytes.
         pub fn size(&self) -> usize {
-            4 + self.location.as_ref().map_or(0, |loc| loc.len() + 1)
+            let mut size = 4; // version(1) + flags(3)
+            if let Some(location) = &self.location {
+                size += location.len() + 1; // location + null terminator
+            }
+            size
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxCodec for UrlBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::URL_
+        }
+    }
+
+    impl BoxDecode<'_> for UrlBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = UrlBoxView::decode(bytes)?;
+            Ok(UrlBox::from(&view))
+        }
+    }
+
+    impl BoxEncode for UrlBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_bytes())?;
 
@@ -389,36 +394,7 @@ mod owned {
                 cur.write_u8(0)?;
             }
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::URL_,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `UrlBox` into the given payload.
-        pub fn write(&self, buffer: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(buffer);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl UrlBoxView<'_> {
-        /// Converts this `UrlBoxView` into an owned `UrlBox`.
-        pub fn to_owned(&self) -> UrlBox {
-            UrlBox::from_view(self)
-        }
-    }
-
-    impl From<UrlBoxView<'_>> for UrlBox {
-        fn from(view: UrlBoxView<'_>) -> Self {
-            Self::from_view(&view)
+            Ok(cur.position())
         }
     }
 
@@ -435,30 +411,41 @@ mod owned {
         pub location: String,
     }
 
-    impl UrnBox {
-        /// Creates an `UrnBox` from an `UrnBoxView`.
-        pub fn from_view(view: &UrnBoxView) -> Self {
+    impl From<&UrnBoxView<'_>> for UrnBox {
+        fn from(value: &UrnBoxView<'_>) -> Self {
             UrnBox {
-                version: view.version,
-                flags: view.flags,
-                name: view.name.to_string(),
-                location: view.location.to_string(),
+                version: value.version,
+                flags: value.flags,
+                name: value.name.to_string(),
+                location: value.location.to_string(),
             }
         }
+    }
 
-        /// Parses an `UrnBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let urn_view = UrnBoxView::parse(payload)?;
-            Ok(Self::from_view(&urn_view))
-        }
-
-        /// Returns the size of the `UrnBox` data.
-        #[inline]
+    impl UrnBox {
+        /// Returns the size of the payload in bytes.
         pub fn size(&self) -> usize {
-            4 + self.name.len() + 1 + self.location.len() + 1
+            4 + self.name.len() + 1 + self.location.len() + 1 // version/flags + name + null + location + null
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxCodec for UrnBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::URN_
+        }
+    }
+
+    impl BoxDecode<'_> for UrnBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = UrnBoxView::decode(bytes)?;
+            Ok(UrnBox::from(&view))
+        }
+    }
+
+    impl BoxEncode for UrnBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_bytes())?;
 
@@ -468,36 +455,7 @@ mod owned {
             cur.write_slice(self.location.as_bytes())?;
             cur.write_u8(0)?;
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::URN_,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `UrnBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl UrnBoxView<'_> {
-        /// Converts this `UrnBoxView` into an owned `UrnBox`.
-        pub fn to_owned(&self) -> UrnBox {
-            UrnBox::from_view(self)
-        }
-    }
-
-    impl From<UrnBoxView<'_>> for UrnBox {
-        fn from(view: UrnBoxView<'_>) -> Self {
-            Self::from_view(&view)
+            Ok(cur.position())
         }
     }
 }
@@ -562,7 +520,7 @@ mod tests {
     #[test]
     fn parse_dref_empty() {
         let payload = make_dref_payload(vec![]);
-        let dref = DrefBoxView::parse(&payload).unwrap();
+        let dref = DrefBoxView::decode(&payload).unwrap();
 
         assert_eq!(dref.entry_count, 0);
         assert_eq!(dref.entries().count(), 0);
@@ -576,7 +534,7 @@ mod tests {
             make_urn_entry("urn:test", "http://test.com"),
         ];
         let payload = make_dref_payload(entries);
-        let dref = DrefBoxView::parse(&payload).unwrap();
+        let dref = DrefBoxView::decode(&payload).unwrap();
 
         assert_eq!(dref.entry_count, 3);
 
@@ -617,7 +575,7 @@ mod tests {
         payload.extend_from_slice(&2u32.to_be_bytes());
         payload.extend_from_slice(&make_url_entry_self_contained());
 
-        let result = DrefBoxView::parse(&payload);
+        let result = DrefBoxView::decode(&payload);
         assert!(result.is_err());
     }
 
@@ -627,7 +585,7 @@ mod tests {
         invalid_entry.extend_from_slice(&make_full_box_header(0, 0));
 
         let payload = make_dref_payload(vec![invalid_entry]);
-        let dref = DrefBoxView::parse(&payload).unwrap();
+        let dref = DrefBoxView::decode(&payload).unwrap();
 
         let entry = dref.entries().next().unwrap();
         assert!(entry.is_err());
@@ -636,6 +594,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn dref_box_round_trip() {
+        use crate::BoxEncode;
         // Parse original data
         let entries = vec![
             make_url_entry_self_contained(),
@@ -643,15 +602,15 @@ mod tests {
             make_urn_entry("urn:example", "http://example.com"),
         ];
         let original_payload = make_dref_payload(entries);
-        let original_view = DrefBoxView::parse(&original_payload).unwrap();
-        let owned = DrefBox::from_view(&original_view).unwrap();
+        let original_view = DrefBoxView::decode(&original_payload).unwrap();
+        let owned = DrefBox::try_from(&original_view).unwrap();
 
         // Write to buffer
-        let mut buf = vec![0u8; owned.size()];
-        owned.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        let written = owned.encode(&mut buf).unwrap();
 
         // Parse again and compare
-        let reparsed = DrefBoxView::parse(&buf).unwrap();
+        let reparsed = DrefBoxView::decode(&buf[..written]).unwrap();
         assert_eq!(reparsed.entry_count, original_view.entry_count);
 
         let original_entries: Vec<_> = original_view.entries().collect();

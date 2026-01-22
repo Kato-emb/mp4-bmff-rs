@@ -1,5 +1,7 @@
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
+use crate::RawBoxRef;
 use crate::cursor::ReadCursor;
 
 use crate::error::*;
@@ -34,7 +36,7 @@ impl<'a> Mp4aBoxView<'a> {
             ));
         }
 
-        let esds = EsdsBoxView::parse(frame.payload())?;
+        let esds = EsdsBoxView::decode(frame.into_payload())?;
         Ok(Mp4aBoxView { base, esds })
     }
 
@@ -47,15 +49,42 @@ impl<'a> Mp4aBoxView<'a> {
     }
 }
 
+impl BoxCodec for Mp4aBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::MP4A
+    }
+}
+
+impl<'de> BoxDecode<'de> for Mp4aBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let base = AudioSampleEntry::parse_in(&mut cur)?;
+        let frame = RawBoxRef::parse_in(&mut cur)?;
+        if frame.boxtype() != BoxType::ESDS {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxType {
+                    reason: "Expected ESDS box in Mp4a box",
+                    got: frame.boxtype().type_field(),
+                },
+                BoxType::MP4A,
+            ));
+        }
+
+        let esds = EsdsBoxView::decode(frame.into_payload())?;
+        Ok(Mp4aBoxView { base, esds })
+    }
+}
+
 #[cfg(feature = "alloc")]
 pub use owned::Mp4aBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
-    use crate::BoxFrameMut;
-    use crate::base::frame::write_box_in;
+    use crate::base::writer::write_box_in;
 
     use super::*;
     use crate::boxes::EsdsBox;
@@ -69,52 +98,38 @@ mod owned {
         pub esds: EsdsBox,
     }
 
-    impl Mp4aBox {
-        /// Creates an `Mp4aBox` from an `Mp4aBoxView`.
-        pub fn from_view(view: &Mp4aBoxView<'_>) -> Result<Self> {
-            Ok(Mp4aBox {
-                base: view.base,
-                esds: EsdsBox::from_view(&view.esds)?,
-            })
-        }
-
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            let esds_payload_size = self.esds.size();
-            let esds_frame_size = BoxFrameMut::required_len(BoxType::ESDS, esds_payload_size);
-            AudioSampleEntry::size() + esds_frame_size
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            self.base.write_in(cur)?;
-
-            write_box_in(cur, BoxType::ESDS, self.esds.size(), |p| self.esds.write(p))?;
-
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::MP4A,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `Mp4aBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
     impl TryFrom<&Mp4aBoxView<'_>> for Mp4aBox {
         type Error = Error;
 
-        fn try_from(value: &Mp4aBoxView<'_>) -> Result<Self> {
-            Mp4aBox::from_view(value)
+        fn try_from(view: &Mp4aBoxView<'_>) -> Result<Self> {
+            Ok(Mp4aBox {
+                base: view.base,
+                esds: EsdsBox::try_from(&view.esds)?,
+            })
+        }
+    }
+
+    impl BoxCodec for Mp4aBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::MP4A
+        }
+    }
+
+    impl BoxDecode<'_> for Mp4aBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = Mp4aBoxView::decode(bytes)?;
+            Mp4aBox::try_from(&view)
+        }
+    }
+
+    impl BoxEncode for Mp4aBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            self.base.write_in(&mut cur)?;
+            write_box_in(&mut cur, &self.esds)?;
+
+            Ok(cur.position())
         }
     }
 }

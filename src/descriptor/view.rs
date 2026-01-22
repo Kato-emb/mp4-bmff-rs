@@ -18,6 +18,7 @@ pub struct DescriptorView<'a> {
 }
 
 impl<'a> DescriptorView<'a> {
+    /// Returns the size of the Descriptor when serialized
     pub fn size(&self) -> usize {
         1 // tag
         + self.size_of_instance.size_in_bytes() // size_of_instance
@@ -80,6 +81,7 @@ mod owned {
     }
 
     impl DescriptorOwned {
+        /// Returns the size of the Descriptor when serialized
         pub fn size(&self) -> usize {
             1 // tag
             + self.size_of_instance.size_in_bytes() // size_of_instance
@@ -95,7 +97,8 @@ mod owned {
             }
         }
 
-        pub fn to_view(&self) -> DescriptorView {
+        /// Converts the owned descriptor into a view
+        pub fn to_view(&self) -> DescriptorView<'_> {
             DescriptorView {
                 tag: self.tag,
                 size_of_instance: self.size_of_instance,

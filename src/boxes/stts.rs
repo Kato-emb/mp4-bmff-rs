@@ -1,6 +1,7 @@
 use crate::cursor::ReadCursor;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -27,6 +28,12 @@ pub struct SttsBoxView<'a> {
     entries: &'a [u8],
 }
 
+/// Specification for the Decoding Time to Sample Box (`stts`).
+pub struct SttsSpec;
+
+/// Flags for the Decoding Time to Sample Box (`stts`).
+pub type SttsFlags = FullBoxFlags<SttsSpec>;
+
 impl<'a> SttsBoxView<'a> {
     const ENTRY_SIZE: usize = 8;
 
@@ -45,8 +52,26 @@ impl<'a> SttsBoxView<'a> {
             })
         })
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<SttsBoxView<'a>> {
+impl<'a> TryFrom<&'a [u8]> for SttsBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        SttsBoxView::decode(value)
+    }
+}
+
+impl BoxCodec for SttsBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::STTS
+    }
+}
+
+impl<'de> BoxDecode<'de> for SttsBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = SttsFlags::from_bytes(cur.read_array()?);
 
@@ -74,50 +99,14 @@ impl<'a> SttsBoxView<'a> {
             entries,
         })
     }
-
-    /// Parses a `SttsBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<SttsBoxView<'a>> {
-        let mut cur = ReadCursor::new(payload);
-        let this = SttsBoxView::parse_in(&mut cur)?;
-
-        Ok(this)
-    }
 }
-
-impl<'a> TryFrom<&'a [u8]> for SttsBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &'a [u8]) -> Result<Self> {
-        SttsBoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<RawBoxRef<'a>> for SttsBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::STTS {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::STTS,
-                found: value.boxtype(),
-            }));
-        }
-
-        SttsBoxView::parse(value.payload())
-    }
-}
-
-/// Specification for the Decoding Time to Sample Box (`stts`).
-pub struct SttsSpec;
-
-/// Flags for the Decoding Time to Sample Box (`stts`).
-pub type SttsFlags = FullBoxFlags<SttsSpec>;
 
 #[cfg(feature = "alloc")]
 pub use owned::SttsBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
     use super::*;
@@ -132,11 +121,10 @@ mod owned {
         pub entries: Vec<SttsEntry>,
     }
 
-    impl SttsBox {
-        const ENTRY_SIZE: usize = 8;
+    impl TryFrom<&SttsBoxView<'_>> for SttsBox {
+        type Error = Error;
 
-        /// Creates a `SttsBox` from a `SttsBoxView`.
-        pub fn from_view(view: &SttsBoxView<'_>) -> Result<SttsBox> {
+        fn try_from(view: &SttsBoxView<'_>) -> Result<Self> {
             let entries: Result<Vec<SttsEntry>> = view.entries().collect();
             Ok(SttsBox {
                 version: view.version,
@@ -144,20 +132,25 @@ mod owned {
                 entries: entries?,
             })
         }
+    }
 
-        /// Parses a `SttsBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<SttsBox> {
-            let view = SttsBoxView::parse(payload)?;
-            SttsBox::from_view(&view)
+    impl BoxCodec for SttsBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::STTS
         }
+    }
 
-        /// Returns the size of the `SttsBox` data.
-        #[inline]
-        pub fn size(&self) -> usize {
-            4 + 4 + self.entries.len() * Self::ENTRY_SIZE // version/flags + count + entries
+    impl BoxDecode<'_> for SttsBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = SttsBoxView::decode(bytes)?;
+            SttsBox::try_from(&view)
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for SttsBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_bytes())?;
             cur.write_u32_be(self.entries.len() as u32)?;
@@ -167,31 +160,7 @@ mod owned {
                 cur.write_u32_be(entry.sample_delta)?;
             }
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::STTS,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `SttsBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl TryFrom<&SttsBoxView<'_>> for SttsBox {
-        type Error = Error;
-
-        fn try_from(value: &SttsBoxView<'_>) -> Result<Self> {
-            SttsBox::from_view(value)
+            Ok(cur.position())
         }
     }
 }
@@ -222,6 +191,8 @@ mod tests {
     #[test]
     fn stts_box_write_and_round_trip() {
         // Multiple entries
+
+        use crate::BoxEncode;
         let entries = vec![
             SttsEntry {
                 sample_count: 100,
@@ -237,15 +208,15 @@ mod tests {
             },
         ];
         let payload = make_stts_payload(entries.clone());
-        let view = SttsBoxView::parse(&payload).unwrap();
-        let owned = SttsBox::from_view(&view).unwrap();
+        let view = SttsBoxView::decode(&payload).unwrap();
+        let owned = SttsBox::try_from(&view).unwrap();
 
         // Write to buffer
-        let mut buf = vec![0u8; owned.size()];
-        owned.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        let written = owned.encode(&mut buf).unwrap();
 
         // Parse again and compare
-        let reparsed = SttsBox::parse(&buf).unwrap();
+        let reparsed = SttsBox::decode(&buf[..written]).unwrap();
         assert_eq!(reparsed.entries.len(), 3);
         for (i, entry) in reparsed.entries.iter().enumerate() {
             assert_eq!(entry.sample_count, entries[i].sample_count);
@@ -253,14 +224,14 @@ mod tests {
         }
 
         // Error case: buffer too small
-        let mut small_buf = vec![0u8; owned.size() - 1];
-        assert!(owned.write(&mut small_buf).is_err());
+        let mut small_buf = vec![0u8; 10];
+        assert!(owned.encode(&mut small_buf).is_err());
 
         // Error case: entry count mismatch
         let mut bad_payload = make_full_box_header(0, 0);
         bad_payload.extend_from_slice(&2u32.to_be_bytes());
         bad_payload.extend_from_slice(&100u32.to_be_bytes());
         bad_payload.extend_from_slice(&200u32.to_be_bytes());
-        assert!(SttsBoxView::parse(&bad_payload).is_err());
+        assert!(SttsBoxView::decode(&bad_payload).is_err());
     }
 }

@@ -1,7 +1,9 @@
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -116,18 +118,22 @@ impl TryFrom<&[u8]> for VmhdBox {
     }
 }
 
-impl TryFrom<RawBoxRef<'_>> for VmhdBox {
-    type Error = Error;
+impl BoxCodec for VmhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::VMHD
+    }
+}
 
-    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-        if value.boxtype() != BoxType::VMHD {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::VMHD,
-                found: value.boxtype(),
-            }));
-        }
+impl BoxDecode<'_> for VmhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        VmhdBox::parse(bytes)
+    }
+}
 
-        VmhdBox::parse(value.payload())
+impl BoxEncode for VmhdBox {
+    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        self.write(bytes)?;
+        Ok(self.size())
     }
 }
 

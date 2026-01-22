@@ -4,6 +4,9 @@ use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 use crate::types::*;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -58,8 +61,24 @@ impl MvhdBox {
 
     const RESERVED_SIZE: usize = mem::size_of::<u16>() + 2 * mem::size_of::<u32>(); // reserved
     const PRE_DEFINED_SIZE: usize = 6 * mem::size_of::<u32>(); // pre_defined
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MvhdBox> {
+/// The specification for the Movie Header Box (`mvhd`).
+pub struct MvhdSpec;
+
+/// The flags for the Movie Header Box (`mvhd`).
+pub type MvhdFlags = FullBoxFlags<MvhdSpec>;
+
+impl BoxCodec for MvhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::MVHD
+    }
+}
+
+impl BoxDecode<'_> for MvhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = MvhdFlags::from_bytes(cur.read_array()?);
 
@@ -112,17 +131,6 @@ impl MvhdBox {
         cur.advance(MvhdBox::PRE_DEFINED_SIZE)?;
         let next_track_id = cur.read_u32_be()?;
 
-        if !cur.is_empty() {
-            return Err(Error::at_in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data remaining after parsing",
-                    got: cur.remaining() as u64,
-                },
-                cur.position() as u64,
-                BoxType::MVHD,
-            ));
-        }
-
         Ok(MvhdBox {
             version,
             flags,
@@ -136,31 +144,20 @@ impl MvhdBox {
             next_track_id,
         })
     }
+}
 
-    /// Parses an `MvhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<MvhdBox> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = MvhdBox::parse_in(&mut cursor)?;
+impl<'a> TryFrom<&'a [u8]> for MvhdBox {
+    type Error = Error;
 
-        Ok(this)
+    fn try_from(bytes: &'a [u8]) -> Result<Self> {
+        MvhdBox::decode(bytes)
     }
+}
 
-    /// Returns the size of the `MvhdBox` payload in bytes.
-    pub fn size(&self) -> usize {
-        let base = 4; // version + flags
-        let version_dependent = match self.version {
-            1 => 8 + 8 + 4 + 8, // u64 creation_time + u64 modification_time + u32 timescale + u64 duration
-            _ => 4 + 4 + 4 + 4, // u32 creation_time + u32 modification_time + u32 timescale + u32 duration
-        };
-        let common = 4 + 2 // rate + volume
-            + Self::RESERVED_SIZE
-            + 9 * 4 // matrix
-            + Self::PRE_DEFINED_SIZE
-            + 4; // next_track_id
-        base + version_dependent + common
-    }
+impl BoxEncode for MvhdBox {
+    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         cur.write_u8(self.version)?;
         cur.write_array(&self.flags.to_bytes())?;
 
@@ -195,31 +192,9 @@ impl MvhdBox {
 
         cur.write_u32_be(self.next_track_id)?;
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Buffer larger than expected",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::MVHD,
-            ));
-        }
-
-        Ok(())
-    }
-
-    /// Writes this `MvhdBox` into the given payload.
-    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-        let mut cursor = WriteCursor::new(payload);
-        self.write_in(&mut cursor)
+        Ok(cur.position())
     }
 }
-
-/// The specification for the Movie Header Box (`mvhd`).
-pub struct MvhdSpec;
-
-/// The flags for the Movie Header Box (`mvhd`).
-pub type MvhdFlags = FullBoxFlags<MvhdSpec>;
 
 #[cfg(test)]
 mod tests {
@@ -240,10 +215,10 @@ mod tests {
             next_track_id: 2,
         };
 
-        let mut buf = vec![0u8; mvhd.size()];
-        mvhd.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        let written = mvhd.encode(&mut buf).unwrap();
 
-        let parsed = MvhdBox::parse(&buf).unwrap();
+        let parsed = MvhdBox::decode(&buf[..written]).unwrap();
         assert_eq!(parsed.version, mvhd.version);
         assert_eq!(
             parsed.creation_time.to_quicktime_seconds(),
@@ -276,10 +251,10 @@ mod tests {
             next_track_id: 5,
         };
 
-        let mut buf = vec![0u8; mvhd.size()];
-        mvhd.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        let written = mvhd.encode(&mut buf).unwrap();
 
-        let parsed = MvhdBox::parse(&buf).unwrap();
+        let parsed = MvhdBox::decode(&buf[..written]).unwrap();
         assert_eq!(parsed.version, mvhd.version);
         assert_eq!(
             parsed.creation_time.to_quicktime_seconds(),

@@ -1,7 +1,8 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::RawBoxRef;
 use crate::error::*;
 
 use super::FullBoxFlags;
@@ -43,8 +44,26 @@ impl<'a> Co64BoxView<'a> {
                 Co64Entry { chunk_offset }
             })
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Co64BoxView<'a>> {
+impl<'a> TryFrom<&'a [u8]> for Co64BoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        Co64BoxView::decode(value)
+    }
+}
+
+impl BoxCodec for Co64BoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::CO64
+    }
+}
+
+impl<'de> BoxDecode<'de> for Co64BoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = Co64Flags::from_bytes(cur.read_array()?);
 
@@ -71,37 +90,6 @@ impl<'a> Co64BoxView<'a> {
             entries,
         })
     }
-
-    /// Parses a `Co64BoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<Co64BoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = Co64BoxView::parse_in(&mut cursor)?;
-
-        Ok(this)
-    }
-}
-
-impl<'a> TryFrom<&'a [u8]> for Co64BoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &'a [u8]) -> Result<Self> {
-        Co64BoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<RawBoxRef<'a>> for Co64BoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::CO64 {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::CO64,
-                found: value.boxtype(),
-            }));
-        }
-
-        Co64BoxView::parse(value.into_payload())
-    }
 }
 
 /// Specification for the `co64` box.
@@ -117,6 +105,7 @@ pub use owned::Co64Box;
 mod owned {
     use super::*;
 
+    use crate::BoxEncode;
     use crate::cursor::WriteCursor;
     use crate::lib::Vec;
 
@@ -131,9 +120,10 @@ mod owned {
         pub entries: Vec<Co64Entry>,
     }
 
-    impl Co64Box {
-        /// Creates a `Co64Box` from a `Co64BoxView`.
-        pub fn from_view(view: &Co64BoxView<'_>) -> Result<Co64Box> {
+    impl TryFrom<&Co64BoxView<'_>> for Co64Box {
+        type Error = Error;
+
+        fn try_from(view: &Co64BoxView<'_>) -> Result<Self> {
             let mut entries = Vec::with_capacity(view.entry_count as usize);
 
             for entry in view.entries() {
@@ -146,20 +136,25 @@ mod owned {
                 entries,
             })
         }
+    }
 
-        /// Parses a `Co64Box` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Co64Box> {
-            let view = Co64BoxView::parse(payload)?;
-            Co64Box::from_view(&view)
+    impl BoxCodec for Co64Box {
+        fn boxtype(&self) -> BoxType {
+            BoxType::CO64
         }
+    }
 
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            // version(1) + flags(3) + entry_count(4) + entries(8 * n)
-            1 + 3 + 4 + self.entries.len() * 8
+    impl BoxDecode<'_> for Co64Box {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = Co64BoxView::decode(bytes)?;
+            Co64Box::try_from(&view)
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for Co64Box {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_bytes())?;
             cur.write_u32_be(self.entries.len() as u32)?;
@@ -168,31 +163,7 @@ mod owned {
                 cur.write_u64_be(entry.chunk_offset)?;
             }
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::CO64,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `Co64Box` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl TryFrom<&Co64BoxView<'_>> for Co64Box {
-        type Error = Error;
-
-        fn try_from(value: &Co64BoxView<'_>) -> Result<Self> {
-            Co64Box::from_view(value)
+            Ok(cur.position())
         }
     }
 }

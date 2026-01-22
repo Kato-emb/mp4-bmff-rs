@@ -1,3 +1,5 @@
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::cursor::ReadCursor;
 
 use crate::BoxIter;
@@ -40,8 +42,8 @@ impl<'a> StsdBoxView<'a> {
         BoxIter::new(self.entries).map(|box_result| {
             let view = box_result?;
             match view.boxtype() {
-                BoxType::AVC1 => Avc1BoxView::parse(view.into_payload()).map(StsdEntryView::Avc1),
-                BoxType::MP4A => Mp4aBoxView::parse(view.into_payload()).map(StsdEntryView::Mp4a),
+                BoxType::AVC1 => Avc1BoxView::decode(view.into_payload()).map(StsdEntryView::Avc1),
+                BoxType::MP4A => Mp4aBoxView::decode(view.into_payload()).map(StsdEntryView::Mp4a),
                 _ => Ok(StsdEntryView::Other(view)),
             }
         })
@@ -91,6 +93,35 @@ pub struct StsdSpec;
 /// The flags for the Sample Description Box ('stsd')
 pub type StsdFlags = FullBoxFlags<StsdSpec>;
 
+impl BoxCodec for StsdBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::STSD
+    }
+}
+
+impl<'de> BoxDecode<'de> for StsdBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = StsdFlags::from_bytes(cur.read_array()?);
+
+        let entry_count = cur.read_u32_be()?;
+
+        let entries = cur.remaining_slice();
+        for _ in 0..entry_count {
+            RawBoxRef::parse_in(&mut cur)?;
+        }
+
+        Ok(StsdBoxView {
+            version,
+            flags,
+            entry_count,
+            entries,
+        })
+    }
+}
+
 #[cfg(feature = "alloc")]
 pub use owned::{
     StsdBox, //
@@ -99,10 +130,10 @@ pub use owned::{
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
-    use crate::BoxFrameMut;
-    use crate::base::frame::write_box_in;
+    use crate::base::writer::write_box_in;
 
     use super::*;
     use crate::boxes::Avc1Box;
@@ -129,8 +160,8 @@ mod owned {
 
         fn try_from(value: &StsdEntryView<'_>) -> Result<Self> {
             match value {
-                StsdEntryView::Mp4a(view) => Ok(StsdEntry::Mp4a(Mp4aBox::from_view(view)?)),
-                StsdEntryView::Avc1(view) => Ok(StsdEntry::Avc1(Avc1Box::from_view(view)?)),
+                StsdEntryView::Mp4a(view) => Ok(StsdEntry::Mp4a(Mp4aBox::try_from(view)?)),
+                StsdEntryView::Avc1(view) => Ok(StsdEntry::Avc1(Avc1Box::try_from(view)?)),
                 StsdEntryView::Other(view) => Ok(StsdEntry::Other {
                     boxtype: view.boxtype(),
                     payload: view.payload().to_vec(),
@@ -148,36 +179,6 @@ mod owned {
                 StsdEntry::Other { boxtype, .. } => *boxtype,
             }
         }
-
-        /// Returns the size of the payload in bytes (not including box header).
-        pub fn payload_size(&self) -> usize {
-            match self {
-                StsdEntry::Mp4a(box_) => box_.size(),
-                StsdEntry::Avc1(box_) => box_.size(),
-                StsdEntry::Other { payload, .. } => payload.len(),
-            }
-        }
-
-        /// Returns the total frame size (including box header).
-        pub fn frame_size(&self) -> usize {
-            BoxFrameMut::required_len(self.boxtype(), self.payload_size())
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            let boxtype = self.boxtype();
-            let payload_len = self.payload_size();
-
-            write_box_in(cur, boxtype, payload_len, |p| match self {
-                StsdEntry::Mp4a(box_) => box_.write(p),
-                StsdEntry::Avc1(box_) => box_.write(p),
-                StsdEntry::Other { payload, .. } => {
-                    p.copy_from_slice(payload);
-                    Ok(())
-                }
-            })?;
-
-            Ok(())
-        }
     }
 
     /// An owned Sample Description Box (`stsd`).
@@ -193,9 +194,10 @@ mod owned {
         pub entries: Vec<StsdEntry>,
     }
 
-    impl StsdBox {
-        /// Creates an owned Sample Description Box from a view.
-        pub fn from_view(view: &StsdBoxView) -> Result<Self> {
+    impl TryFrom<&StsdBoxView<'_>> for StsdBox {
+        type Error = Error;
+
+        fn try_from(view: &StsdBoxView<'_>) -> Result<Self> {
             let mut entries = Vec::with_capacity(view.entry_count as usize);
 
             for entry_view in view.entries() {
@@ -210,54 +212,43 @@ mod owned {
                 entries,
             })
         }
+    }
 
-        /// Parses an owned `StsdBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let view = StsdBoxView::parse(payload)?;
-            Self::from_view(&view)
+    impl BoxCodec for StsdBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::STSD
         }
+    }
 
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            // version(1) + flags(3) + entry_count(4) + entries
-            let entries_size: usize = self.entries.iter().map(|e| e.frame_size()).sum();
-            1 + 3 + 4 + entries_size
+    impl BoxDecode<'_> for StsdBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = StsdBoxView::decode(bytes)?;
+            StsdBox::try_from(&view)
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for StsdBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_bytes())?;
             cur.write_u32_be(self.entries.len() as u32)?;
 
             for entry in &self.entries {
-                entry.write_in(cur)?;
+                match entry {
+                    StsdEntry::Mp4a(box_) => write_box_in(&mut cur, box_)?,
+                    StsdEntry::Avc1(box_) => write_box_in(&mut cur, box_)?,
+                    StsdEntry::Other {
+                        boxtype,
+                        payload: _,
+                    } => {
+                        todo!("Write Other box type {}", boxtype)
+                    }
+                }
             }
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::STSD,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `StsdBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl TryFrom<&StsdBoxView<'_>> for StsdBox {
-        type Error = Error;
-
-        fn try_from(value: &StsdBoxView<'_>) -> Result<Self> {
-            StsdBox::from_view(value)
+            Ok(cur.position())
         }
     }
 }

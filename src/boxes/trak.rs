@@ -1,6 +1,5 @@
-use crate::cursor::ReadCursor;
-
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -26,7 +25,7 @@ impl<'a> TrakBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::TKHD {
-                let tkhd = TkhdBox::parse(child.payload())?;
+                let tkhd = TkhdBox::decode(child.payload())?;
                 return Ok(tkhd);
             }
         }
@@ -44,7 +43,7 @@ impl<'a> TrakBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::MDIA {
-                let mdia = MdiaBoxView::parse(child.into_payload())?;
+                let mdia = MdiaBoxView::decode(child.into_payload())?;
                 return Ok(mdia);
             }
         }
@@ -62,38 +61,32 @@ impl<'a> TrakBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::TREF {
-                let tref = TrefBoxView::parse(child.into_payload())?;
+                let tref = TrefBoxView::decode(child.into_payload())?;
                 return Ok(Some(tref));
             }
         }
 
         Ok(None)
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<TrakBoxView<'a>> {
-        let payload = cur.take(cur.remaining())?;
-        Ok(TrakBoxView { payload })
-    }
-
-    /// Parses a `TrakBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<TrakBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        TrakBoxView::parse_in(&mut cursor)
+impl BoxCodec for TrakBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::TRAK
     }
 }
 
-impl<'a> TryFrom<RawBoxRef<'a>> for TrakBoxView<'a> {
+impl<'de> BoxDecode<'de> for TrakBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        Ok(TrakBoxView { payload: bytes })
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for TrakBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::TRAK {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::TRAK,
-                found: value.boxtype(),
-            }));
-        }
-
-        TrakBoxView::parse(value.payload())
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        TrakBoxView::decode(value)
     }
 }
 
@@ -104,10 +97,12 @@ pub use owned::TrakBox;
 mod owned {
     use crate::cursor::WriteCursor;
 
-    use crate::BoxFrameMut;
-    use crate::base::frame::write_box_in;
+    use crate::base::writer::write_box_in;
 
     use super::*;
+    use crate::BoxCodec;
+    use crate::BoxDecode;
+    use crate::BoxEncode;
     use crate::boxes::MdiaBox;
     use crate::boxes::TrefBox;
 
@@ -121,9 +116,10 @@ mod owned {
         pub mdia: MdiaBox,
     }
 
-    impl TrakBox {
-        /// Constructs a `TrakBox` from a `TrakBoxView`.
-        pub fn from_view(view: &TrakBoxView<'_>) -> Result<TrakBox> {
+    impl TryFrom<&TrakBoxView<'_>> for TrakBox {
+        type Error = Error;
+
+        fn try_from(view: &TrakBoxView<'_>) -> Result<Self> {
             let mut tkhd = None;
             let mut tref = None;
             let mut mdia = None;
@@ -133,7 +129,7 @@ mod owned {
 
                 match child.boxtype() {
                     BoxType::TKHD if tkhd.is_none() => {
-                        tkhd = Some(TkhdBox::parse(child.payload())?);
+                        tkhd = Some(TkhdBox::decode(child.payload())?);
                     }
                     BoxType::TKHD => {
                         return Err(Error::in_box(
@@ -145,8 +141,8 @@ mod owned {
                         ));
                     }
                     BoxType::TREF if tref.is_none() => {
-                        let tref_view = TrefBoxView::parse(child.payload())?;
-                        tref = Some(TrefBox::from_view(&tref_view)?);
+                        let tref_view = TrefBoxView::decode(child.payload())?;
+                        tref = Some(TrefBox::try_from(&tref_view)?);
                     }
                     BoxType::TREF => {
                         return Err(Error::in_box(
@@ -158,8 +154,8 @@ mod owned {
                         ));
                     }
                     BoxType::MDIA if mdia.is_none() => {
-                        let mdia_view = MdiaBoxView::parse(child.payload())?;
-                        mdia = Some(MdiaBox::from_view(&mdia_view)?);
+                        let mdia_view = MdiaBoxView::decode(child.payload())?;
+                        mdia = Some(MdiaBox::try_from(&mdia_view)?);
                     }
                     BoxType::MDIA => {
                         return Err(Error::in_box(
@@ -190,74 +186,34 @@ mod owned {
                 ))?,
             })
         }
+    }
 
-        /// Parses a `TrakBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<TrakBox> {
-            let view = TrakBoxView::parse(payload)?;
-            TrakBox::from_view(&view)
-        }
-
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            let mut size = 0;
-            size += BoxFrameMut::required_len(BoxType::TKHD, self.tkhd.size());
-            if let Some(ref tref) = self.tref {
-                size += BoxFrameMut::required_len(BoxType::TREF, tref.size());
-            }
-            size += BoxFrameMut::required_len(BoxType::MDIA, self.mdia.size());
-            size
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            write_box_in(cur, BoxType::TKHD, self.tkhd.size(), |p| self.tkhd.write(p))?;
-
-            if let Some(ref tref) = self.tref {
-                write_box_in(cur, BoxType::TREF, tref.size(), |p| tref.write(p))?;
-            }
-
-            write_box_in(cur, BoxType::MDIA, self.mdia.size(), |p| self.mdia.write(p))?;
-
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::TRAK,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `TrakBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
+    impl BoxCodec for TrakBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::TRAK
         }
     }
 
-    impl TryFrom<&TrakBoxView<'_>> for TrakBox {
-        type Error = Error;
-
-        fn try_from(value: &TrakBoxView<'_>) -> Result<Self> {
-            TrakBox::from_view(value)
+    impl BoxDecode<'_> for TrakBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = TrakBoxView::decode(bytes)?;
+            TrakBox::try_from(&view)
         }
     }
 
-    impl TryFrom<RawBoxRef<'_>> for TrakBox {
-        type Error = Error;
+    impl BoxEncode for TrakBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
 
-        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-            if value.boxtype() != BoxType::TRAK {
-                return Err(Error::new(ErrorKind::MismatchedBoxType {
-                    expected: BoxType::TRAK,
-                    found: value.boxtype(),
-                }));
+            write_box_in(&mut cur, &self.tkhd)?;
+
+            if let Some(ref tref) = self.tref {
+                write_box_in(&mut cur, tref)?;
             }
 
-            let view = TrakBoxView::parse(value.payload())?;
-            TrakBox::from_view(&view)
+            write_box_in(&mut cur, &self.mdia)?;
+
+            Ok(cur.position())
         }
     }
 }
@@ -427,7 +383,7 @@ mod tests {
     #[test]
     fn parse_trak_view() {
         let payload = make_trak_payload();
-        let trak = TrakBoxView::parse(&payload).unwrap();
+        let trak = TrakBoxView::decode(&payload).unwrap();
 
         let tkhd = trak.tkhd().unwrap();
         assert_eq!(tkhd.track_id, 1);
@@ -442,7 +398,7 @@ mod tests {
         let mut payload = Vec::new();
         payload.extend_from_slice(&make_box(b"mdia", &make_mdia_payload()));
 
-        let trak = TrakBoxView::parse(&payload).unwrap();
+        let trak = TrakBoxView::decode(&payload).unwrap();
         let result = trak.tkhd();
         assert!(result.is_err());
     }
@@ -452,7 +408,7 @@ mod tests {
         let mut payload = Vec::new();
         payload.extend_from_slice(&make_box(b"tkhd", &make_tkhd_payload()));
 
-        let trak = TrakBoxView::parse(&payload).unwrap();
+        let trak = TrakBoxView::decode(&payload).unwrap();
         let result = trak.mdia();
         assert!(result.is_err());
     }
@@ -461,7 +417,7 @@ mod tests {
     #[test]
     fn parse_trak_owned() {
         let payload = make_trak_payload();
-        let trak = TrakBox::parse(&payload).unwrap();
+        let trak = TrakBox::decode(&payload).unwrap();
 
         assert_eq!(trak.tkhd.track_id, 1);
         assert_eq!(trak.mdia.mdhd.timescale, 1000);

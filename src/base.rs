@@ -5,7 +5,7 @@
 //! - `codec`: Traits for encoding/decoding boxes.
 
 pub mod codec;
-pub mod frame;
 pub mod header;
 pub mod iter;
 pub mod rawbox;
+pub mod writer;

@@ -3,7 +3,9 @@ use core::mem;
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -45,8 +47,24 @@ impl Default for HmhdBox {
 
 impl HmhdBox {
     const RESERVED_SIZE: usize = mem::size_of::<u32>();
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<HmhdBox> {
+/// Specification for Hint Media Header Box (`hmhd`).
+pub struct HmhdSpec;
+
+/// Flags for Hint Media Header Box (`hmhd`).
+pub type HmhdFlags = FullBoxFlags<HmhdSpec>;
+
+impl BoxCodec for HmhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::HMHD
+    }
+}
+
+impl BoxDecode<'_> for HmhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = HmhdFlags::from_bytes(cur.read_array()?);
 
@@ -58,16 +76,6 @@ impl HmhdBox {
         // Skip reserved (4 bytes)
         cur.advance(Self::RESERVED_SIZE)?;
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after parsing hmhd",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::HMHD,
-            ));
-        }
-
         Ok(HmhdBox {
             version,
             flags,
@@ -77,21 +85,20 @@ impl HmhdBox {
             avg_bitrate,
         })
     }
+}
 
-    /// Parses a `HmhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<HmhdBox> {
-        let mut cursor = ReadCursor::new(payload);
-        HmhdBox::parse_in(&mut cursor)
+impl TryFrom<&[u8]> for HmhdBox {
+    type Error = Error;
+
+    fn try_from(value: &[u8]) -> Result<Self> {
+        HmhdBox::decode(value)
     }
+}
 
-    /// Returns the size of the payload in bytes.
-    pub fn size(&self) -> usize {
-        // version(1) + flags(3) + max_pdu_size(2) + avg_pdu_size(2) +
-        // max_bitrate(4) + avg_bitrate(4) + reserved(4) = 20
-        20
-    }
+impl BoxEncode for HmhdBox {
+    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         // Write version (1 byte)
         cur.write_u8(self.version)?;
 
@@ -113,54 +120,9 @@ impl HmhdBox {
         // Write reserved (4 bytes)
         cur.reserve_zeros(Self::RESERVED_SIZE)?;
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Buffer larger than expected",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::HMHD,
-            ));
-        }
-
-        Ok(())
-    }
-
-    /// Writes this `HmhdBox` into the given payload.
-    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-        let mut cursor = WriteCursor::new(payload);
-        self.write_in(&mut cursor)
+        Ok(cur.position())
     }
 }
-
-impl TryFrom<&[u8]> for HmhdBox {
-    type Error = Error;
-
-    fn try_from(payload: &[u8]) -> Result<Self> {
-        HmhdBox::parse(payload)
-    }
-}
-
-impl TryFrom<RawBoxRef<'_>> for HmhdBox {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-        if value.boxtype() != BoxType::HMHD {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::HMHD,
-                found: value.boxtype(),
-            }));
-        }
-
-        HmhdBox::parse(value.payload())
-    }
-}
-
-/// Specification for Hint Media Header Box (`hmhd`).
-pub struct HmhdSpec;
-
-/// Flags for Hint Media Header Box (`hmhd`).
-pub type HmhdFlags = FullBoxFlags<HmhdSpec>;
 
 #[cfg(test)]
 mod tests {
@@ -177,10 +139,10 @@ mod tests {
             avg_bitrate: 800_000,
         };
 
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 256];
+        original.encode(&mut buf).unwrap();
 
-        let reparsed = HmhdBox::parse(&buf).unwrap();
+        let reparsed = HmhdBox::decode(&buf).unwrap();
         assert_eq!(reparsed.version, original.version);
         assert_eq!(reparsed.flags.get(), original.flags.get());
         assert_eq!(reparsed.max_pdu_size, original.max_pdu_size);

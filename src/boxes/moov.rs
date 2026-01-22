@@ -1,6 +1,5 @@
-use crate::cursor::ReadCursor;
-
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -26,7 +25,7 @@ impl<'a> MoovBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::MVHD {
-                let mvhd = MvhdBox::parse(child.into_payload())?;
+                let mvhd = MvhdBox::decode(child.into_payload())?;
                 return Ok(mvhd);
             }
         }
@@ -43,7 +42,7 @@ impl<'a> MoovBoxView<'a> {
     pub fn traks(&self) -> impl Iterator<Item = Result<TrakBoxView<'a>>> + 'a {
         self.children().filter_map(|child| match child {
             Ok(view) if view.boxtype() == BoxType::TRAK => {
-                Some(TrakBoxView::parse(view.into_payload()))
+                Some(TrakBoxView::decode(view.into_payload()))
             }
             Ok(_) => None,
             Err(e) => Some(Err(e)),
@@ -55,37 +54,31 @@ impl<'a> MoovBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::MVEX {
-                let mvex = MvexBoxView::parse(child.into_payload())?;
+                let mvex = MvexBoxView::decode(child.into_payload())?;
                 return Ok(Some(mvex));
             }
         }
         Ok(None)
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<MoovBoxView<'a>> {
-        let payload = cur.take(cur.remaining())?;
-        Ok(MoovBoxView { payload })
-    }
-
-    /// Parses a `MoovBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<MoovBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        MoovBoxView::parse_in(&mut cursor)
+impl BoxCodec for MoovBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::MOOV
     }
 }
 
-impl<'a> TryFrom<RawBoxRef<'a>> for MoovBoxView<'a> {
+impl<'de> BoxDecode<'de> for MoovBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        Ok(MoovBoxView { payload: bytes })
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for MoovBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::MOOV {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::MOOV,
-                found: value.boxtype(),
-            }));
-        }
-
-        MoovBoxView::parse(value.payload())
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        MoovBoxView::decode(value)
     }
 }
 
@@ -98,10 +91,10 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    use crate::BoxFrameMut;
-    use crate::base::frame::write_box_in;
+    use crate::base::writer::write_box_in;
 
     use super::*;
+    use crate::BoxEncode;
     use crate::boxes::MvexBox;
     use crate::boxes::TrakBox;
 
@@ -115,9 +108,10 @@ mod owned {
         pub traks: Vec<TrakBox>,
     }
 
-    impl MoovBox {
-        /// Constructs a `MoovBox` from a `MoovBoxView`.
-        pub fn from_view(view: &MoovBoxView<'_>) -> Result<MoovBox> {
+    impl TryFrom<&MoovBoxView<'_>> for MoovBox {
+        type Error = Error;
+
+        fn try_from(view: &MoovBoxView<'_>) -> Result<Self> {
             let mut mvhd = None;
             let mut mvex = None;
             let mut traks = Vec::new();
@@ -127,7 +121,7 @@ mod owned {
 
                 match child.boxtype() {
                     BoxType::MVHD if mvhd.is_none() => {
-                        mvhd = Some(MvhdBox::parse(child.payload())?);
+                        mvhd = Some(MvhdBox::decode(child.payload())?);
                     }
                     BoxType::MVHD => {
                         return Err(Error::in_box(
@@ -139,8 +133,8 @@ mod owned {
                         ));
                     }
                     BoxType::MVEX if mvex.is_none() => {
-                        let mvex_view = MvexBoxView::parse(child.payload())?;
-                        mvex = Some(MvexBox::from_view(&mvex_view)?);
+                        let mvex_view = MvexBoxView::decode(child.payload())?;
+                        mvex = Some(MvexBox::try_from(&mvex_view)?);
                     }
                     BoxType::MVEX => {
                         return Err(Error::in_box(
@@ -152,8 +146,8 @@ mod owned {
                         ));
                     }
                     BoxType::TRAK => {
-                        let trak_view = TrakBoxView::parse(child.payload())?;
-                        traks.push(TrakBox::from_view(&trak_view)?);
+                        let trak_view = TrakBoxView::decode(child.payload())?;
+                        traks.push(TrakBox::try_from(&trak_view)?);
                     }
                     _ => continue,
                 }
@@ -170,78 +164,36 @@ mod owned {
                 traks,
             })
         }
+    }
 
-        /// Parses a `MoovBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<MoovBox> {
-            let view = MoovBoxView::parse(payload)?;
-            MoovBox::from_view(&view)
-        }
-
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            let mut size = 0;
-            size += BoxFrameMut::required_len(BoxType::MVHD, self.mvhd.size());
-            if let Some(ref mvex) = self.mvex {
-                size += BoxFrameMut::required_len(BoxType::MVEX, mvex.size());
-            }
-            for trak in &self.traks {
-                size += BoxFrameMut::required_len(BoxType::TRAK, trak.size());
-            }
-            size
-        }
-
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
-            write_box_in(cur, BoxType::MVHD, self.mvhd.size(), |p| self.mvhd.write(p))?;
-
-            if let Some(ref mvex) = self.mvex {
-                write_box_in(cur, BoxType::MVEX, mvex.size(), |p| mvex.write(p))?;
-            }
-
-            for trak in &self.traks {
-                write_box_in(cur, BoxType::TRAK, trak.size(), |p| trak.write(p))?;
-            }
-
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::MOOV,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `MoovBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
+    impl BoxCodec for MoovBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::MOOV
         }
     }
 
-    impl TryFrom<&MoovBoxView<'_>> for MoovBox {
-        type Error = Error;
-
-        fn try_from(value: &MoovBoxView<'_>) -> Result<Self> {
-            MoovBox::from_view(value)
+    impl BoxDecode<'_> for MoovBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = MoovBoxView::decode(bytes)?;
+            MoovBox::try_from(&view)
         }
     }
 
-    impl TryFrom<RawBoxRef<'_>> for MoovBox {
-        type Error = Error;
+    impl BoxEncode for MoovBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
 
-        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-            if value.boxtype() != BoxType::MOOV {
-                return Err(Error::new(ErrorKind::MismatchedBoxType {
-                    expected: BoxType::MOOV,
-                    found: value.boxtype(),
-                }));
+            write_box_in(&mut cur, &self.mvhd)?;
+
+            if let Some(ref mvex) = self.mvex {
+                write_box_in(&mut cur, mvex)?;
             }
 
-            let view = MoovBoxView::parse(value.payload())?;
-            MoovBox::from_view(&view)
+            for trak in &self.traks {
+                write_box_in(&mut cur, trak)?;
+            }
+
+            Ok(cur.position())
         }
     }
 }
@@ -439,7 +391,7 @@ mod tests {
     #[test]
     fn parse_moov_view() {
         let payload = make_moov_payload(2);
-        let moov = MoovBoxView::parse(&payload).unwrap();
+        let moov = MoovBoxView::decode(&payload).unwrap();
 
         let mvhd = moov.mvhd().unwrap();
         assert_eq!(mvhd.timescale, 1000);
@@ -461,7 +413,7 @@ mod tests {
         let mut payload = Vec::new();
         payload.extend_from_slice(&make_box(b"trak", &make_trak_payload(1)));
 
-        let moov = MoovBoxView::parse(&payload).unwrap();
+        let moov = MoovBoxView::decode(&payload).unwrap();
         let result = moov.mvhd();
         assert!(result.is_err());
     }
@@ -471,7 +423,7 @@ mod tests {
         let mut payload = Vec::new();
         payload.extend_from_slice(&make_box(b"mvhd", &make_mvhd_payload()));
 
-        let moov = MoovBoxView::parse(&payload).unwrap();
+        let moov = MoovBoxView::decode(&payload).unwrap();
         let traks: Vec<_> = moov.traks().collect();
         assert_eq!(traks.len(), 0);
     }
@@ -480,7 +432,7 @@ mod tests {
     #[test]
     fn parse_moov_owned() {
         let payload = make_moov_payload(2);
-        let moov = MoovBox::parse(&payload).unwrap();
+        let moov = MoovBox::decode(&payload).unwrap();
 
         assert_eq!(moov.mvhd.timescale, 1000);
         assert_eq!(moov.traks.len(), 2);
@@ -494,7 +446,7 @@ mod tests {
         let mut payload = Vec::new();
         payload.extend_from_slice(&make_box(b"trak", &make_trak_payload(1)));
 
-        let result = MoovBox::parse(&payload);
+        let result = MoovBox::decode(&payload);
         assert!(result.is_err());
     }
 }

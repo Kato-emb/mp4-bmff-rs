@@ -1,6 +1,5 @@
-use crate::cursor::ReadCursor;
-
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
@@ -37,16 +36,6 @@ impl MediaHeader {
             MediaHeader::Nmhd(_) => BoxType::NMHD,
         }
     }
-
-    /// Returns the size of the payload in bytes.
-    pub fn size(&self) -> usize {
-        match self {
-            MediaHeader::Vmhd(vmhd) => vmhd.size(),
-            MediaHeader::Smhd(smhd) => smhd.size(),
-            MediaHeader::Hmhd(hmhd) => hmhd.size(),
-            MediaHeader::Nmhd(nmhd) => nmhd.size(),
-        }
-    }
 }
 
 /// A reference to a Media Information Box (`minf`).
@@ -71,19 +60,19 @@ impl<'a> MinfBoxView<'a> {
             let child = child?;
             match child.boxtype() {
                 BoxType::VMHD if media_header.is_none() => {
-                    let vmhd = VmhdBox::parse(child.payload())?;
+                    let vmhd = VmhdBox::decode(child.payload())?;
                     media_header = Some(MediaHeader::Vmhd(vmhd));
                 }
                 BoxType::SMHD if media_header.is_none() => {
-                    let smhd = SmhdBox::parse(child.payload())?;
+                    let smhd = SmhdBox::decode(child.payload())?;
                     media_header = Some(MediaHeader::Smhd(smhd));
                 }
                 BoxType::HMHD if media_header.is_none() => {
-                    let hmhd = HmhdBox::parse(child.payload())?;
+                    let hmhd = HmhdBox::decode(child.payload())?;
                     media_header = Some(MediaHeader::Hmhd(hmhd));
                 }
                 BoxType::NMHD if media_header.is_none() => {
-                    let nmhd = NmhdBox::parse(child.payload())?;
+                    let nmhd = NmhdBox::decode(child.payload())?;
                     media_header = Some(MediaHeader::Nmhd(nmhd));
                 }
                 BoxType::VMHD | BoxType::SMHD | BoxType::HMHD | BoxType::NMHD => {
@@ -111,7 +100,7 @@ impl<'a> MinfBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::VMHD {
-                let vmhd = VmhdBox::parse(child.payload())?;
+                let vmhd = VmhdBox::decode(child.payload())?;
                 return Ok(Some(vmhd));
             }
         }
@@ -124,7 +113,7 @@ impl<'a> MinfBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::SMHD {
-                let smhd = SmhdBox::parse(child.payload())?;
+                let smhd = SmhdBox::decode(child.payload())?;
                 return Ok(Some(smhd));
             }
         }
@@ -137,7 +126,7 @@ impl<'a> MinfBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::HMHD {
-                let hmhd = HmhdBox::parse(child.payload())?;
+                let hmhd = HmhdBox::decode(child.payload())?;
                 return Ok(Some(hmhd));
             }
         }
@@ -150,7 +139,7 @@ impl<'a> MinfBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::NMHD {
-                let nmhd = NmhdBox::parse(child.payload())?;
+                let nmhd = NmhdBox::decode(child.payload())?;
                 return Ok(Some(nmhd));
             }
         }
@@ -163,7 +152,7 @@ impl<'a> MinfBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::DINF {
-                let dinf = DinfBoxView::parse(child.into_payload())?;
+                let dinf = DinfBoxView::decode(child.into_payload())?;
                 return Ok(dinf);
             }
         }
@@ -181,7 +170,7 @@ impl<'a> MinfBoxView<'a> {
         for child in self.children() {
             let child = child?;
             if child.boxtype() == BoxType::STBL {
-                let stbl = StblBoxView::parse(child.into_payload())?;
+                let stbl = StblBoxView::decode(child.into_payload())?;
                 return Ok(stbl);
             }
         }
@@ -193,33 +182,25 @@ impl<'a> MinfBoxView<'a> {
             BoxType::MINF,
         ))
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<MinfBoxView<'a>> {
-        let payload = cur.take(cur.remaining())?;
-        Ok(MinfBoxView { payload })
-    }
-
-    /// Parses a `MinfBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<MinfBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = MinfBoxView::parse_in(&mut cursor)?;
-
-        Ok(this)
+impl BoxCodec for MinfBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::MINF
     }
 }
 
-impl<'a> TryFrom<RawBoxRef<'a>> for MinfBoxView<'a> {
+impl<'de> BoxDecode<'de> for MinfBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        Ok(MinfBoxView { payload: bytes })
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for MinfBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::MINF {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::MINF,
-                found: value.boxtype(),
-            }));
-        }
-
-        MinfBoxView::parse(value.payload())
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        MinfBoxView::decode(value)
     }
 }
 
@@ -228,12 +209,11 @@ pub use owned::MinfBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::base::writer::write_box_in;
     use crate::cursor::WriteCursor;
 
-    use crate::BoxFrameMut;
-    use crate::base::frame::write_box_in;
-
     use super::*;
+    use crate::BoxEncode;
     use crate::boxes::DinfBox;
     use crate::boxes::StblBox;
 
@@ -247,9 +227,10 @@ mod owned {
         pub stbl: StblBox,
     }
 
-    impl MinfBox {
-        /// Constructs a `MinfBox` from a `MinfBoxView`.
-        pub fn from_view(view: &MinfBoxView<'_>) -> Result<MinfBox> {
+    impl TryFrom<&MinfBoxView<'_>> for MinfBox {
+        type Error = Error;
+
+        fn try_from(view: &MinfBoxView<'_>) -> Result<Self> {
             let mut media_header = None;
             let mut dinf = None;
             let mut stbl = None;
@@ -259,19 +240,19 @@ mod owned {
 
                 match child.boxtype() {
                     BoxType::VMHD if media_header.is_none() => {
-                        let vmhd = VmhdBox::parse(child.payload())?;
+                        let vmhd = VmhdBox::decode(child.payload())?;
                         media_header = Some(MediaHeader::Vmhd(vmhd));
                     }
                     BoxType::SMHD if media_header.is_none() => {
-                        let smhd = SmhdBox::parse(child.payload())?;
+                        let smhd = SmhdBox::decode(child.payload())?;
                         media_header = Some(MediaHeader::Smhd(smhd));
                     }
                     BoxType::HMHD if media_header.is_none() => {
-                        let hmhd = HmhdBox::parse(child.payload())?;
+                        let hmhd = HmhdBox::decode(child.payload())?;
                         media_header = Some(MediaHeader::Hmhd(hmhd));
                     }
                     BoxType::NMHD if media_header.is_none() => {
-                        let nmhd = NmhdBox::parse(child.payload())?;
+                        let nmhd = NmhdBox::decode(child.payload())?;
                         media_header = Some(MediaHeader::Nmhd(nmhd));
                     }
                     BoxType::VMHD | BoxType::SMHD | BoxType::HMHD | BoxType::NMHD => {
@@ -284,8 +265,8 @@ mod owned {
                         ));
                     }
                     BoxType::DINF if dinf.is_none() => {
-                        let dinf_view = DinfBoxView::parse(child.payload())?;
-                        dinf = Some(DinfBox::from_view(&dinf_view)?);
+                        let dinf_view = DinfBoxView::decode(child.payload())?;
+                        dinf = Some(DinfBox::try_from(&dinf_view)?);
                     }
                     BoxType::DINF => {
                         return Err(Error::in_box(
@@ -297,8 +278,8 @@ mod owned {
                         ));
                     }
                     BoxType::STBL if stbl.is_none() => {
-                        let stbl_view = StblBoxView::parse(child.payload())?;
-                        stbl = Some(StblBox::from_view(&stbl_view)?);
+                        let stbl_view = StblBoxView::decode(child.payload())?;
+                        stbl = Some(StblBox::try_from(&stbl_view)?);
                     }
                     BoxType::STBL => {
                         return Err(Error::in_box(
@@ -335,88 +316,39 @@ mod owned {
                 ))?,
             })
         }
+    }
 
-        /// Parses a `MinfBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<MinfBox> {
-            let view = MinfBoxView::parse(payload)?;
-            MinfBox::from_view(&view)
+    impl BoxCodec for MinfBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::MINF
         }
+    }
 
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            let mut size = 0;
-
-            // media header (vmhd, smhd, hmhd, or nmhd)
-            size +=
-                BoxFrameMut::required_len(self.media_header.boxtype(), self.media_header.size());
-
-            // dinf
-            size += BoxFrameMut::required_len(BoxType::DINF, self.dinf.size());
-
-            // stbl
-            size += BoxFrameMut::required_len(BoxType::STBL, self.stbl.size());
-
-            size
+    impl BoxDecode<'_> for MinfBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = MinfBoxView::decode(bytes)?;
+            MinfBox::try_from(&view)
         }
+    }
 
-        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for MinfBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             // media header
-            let mhdr_boxtype = self.media_header.boxtype();
-            let mhdr_size = self.media_header.size();
-            write_box_in(cur, mhdr_boxtype, mhdr_size, |p| match &self.media_header {
-                MediaHeader::Vmhd(vmhd) => vmhd.write(p),
-                MediaHeader::Smhd(smhd) => smhd.write(p),
-                MediaHeader::Hmhd(hmhd) => hmhd.write(p),
-                MediaHeader::Nmhd(nmhd) => nmhd.write(p),
-            })?;
+            match &self.media_header {
+                MediaHeader::Vmhd(vmhd) => write_box_in(&mut cur, vmhd)?,
+                MediaHeader::Smhd(smhd) => write_box_in(&mut cur, smhd)?,
+                MediaHeader::Hmhd(hmhd) => write_box_in(&mut cur, hmhd)?,
+                MediaHeader::Nmhd(nmhd) => write_box_in(&mut cur, nmhd)?,
+            }
 
             // dinf
-            write_box_in(cur, BoxType::DINF, self.dinf.size(), |p| self.dinf.write(p))?;
-
+            write_box_in(&mut cur, &self.dinf)?;
             // stbl
-            write_box_in(cur, BoxType::STBL, self.stbl.size(), |p| self.stbl.write(p))?;
+            write_box_in(&mut cur, &self.stbl)?;
 
-            if !cur.is_empty() {
-                return Err(Error::in_box(
-                    ErrorKind::InvalidBoxSize {
-                        reason: "Buffer larger than expected",
-                        got: cur.remaining() as u64,
-                    },
-                    BoxType::MINF,
-                ));
-            }
-
-            Ok(())
-        }
-
-        /// Writes this `MinfBox` into the given payload.
-        pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-            let mut cursor = WriteCursor::new(payload);
-            self.write_in(&mut cursor)
-        }
-    }
-
-    impl TryFrom<&MinfBoxView<'_>> for MinfBox {
-        type Error = Error;
-
-        fn try_from(value: &MinfBoxView<'_>) -> Result<Self> {
-            MinfBox::from_view(value)
-        }
-    }
-
-    impl TryFrom<RawBoxRef<'_>> for MinfBox {
-        type Error = Error;
-
-        fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-            if value.boxtype() != BoxType::MINF {
-                return Err(Error::new(ErrorKind::MismatchedBoxType {
-                    expected: BoxType::MINF,
-                    found: value.boxtype(),
-                }));
-            }
-
-            let view = MinfBoxView::parse(value.payload())?;
-            MinfBox::from_view(&view)
+            Ok(cur.position())
         }
     }
 }
@@ -595,7 +527,7 @@ mod tests {
     #[test]
     fn parse_minf_with_vmhd() {
         let payload = make_minf_payload_with_vmhd();
-        let minf = MinfBoxView::parse(&payload).unwrap();
+        let minf = MinfBoxView::decode(&payload).unwrap();
 
         let media_header = minf.media_header().unwrap();
         assert!(matches!(media_header, MediaHeader::Vmhd(_)));
@@ -609,7 +541,7 @@ mod tests {
     #[test]
     fn parse_minf_with_smhd() {
         let payload = make_minf_payload_with_smhd();
-        let minf = MinfBoxView::parse(&payload).unwrap();
+        let minf = MinfBoxView::decode(&payload).unwrap();
 
         let media_header = minf.media_header().unwrap();
         assert!(matches!(media_header, MediaHeader::Smhd(_)));
@@ -634,7 +566,7 @@ mod tests {
         let stbl_payload = make_stbl_payload();
         payload.extend_from_slice(&make_box(b"stbl", &stbl_payload));
 
-        let minf = MinfBoxView::parse(&payload).unwrap();
+        let minf = MinfBoxView::decode(&payload).unwrap();
 
         let media_header = minf.media_header().unwrap();
         assert!(matches!(media_header, MediaHeader::Nmhd(_)));
@@ -652,7 +584,7 @@ mod tests {
         let stbl_payload = make_stbl_payload();
         payload.extend_from_slice(&make_box(b"stbl", &stbl_payload));
 
-        let minf = MinfBoxView::parse(&payload).unwrap();
+        let minf = MinfBoxView::decode(&payload).unwrap();
         let result = minf.media_header();
         assert!(result.is_err());
     }
@@ -677,7 +609,7 @@ mod tests {
         let stbl_payload = make_stbl_payload();
         payload.extend_from_slice(&make_box(b"stbl", &stbl_payload));
 
-        let minf = MinfBoxView::parse(&payload).unwrap();
+        let minf = MinfBoxView::decode(&payload).unwrap();
         let result = minf.media_header();
         assert!(result.is_err());
     }
@@ -694,7 +626,7 @@ mod tests {
         let stbl_payload = make_stbl_payload();
         payload.extend_from_slice(&make_box(b"stbl", &stbl_payload));
 
-        let minf = MinfBoxView::parse(&payload).unwrap();
+        let minf = MinfBoxView::decode(&payload).unwrap();
         let result = minf.dinf();
         assert!(result.is_err());
     }
@@ -711,7 +643,7 @@ mod tests {
         let dinf_payload = make_dinf_payload();
         payload.extend_from_slice(&make_box(b"dinf", &dinf_payload));
 
-        let minf = MinfBoxView::parse(&payload).unwrap();
+        let minf = MinfBoxView::decode(&payload).unwrap();
         let result = minf.stbl();
         assert!(result.is_err());
     }
@@ -720,7 +652,7 @@ mod tests {
     #[test]
     fn parse_minf_owned() {
         let payload = make_minf_payload_with_vmhd();
-        let minf = MinfBox::parse(&payload).unwrap();
+        let minf = MinfBox::decode(&payload).unwrap();
 
         assert!(matches!(minf.media_header, MediaHeader::Vmhd(_)));
     }

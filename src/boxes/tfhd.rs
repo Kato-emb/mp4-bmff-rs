@@ -1,7 +1,9 @@
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-use crate::RawBoxRef;
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 
@@ -37,7 +39,48 @@ pub struct TfhdBox {
 }
 
 impl TfhdBox {
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TfhdBox> {
+    /// Computes the flags value based on the optional fields present.
+    fn compute_flags(&self) -> TfhdFlags {
+        let mut flags = self.flags;
+
+        if self.base_data_offset.is_some() {
+            flags |= TfhdFlags::BASE_DATA_OFFSET_PRESENT;
+        }
+        if self.sample_description_index.is_some() {
+            flags |= TfhdFlags::SAMPLE_DESCRIPTION_INDEX_PRESENT;
+        }
+        if self.default_sample_duration.is_some() {
+            flags |= TfhdFlags::DEFAULT_SAMPLE_DURATION_PRESENT;
+        }
+        if self.default_sample_size.is_some() {
+            flags |= TfhdFlags::DEFAULT_SAMPLE_SIZE_PRESENT;
+        }
+        if self.default_sample_flags.is_some() {
+            flags |= TfhdFlags::DEFAULT_SAMPLE_FLAGS_PRESENT;
+        }
+
+        flags
+    }
+}
+
+impl TryFrom<&[u8]> for TfhdBox {
+    type Error = Error;
+
+    fn try_from(value: &[u8]) -> Result<Self> {
+        TfhdBox::decode(value)
+    }
+}
+
+impl BoxCodec for TfhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::TFHD
+    }
+}
+
+impl BoxDecode<'_> for TfhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         let version = cur.read_u8()?;
         let flags = TfhdFlags::from_bytes(cur.read_array()?);
 
@@ -73,16 +116,6 @@ impl TfhdBox {
             None
         };
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after tfhd fields",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::TFHD,
-            ));
-        }
-
         Ok(TfhdBox {
             version,
             flags,
@@ -94,60 +127,12 @@ impl TfhdBox {
             default_sample_flags,
         })
     }
+}
 
-    /// Parses a `TfhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<TfhdBox> {
-        let mut cur = ReadCursor::new(payload);
-        TfhdBox::parse_in(&mut cur)
-    }
+impl BoxEncode for TfhdBox {
+    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-    /// Returns the size of the payload in bytes.
-    pub fn size(&self) -> usize {
-        let mut size = 4 + 4; // version(1) + flags(3) + track_id(4)
-
-        if self.base_data_offset.is_some() {
-            size += 8;
-        }
-        if self.sample_description_index.is_some() {
-            size += 4;
-        }
-        if self.default_sample_duration.is_some() {
-            size += 4;
-        }
-        if self.default_sample_size.is_some() {
-            size += 4;
-        }
-        if self.default_sample_flags.is_some() {
-            size += 4;
-        }
-
-        size
-    }
-
-    /// Computes the flags value based on the optional fields present.
-    fn compute_flags(&self) -> TfhdFlags {
-        let mut flags = self.flags;
-
-        if self.base_data_offset.is_some() {
-            flags |= TfhdFlags::BASE_DATA_OFFSET_PRESENT;
-        }
-        if self.sample_description_index.is_some() {
-            flags |= TfhdFlags::SAMPLE_DESCRIPTION_INDEX_PRESENT;
-        }
-        if self.default_sample_duration.is_some() {
-            flags |= TfhdFlags::DEFAULT_SAMPLE_DURATION_PRESENT;
-        }
-        if self.default_sample_size.is_some() {
-            flags |= TfhdFlags::DEFAULT_SAMPLE_SIZE_PRESENT;
-        }
-        if self.default_sample_flags.is_some() {
-            flags |= TfhdFlags::DEFAULT_SAMPLE_FLAGS_PRESENT;
-        }
-
-        flags
-    }
-
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         let flags = self.compute_flags();
 
         cur.write_u8(self.version)?;
@@ -170,46 +155,7 @@ impl TfhdBox {
             cur.write_u32_be(default_sample_flags)?;
         }
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Buffer larger than expected",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::TFHD,
-            ));
-        }
-
-        Ok(())
-    }
-
-    /// Writes this `TfhdBox` into the given payload.
-    pub fn write(&self, payload: &mut [u8]) -> Result<()> {
-        let mut cur = WriteCursor::new(payload);
-        self.write_in(&mut cur)
-    }
-}
-
-impl TryFrom<&[u8]> for TfhdBox {
-    type Error = Error;
-
-    fn try_from(value: &[u8]) -> Result<Self> {
-        TfhdBox::parse(value)
-    }
-}
-
-impl TryFrom<RawBoxRef<'_>> for TfhdBox {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'_>) -> Result<Self> {
-        if value.boxtype() != BoxType::TFHD {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::TFHD,
-                found: value.boxtype(),
-            }));
-        }
-
-        TfhdBox::parse(value.payload())
+        Ok(cur.position())
     }
 }
 
@@ -289,10 +235,10 @@ mod tests {
             default_sample_flags: None,
         };
 
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 32];
+        original.encode(&mut buf).unwrap();
 
-        let parsed = TfhdBox::parse(&buf).unwrap();
+        let parsed = TfhdBox::decode(&buf).unwrap();
         assert_eq!(parsed.track_id, original.track_id);
         assert!(parsed.flags.default_base_is_moof());
     }
@@ -311,10 +257,10 @@ mod tests {
         };
         original.flags = original.compute_flags();
 
-        let mut buf = vec![0u8; original.size()];
-        original.write(&mut buf).unwrap();
+        let mut buf = vec![0u8; 32];
+        original.encode(&mut buf).unwrap();
 
-        let parsed = TfhdBox::parse(&buf).unwrap();
+        let parsed = TfhdBox::decode(&buf).unwrap();
         assert_eq!(parsed, original);
     }
 }

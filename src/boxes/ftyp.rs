@@ -1,10 +1,10 @@
 use crate::types::FourCC;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::RawBoxRef;
 use crate::error::*;
 
-use crate::base::codec::DecodeIn;
 use crate::cursor::ReadCursor;
 
 /// A reference to a File Type Box (`ftyp`).
@@ -26,18 +26,16 @@ impl<'a> FtypBoxView<'a> {
     }
 }
 
-impl BmffBox for FtypBoxView<'_> {
+impl BoxCodec for FtypBoxView<'_> {
     fn boxtype(&self) -> BoxType {
         BoxType::FTYP
     }
-
-    fn payload_size(&self) -> u64 {
-        4 + 4 + self.compatible_brands.len() as u64
-    }
 }
 
-impl<'de> DecodeIn<'de> for FtypBoxView<'de> {
-    fn decode_in(cur: &mut ReadCursor<'de>) -> Result<Self> {
+impl<'de> BoxDecode<'de> for FtypBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         // Read major_brand (4 bytes)
         let major_brand = cur.read_array::<4>()?;
         let major_brand = FourCC::new(major_brand);
@@ -66,36 +64,13 @@ impl<'de> DecodeIn<'de> for FtypBoxView<'de> {
             compatible_brands,
         })
     }
-
-    /// Parses an `FtypBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<FtypBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = FtypBoxView::parse_in(&mut cursor)?;
-
-        Ok(this)
-    }
 }
 
 impl<'a> TryFrom<&'a [u8]> for FtypBoxView<'a> {
     type Error = Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self> {
-        FtypBoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<RawBoxRef<'a>> for FtypBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: RawBoxRef<'a>) -> Result<Self> {
-        if value.boxtype() != BoxType::FTYP {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::FTYP,
-                found: value.boxtype(),
-            }));
-        }
-
-        FtypBoxView::parse(value.payload())
+        FtypBoxView::decode(value)
     }
 }
 
@@ -106,10 +81,10 @@ pub use owned::FtypBox;
 mod owned {
     use crate::lib::Vec;
 
-    use crate::cursor::WriteCursor;
-
     use super::*;
-    use crate::base::codec::EncodeIn;
+    use crate::BoxEncode;
+
+    use crate::cursor::WriteCursor;
 
     /// An owned File Type Box (`ftyp`).
     #[derive(Debug, Clone)]
@@ -122,15 +97,9 @@ mod owned {
         pub compatible_brands: Vec<FourCC>,
     }
 
-    impl BmffBox for FtypBox {
+    impl BoxCodec for FtypBox {
         fn boxtype(&self) -> BoxType {
             BoxType::FTYP
-        }
-
-        fn payload_size(&self) -> u64 {
-            4 // major_brand
-            + 4 // minor_version
-            + self.compatible_brands.len() as u64 * 4 // compatible_brands
         }
     }
 
@@ -146,15 +115,17 @@ mod owned {
         }
     }
 
-    impl DecodeIn<'_> for FtypBox {
-        fn decode_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
-            let view = FtypBoxView::decode_in(cur)?;
+    impl BoxDecode<'_> for FtypBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = FtypBoxView::decode(bytes)?;
             Ok(FtypBox::from(&view))
         }
     }
 
-    impl EncodeIn for FtypBox {
-        fn encode_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    impl BoxEncode for FtypBox {
+        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
             // Write major_brand (4 bytes)
             cur.write_array(self.major_brand.as_bytes())?;
 
@@ -166,7 +137,15 @@ mod owned {
                 cur.write_array(brand.as_bytes())?;
             }
 
-            Ok(())
+            Ok(cur.position())
+        }
+    }
+
+    impl<'a> TryFrom<&'a [u8]> for FtypBox {
+        type Error = Error;
+
+        fn try_from(value: &'a [u8]) -> Result<Self> {
+            FtypBox::decode(value)
         }
     }
 }
@@ -218,7 +197,7 @@ mod tests {
             ],
         };
 
-        let mut buffer = vec![0u8; ftyp_view.payload_size() as usize];
+        let mut buffer = vec![0u8; 20];
         ftyp_view.encode(&mut buffer).unwrap();
 
         let expected: [u8; 20] = [

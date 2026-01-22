@@ -44,6 +44,7 @@ impl SizeOfInstance {
         None
     }
 
+    /// Serializes SizeOfInstance to a byte array
     pub fn to_bytes(&self) -> ([u8; 4], usize) {
         let mut size = self.0;
         let mut bytes = [0u8; 4];
@@ -69,6 +70,7 @@ impl SizeOfInstance {
         (bytes, num_bytes)
     }
 
+    /// Returns the number of bytes required to serialize this SizeOfInstance
     pub fn size_in_bytes(&self) -> usize {
         if self.0 < 0x80 {
             1
