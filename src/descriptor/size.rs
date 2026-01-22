@@ -52,13 +52,13 @@ impl SizeOfInstance {
         let num_bytes = self.size_in_bytes();
         let mut bytes = [0u8; 4];
 
-        for i in 0..num_bytes {
+        for (i, byte) in bytes.iter_mut().enumerate().take(num_bytes) {
             let shift = 7 * (num_bytes - 1 - i);
-            let byte = ((size >> shift) & 0x7F) as u8;
+            let byte_val = ((size >> shift) & 0x7F) as u8;
             if i < num_bytes - 1 {
-                bytes[i] = byte | 0x80; // continuation bit
+                *byte = byte_val | 0x80; // continuation bit
             } else {
-                bytes[i] = byte; // last byte, no continuation
+                *byte = byte_val; // last byte, no continuation
             }
         }
 

@@ -37,7 +37,7 @@ pub struct EsDescriptorView<'a> {
 impl<'a> EsDescriptorView<'a> {
     /// Returns the Decoder Config Descriptor
     pub fn decoder_config_descriptor(&self) -> Result<DecoderConfigDescriptorView<'a>> {
-        DecoderConfigDescriptorView::parse(&self.decoder_config_descriptor.instance)
+        DecoderConfigDescriptorView::parse(self.decoder_config_descriptor.instance)
     }
 
     /// Returns an iterator over the extension descriptors
