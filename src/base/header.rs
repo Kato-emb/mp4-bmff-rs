@@ -48,9 +48,9 @@ impl BoxHeader {
     pub const BASE_SIZE: usize = 8;
 
     /// Creates a new box header.
-    pub fn new(type_: BoxType, payload_len: usize) -> Self {
+    pub fn new(type_: BoxType, payload_len: u64) -> Self {
         // Calculate header length including UUID if applicable
-        let mut header_len = Self::BASE_SIZE;
+        let mut header_len = Self::BASE_SIZE as u64;
         if type_.is_uuid() {
             header_len += 16;
         }
@@ -59,7 +59,7 @@ impl BoxHeader {
             panic!("Box size overflow when creating BoxHeader");
         };
 
-        let size = BoxSize::new(total_len as u64);
+        let size = BoxSize::new(total_len);
         Self { size, type_ }
     }
 
