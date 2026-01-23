@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 #[cfg(feature = "std")]
 use mp4_bmff::{
-    BoxIter, BoxType, Error, RawBoxRef,
+    BoxType, Error, RawBoxRef,
     boxes::{FreeBoxView, FtypBoxView, HdlrBoxView, MdhdBox, MvhdBox, StypBoxView, TkhdBox},
 };
 
@@ -53,7 +53,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn dump_boxes(data: &[u8], depth: usize, base_offset: u64) -> mp4_bmff::Result<()> {
     let mut offset_in_slice = 0usize;
 
-    for view_result in BoxIter::new(data) {
+    let boxes = mp4_bmff::iter_boxes(data);
+
+    for view_result in boxes {
         let view = view_result?;
 
         let boxed_size = view
