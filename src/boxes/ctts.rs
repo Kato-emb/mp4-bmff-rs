@@ -138,6 +138,7 @@ mod owned {
     use super::*;
 
     /// An owned Composition Time to Sample Box (`ctts`).
+    #[derive(Debug, Clone)]
     pub struct CttsBox {
         /// The version of the box.
         pub version: u8,

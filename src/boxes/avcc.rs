@@ -1,3 +1,5 @@
+//! ISO/IEC 14496-15 (AVC/HEVC file format) boxes.
+
 use crate::BoxType;
 
 use crate::BoxCodec;
@@ -132,14 +134,27 @@ impl<'a> Iterator for NalUnitIter<'a> {
     }
 }
 
-/// AVC Sample Entry Box (`avc1`)
+/// AVC Sample Entry View (`avcX`)
 #[derive(Debug)]
-pub struct Avc1BoxView<'a> {
+pub struct AvcSampleEntryView<'a, C> {
     base: VisualSampleEntry,
     extensions: &'a [u8],
+    _marker: core::marker::PhantomData<&'a C>,
 }
 
-impl<'a> Avc1BoxView<'a> {
+/// Specification type for AVC Sample Entry Box ('avc1')
+#[derive(Debug, Clone)]
+pub struct Avc1Spec;
+/// Type alias for AVC1 Sample Entry Box View
+pub type Avc1BoxView<'a> = AvcSampleEntryView<'a, Avc1Spec>;
+
+/// Specification type for AVC Sample Entry Box ('avc3')
+#[derive(Debug, Clone)]
+pub struct Avc3Spec;
+/// Type alias for AVC3 Sample Entry Box View
+pub type Avc3BoxView<'a> = AvcSampleEntryView<'a, Avc3Spec>;
+
+impl<'a, C> AvcSampleEntryView<'a, C> {
     /// Returns the base Visual Sample Entry.
     pub fn visual_sample_entry(&self) -> &VisualSampleEntry {
         &self.base
@@ -177,28 +192,39 @@ impl BoxCodec for Avc1BoxView<'_> {
     }
 }
 
-impl<'de> BoxDecode<'de> for Avc1BoxView<'de> {
+impl BoxCodec for Avc3BoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::AVC3
+    }
+}
+
+impl<'de, C> BoxDecode<'de> for AvcSampleEntryView<'de, C> {
     fn decode(bytes: &'de [u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(bytes);
 
         let base = VisualSampleEntry::parse_in(&mut cur)?;
         let extensions = cur.take(cur.remaining())?;
 
-        Ok(Avc1BoxView { base, extensions })
+        Ok(AvcSampleEntryView {
+            base,
+            extensions,
+            _marker: core::marker::PhantomData,
+        })
     }
 }
 
-impl<'a> TryFrom<&'a [u8]> for Avc1BoxView<'a> {
+impl<'a, C> TryFrom<&'a [u8]> for AvcSampleEntryView<'a, C> {
     type Error = Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self> {
-        Avc1BoxView::decode(value)
+        AvcSampleEntryView::decode(value)
     }
 }
 
 #[cfg(feature = "alloc")]
 pub use owned::{
     Avc1Box, //
+    Avc3Box,
     AvcCBox,
 };
 
@@ -338,14 +364,20 @@ mod owned {
 
     /// An owned AVC Sample Entry Box (`avc1`)
     #[derive(Debug, Clone)]
-    pub struct Avc1Box {
+    pub struct AvcSampleEntry<C> {
         /// The base Visual Sample Entry.
         pub base: VisualSampleEntry,
         // pub clap: Option<ClapBox>,
         // pub pasp: Option<PaspBox>,
         /// The AVC Configuration Box.
         pub avcc: AvcCBox,
+        _marker: core::marker::PhantomData<C>,
     }
+
+    /// Type alias for owned AVC1 Sample Entry Box
+    pub type Avc1Box = AvcSampleEntry<Avc1Spec>;
+    /// Type alias for owned AVC3 Sample Entry Box
+    pub type Avc3Box = AvcSampleEntry<Avc3Spec>;
 
     impl Avc1Box {
         /// Returns the codec string in the format "avc1.ppccll"
@@ -359,10 +391,22 @@ mod owned {
         }
     }
 
-    impl TryFrom<&Avc1BoxView<'_>> for Avc1Box {
+    impl Avc3Box {
+        /// Returns the codec string in the format "avc3.ppccll"
+        pub fn codec(&self) -> String {
+            format!(
+                "avc3.{:02X}{:02X}{:02X}",
+                self.avcc.avc_profile_indication,
+                self.avcc.avc_profile_compatibility,
+                self.avcc.avc_level_indication
+            )
+        }
+    }
+
+    impl<C> TryFrom<&AvcSampleEntryView<'_, C>> for AvcSampleEntry<C> {
         type Error = Error;
 
-        fn try_from(view: &Avc1BoxView<'_>) -> Result<Self> {
+        fn try_from(view: &AvcSampleEntryView<'_, C>) -> Result<Self> {
             let mut avcc = None;
 
             for extention in view.extensions() {
@@ -376,7 +420,7 @@ mod owned {
                 }
             }
 
-            Ok(Avc1Box {
+            Ok(AvcSampleEntry {
                 base: view.base,
                 avcc: avcc.ok_or(Error::in_box(
                     ErrorKind::BoxMissing {
@@ -384,6 +428,7 @@ mod owned {
                     },
                     BoxType::AVC1,
                 ))?,
+                _marker: core::marker::PhantomData,
             })
         }
     }
@@ -394,14 +439,20 @@ mod owned {
         }
     }
 
-    impl BoxDecode<'_> for Avc1Box {
-        fn decode(bytes: &[u8]) -> Result<Self> {
-            let view = Avc1BoxView::decode(bytes)?;
-            Avc1Box::try_from(&view)
+    impl BoxCodec for Avc3Box {
+        fn boxtype(&self) -> BoxType {
+            BoxType::AVC3
         }
     }
 
-    impl BoxEncode for Avc1Box {
+    impl<C> BoxDecode<'_> for AvcSampleEntry<C> {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = AvcSampleEntryView::decode(bytes)?;
+            AvcSampleEntry::try_from(&view)
+        }
+    }
+
+    impl<C> BoxEncode for AvcSampleEntry<C> {
         #[inline]
         fn encoded_len(&self) -> usize {
             let base_len = VisualSampleEntry::size();

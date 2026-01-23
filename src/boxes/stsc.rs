@@ -130,6 +130,7 @@ mod owned {
     use super::*;
 
     /// An owned Sample To Chunk Box (`stsc`).
+    #[derive(Debug, Clone, Default)]
     pub struct StscBox {
         /// The version of the Sample To Chunk Box.
         pub version: u8,

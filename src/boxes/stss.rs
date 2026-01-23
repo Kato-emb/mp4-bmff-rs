@@ -139,7 +139,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Sync Sample Box (`stss`).
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct StssBox {
         /// The version of the box.
         pub version: u8,

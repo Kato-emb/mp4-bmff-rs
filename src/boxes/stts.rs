@@ -122,6 +122,7 @@ mod owned {
     use super::*;
 
     /// An owned Decoding Time to Sample Box (`stts`).
+    #[derive(Debug, Clone, Default)]
     pub struct SttsBox {
         /// The version of the box.
         pub version: u8,

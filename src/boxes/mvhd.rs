@@ -47,18 +47,15 @@ impl Default for MvhdBox {
             modification_time: QuickTimeDateTime::default(),
             timescale: 0,
             duration: 0,
-            rate: MvhdBox::DEFAULT_RATE,
-            volume: MvhdBox::DEFAULT_VOLUME,
+            rate: I16F16::from_raw(0x00010000),
+            volume: U8F8::from_raw(0x0100),
             matrix: Matrix::identity(),
-            next_track_id: 0,
+            next_track_id: 1, // non zero
         }
     }
 }
 
 impl MvhdBox {
-    const DEFAULT_RATE: I16F16 = I16F16::from_raw(0x00010000); // 1.0 in 16.16 fixed-point
-    const DEFAULT_VOLUME: U8F8 = U8F8::from_raw(0x0100); // 1.0 in 8.8 fixed-point
-
     const RESERVED_SIZE: usize = mem::size_of::<u16>() + 2 * mem::size_of::<u32>(); // reserved
     const PRE_DEFINED_SIZE: usize = 6 * mem::size_of::<u32>(); // pre_defined
 }
