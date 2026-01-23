@@ -172,11 +172,10 @@ mod owned {
     impl BoxEncode for CttsBox {
         #[inline]
         fn encoded_len(&self) -> usize {
-            let size = 1 // version
+            1 // version
                 + 3 // flags
                 + 4 // entry_count
-                + (self.entries.len() * CttsEntry::ENTRY_SIZE); // entries
-            size
+                + (self.entries.len() * CttsEntry::ENTRY_SIZE) // entries
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {

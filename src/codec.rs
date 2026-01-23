@@ -115,7 +115,7 @@ where
     let payload_len = boxed.encoded_len();
     let header = BoxHeader::new(boxed.boxtype(), payload_len as u64);
     let header_len = header.header_len();
-    header.write(&mut cur.take_mut(header_len)?)?;
+    header.write(cur.take_mut(header_len)?)?;
 
     let buf = cur.take_mut(payload_len)?;
     boxed.encode(buf)?;

@@ -125,11 +125,9 @@ mod owned {
     impl BoxEncode for FtypBox {
         #[inline]
         fn encoded_len(&self) -> usize {
-            let size = 4 // major_brand(4)
+            4 // major_brand(4)
                 + 4 // minor_version(4)
-                + (4 * self.compatible_brands.len()); // compatible_brands
-
-            size
+                + (4 * self.compatible_brands.len()) // compatible_brands
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {

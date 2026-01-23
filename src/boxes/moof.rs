@@ -130,7 +130,7 @@ mod owned {
         #[inline]
         fn encoded_len(&self) -> usize {
             boxed_len(&self.mfhd) // mfhd
-            + self.trafs.iter().map(|traf| boxed_len(traf)).sum::<usize>() // trafs
+            + self.trafs.iter().map(boxed_len).sum::<usize>() // trafs
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {

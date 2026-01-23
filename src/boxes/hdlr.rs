@@ -154,7 +154,7 @@ mod owned {
                 + 4 // handler_type(4)
                 + HdlrBoxView::RESERVED_SIZE; // reserved(12)
 
-            let name_len = self.name.as_bytes().len() + 1; // name + null terminator
+            let name_len = self.name.len() + 1; // name + null terminator
 
             base_len + name_len
         }

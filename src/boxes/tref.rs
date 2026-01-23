@@ -202,10 +202,7 @@ mod owned {
     impl BoxEncode for TrefBox {
         #[inline]
         fn encoded_len(&self) -> usize {
-            self.references
-                .iter()
-                .map(|reference| boxed_len(reference))
-                .sum()
+            self.references.iter().map(boxed_len).sum()
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {

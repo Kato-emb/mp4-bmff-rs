@@ -127,6 +127,8 @@ define_box_types! {
     STYP = b"styp",
     /// Free Space Box
     FREE = b"free",
+    /// Skip Box
+    SKIP = b"skip",
     /// Media Data Box
     MDAT = b"mdat",
 
