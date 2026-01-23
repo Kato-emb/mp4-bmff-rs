@@ -70,6 +70,7 @@ pub trait BoxEncode {
 }
 
 /// Calculates box total length helper function.
+#[cfg(feature = "alloc")]
 pub(crate) fn boxed_len<B>(boxed: &B) -> usize
 where
     B: BoxCodec + BoxEncode,

@@ -338,6 +338,7 @@ impl<'a> WriteCursor<'a> {
     }
 
     /// Writes a slice of bytes to the cursor.
+    #[cfg(feature = "alloc")]
     #[inline]
     #[track_caller]
     pub fn write_slice(&mut self, bytes: &[u8]) -> Result<()> {

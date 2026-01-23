@@ -1,4 +1,5 @@
 use crate::cursor::ReadCursor;
+#[cfg(feature = "alloc")]
 use crate::cursor::WriteCursor;
 
 use crate::error::*;
@@ -48,6 +49,7 @@ impl<'a> DescriptorView<'a> {
         })
     }
 
+    #[cfg(feature = "alloc")]
     pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         cur.write_u8(self.tag.0)?;
 
