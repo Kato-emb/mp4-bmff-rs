@@ -11,33 +11,6 @@ use crate::boxes::SmhdBox;
 use crate::boxes::StblBoxView;
 use crate::boxes::VmhdBox;
 
-/// An enum representing the media header box within a `minf`.
-///
-/// Exactly one of these must be present in a `minf` box, depending on the track type.
-#[derive(Debug, Clone, Copy)]
-pub enum MediaHeader {
-    /// Video Media Header Box (`vmhd`) - for video tracks.
-    Vmhd(VmhdBox),
-    /// Sound Media Header Box (`smhd`) - for audio tracks.
-    Smhd(SmhdBox),
-    /// Hint Media Header Box (`hmhd`) - for hint tracks.
-    Hmhd(HmhdBox),
-    /// Null Media Header Box (`nmhd`) - for other tracks (e.g., metadata).
-    Nmhd(NmhdBox),
-}
-
-impl MediaHeader {
-    /// Returns the box type for this media header.
-    pub fn boxtype(&self) -> BoxType {
-        match self {
-            MediaHeader::Vmhd(_) => BoxType::VMHD,
-            MediaHeader::Smhd(_) => BoxType::SMHD,
-            MediaHeader::Hmhd(_) => BoxType::HMHD,
-            MediaHeader::Nmhd(_) => BoxType::NMHD,
-        }
-    }
-}
-
 /// A reference to a Media Information Box (`minf`).
 #[derive(Debug)]
 pub struct MinfBoxView<'a> {
@@ -48,51 +21,6 @@ impl<'a> MinfBoxView<'a> {
     /// Returns an iterator over the child boxes of this `MinfBoxView`.
     pub fn children(&self) -> BoxIter<'a> {
         BoxIter::new(self.payload)
-    }
-
-    /// Returns the media header box (`vmhd`, `smhd`, `hmhd`, or `nmhd`).
-    ///
-    /// Exactly one of these must be present in a valid `minf` box.
-    pub fn media_header(&self) -> Result<MediaHeader> {
-        let mut media_header = None;
-
-        for child in self.children() {
-            let child = child?;
-            match child.boxtype() {
-                BoxType::VMHD if media_header.is_none() => {
-                    let vmhd = VmhdBox::decode(child.payload())?;
-                    media_header = Some(MediaHeader::Vmhd(vmhd));
-                }
-                BoxType::SMHD if media_header.is_none() => {
-                    let smhd = SmhdBox::decode(child.payload())?;
-                    media_header = Some(MediaHeader::Smhd(smhd));
-                }
-                BoxType::HMHD if media_header.is_none() => {
-                    let hmhd = HmhdBox::decode(child.payload())?;
-                    media_header = Some(MediaHeader::Hmhd(hmhd));
-                }
-                BoxType::NMHD if media_header.is_none() => {
-                    let nmhd = NmhdBox::decode(child.payload())?;
-                    media_header = Some(MediaHeader::Nmhd(nmhd));
-                }
-                BoxType::VMHD | BoxType::SMHD | BoxType::HMHD | BoxType::NMHD => {
-                    return Err(Error::new(ErrorKind::InvalidBoxField {
-                        field: "Media header",
-                        reason: "multiple media header boxes found",
-                    })
-                    .with_box_type(BoxType::MINF));
-                }
-                _ => continue,
-            }
-        }
-
-        media_header.ok_or_else(|| {
-            Error::new(ErrorKind::InvalidBoxField {
-                field: "Media header",
-                reason: "no media header box found (vmhd, smhd, hmhd, or nmhd required)",
-            })
-            .with_box_type(BoxType::MINF)
-        })
     }
 
     /// Returns the Video Media Header Box (`vmhd`) if present.
@@ -219,20 +147,52 @@ mod owned {
     use crate::boxes::StblBox;
 
     /// An owned Media Information Box (`minf`).
+    #[derive(Debug, Clone)]
     pub struct MinfBox {
-        /// The media information header box (`vmhd`, `smhd`, `hmhd`, or `nmhd`).
-        pub media_header: MediaHeader,
+        /// The Video Media Header Box (`vmhd`), if present.
+        pub vmhd: Option<VmhdBox>,
+        /// The Sound Media Header Box (`smhd`), if present.
+        pub smhd: Option<SmhdBox>,
+        /// The Hint Media Header Box (`hmhd`), if present.
+        pub hmhd: Option<HmhdBox>,
+        /// The Null Media Header Box (`nmhd`), if present.
+        pub nmhd: Option<NmhdBox>,
         /// The Data Information Box (`dinf`).
         pub dinf: DinfBox,
         /// The Sample Table Box (`stbl`).
         pub stbl: StblBox,
     }
 
+    impl MinfBox {
+        /// Validates the `MinfBox` structure.
+        pub fn validate(&self) -> Result<()> {
+            if self.vmhd.is_some() as u8
+                + self.smhd.is_some() as u8
+                + self.hmhd.is_some() as u8
+                + self.nmhd.is_some() as u8
+                != 1
+            {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxField {
+                        field: "Media header",
+                        reason: "exactly one media header box must be present",
+                    },
+                    BoxType::MINF,
+                ));
+            }
+
+            Ok(())
+        }
+    }
+
     impl TryFrom<&MinfBoxView<'_>> for MinfBox {
         type Error = Error;
 
         fn try_from(view: &MinfBoxView<'_>) -> Result<Self> {
-            let mut media_header = None;
+            let mut vmhd = None;
+            let mut smhd = None;
+            let mut hmhd = None;
+            let mut nmhd = None;
             let mut dinf = None;
             let mut stbl = None;
 
@@ -240,21 +200,21 @@ mod owned {
                 let child = child?;
 
                 match child.boxtype() {
-                    BoxType::VMHD if media_header.is_none() => {
-                        let vmhd = VmhdBox::decode(child.payload())?;
-                        media_header = Some(MediaHeader::Vmhd(vmhd));
+                    BoxType::VMHD if vmhd.is_none() => {
+                        let vmhd_owned = VmhdBox::decode(child.payload())?;
+                        vmhd = Some(vmhd_owned);
                     }
-                    BoxType::SMHD if media_header.is_none() => {
-                        let smhd = SmhdBox::decode(child.payload())?;
-                        media_header = Some(MediaHeader::Smhd(smhd));
+                    BoxType::SMHD if smhd.is_none() => {
+                        let smhd_owned = SmhdBox::decode(child.payload())?;
+                        smhd = Some(smhd_owned);
                     }
-                    BoxType::HMHD if media_header.is_none() => {
-                        let hmhd = HmhdBox::decode(child.payload())?;
-                        media_header = Some(MediaHeader::Hmhd(hmhd));
+                    BoxType::HMHD if hmhd.is_none() => {
+                        let hmhd_owned = HmhdBox::decode(child.payload())?;
+                        hmhd = Some(hmhd_owned);
                     }
-                    BoxType::NMHD if media_header.is_none() => {
-                        let nmhd = NmhdBox::decode(child.payload())?;
-                        media_header = Some(MediaHeader::Nmhd(nmhd));
+                    BoxType::NMHD if nmhd.is_none() => {
+                        let nmhd_owned = NmhdBox::decode(child.payload())?;
+                        nmhd = Some(nmhd_owned);
                     }
                     BoxType::VMHD | BoxType::SMHD | BoxType::HMHD | BoxType::NMHD => {
                         return Err(Error::in_box(
@@ -296,13 +256,10 @@ mod owned {
             }
 
             Ok(MinfBox {
-                media_header: media_header.ok_or(Error::in_box(
-                    ErrorKind::InvalidBoxField {
-                        field: "Media header",
-                        reason: "no media header box found (vmhd, smhd, hmhd, or nmhd required)",
-                    },
-                    BoxType::MINF,
-                ))?,
+                vmhd,
+                smhd,
+                hmhd,
+                nmhd,
                 dinf: dinf.ok_or(Error::in_box(
                     ErrorKind::BoxMissing {
                         required: BoxType::DINF,
@@ -335,26 +292,34 @@ mod owned {
     impl BoxEncode for MinfBox {
         #[inline]
         fn encoded_len(&self) -> usize {
-            let mhd_size = match &self.media_header {
-                MediaHeader::Vmhd(vmhd) => boxed_len(vmhd),
-                MediaHeader::Smhd(smhd) => boxed_len(smhd),
-                MediaHeader::Hmhd(hmhd) => boxed_len(hmhd),
-                MediaHeader::Nmhd(nmhd) => boxed_len(nmhd),
-            };
+            let mut len = 0;
 
-            mhd_size + boxed_len(&self.dinf) + boxed_len(&self.stbl)
+            if let Some(vmhd) = &self.vmhd {
+                len += boxed_len(vmhd);
+            }
+
+            if let Some(smhd) = &self.smhd {
+                len += boxed_len(smhd);
+            }
+
+            if let Some(hmhd) = &self.hmhd {
+                len += boxed_len(hmhd);
+            }
+
+            if let Some(nmhd) = &self.nmhd {
+                len += boxed_len(nmhd);
+            }
+
+            len += boxed_len(&self.dinf);
+            len += boxed_len(&self.stbl);
+
+            len
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
-            let mut cur = WriteCursor::new(bytes);
+            self.validate()?;
 
-            // media header
-            match &self.media_header {
-                MediaHeader::Vmhd(vmhd) => write_box_in(&mut cur, vmhd)?,
-                MediaHeader::Smhd(smhd) => write_box_in(&mut cur, smhd)?,
-                MediaHeader::Hmhd(hmhd) => write_box_in(&mut cur, hmhd)?,
-                MediaHeader::Nmhd(nmhd) => write_box_in(&mut cur, nmhd)?,
-            }
+            let mut cur = WriteCursor::new(bytes);
 
             // dinf
             write_box_in(&mut cur, &self.dinf)?;
@@ -542,9 +507,6 @@ mod tests {
         let payload = make_minf_payload_with_vmhd();
         let minf = MinfBoxView::decode(&payload).unwrap();
 
-        let media_header = minf.media_header().unwrap();
-        assert!(matches!(media_header, MediaHeader::Vmhd(_)));
-
         assert!(minf.vmhd().unwrap().is_some());
         assert!(minf.smhd().unwrap().is_none());
         assert!(minf.dinf().is_ok());
@@ -555,9 +517,6 @@ mod tests {
     fn parse_minf_with_smhd() {
         let payload = make_minf_payload_with_smhd();
         let minf = MinfBoxView::decode(&payload).unwrap();
-
-        let media_header = minf.media_header().unwrap();
-        assert!(matches!(media_header, MediaHeader::Smhd(_)));
 
         assert!(minf.vmhd().unwrap().is_none());
         assert!(minf.smhd().unwrap().is_some());
@@ -581,50 +540,7 @@ mod tests {
 
         let minf = MinfBoxView::decode(&payload).unwrap();
 
-        let media_header = minf.media_header().unwrap();
-        assert!(matches!(media_header, MediaHeader::Nmhd(_)));
-    }
-
-    #[test]
-    fn parse_minf_missing_media_header() {
-        let mut payload = Vec::new();
-
-        // dinf only, no media header
-        let dinf_payload = make_dinf_payload();
-        payload.extend_from_slice(&make_box(b"dinf", &dinf_payload));
-
-        // stbl
-        let stbl_payload = make_stbl_payload();
-        payload.extend_from_slice(&make_box(b"stbl", &stbl_payload));
-
-        let minf = MinfBoxView::decode(&payload).unwrap();
-        let result = minf.media_header();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_minf_multiple_media_headers() {
-        let mut payload = Vec::new();
-
-        // vmhd
-        let vmhd_payload = make_vmhd_payload();
-        payload.extend_from_slice(&make_box(b"vmhd", &vmhd_payload));
-
-        // smhd (duplicate media header - should error)
-        let smhd_payload = make_smhd_payload();
-        payload.extend_from_slice(&make_box(b"smhd", &smhd_payload));
-
-        // dinf
-        let dinf_payload = make_dinf_payload();
-        payload.extend_from_slice(&make_box(b"dinf", &dinf_payload));
-
-        // stbl
-        let stbl_payload = make_stbl_payload();
-        payload.extend_from_slice(&make_box(b"stbl", &stbl_payload));
-
-        let minf = MinfBoxView::decode(&payload).unwrap();
-        let result = minf.media_header();
-        assert!(result.is_err());
+        assert!(minf.nmhd().unwrap().is_some());
     }
 
     #[test]
@@ -667,6 +583,34 @@ mod tests {
         let payload = make_minf_payload_with_vmhd();
         let minf = MinfBox::decode(&payload).unwrap();
 
-        assert!(matches!(minf.media_header, MediaHeader::Vmhd(_)));
+        minf.validate().unwrap();
+        assert!(minf.vmhd.is_some());
+        assert!(minf.smhd.is_none());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn parse_minf_owned_invalid_multiple_headers() {
+        let mut payload = Vec::new();
+
+        // vmhd
+        let vmhd_payload = make_vmhd_payload();
+        payload.extend_from_slice(&make_box(b"vmhd", &vmhd_payload));
+
+        // smhd
+        let smhd_payload = make_smhd_payload();
+        payload.extend_from_slice(&make_box(b"smhd", &smhd_payload));
+
+        // dinf
+        let dinf_payload = make_dinf_payload();
+        payload.extend_from_slice(&make_box(b"dinf", &dinf_payload));
+
+        // stbl
+        let stbl_payload = make_stbl_payload();
+        payload.extend_from_slice(&make_box(b"stbl", &stbl_payload));
+
+        let minf = MinfBox::decode(&payload).unwrap();
+        let result = minf.validate();
+        assert!(result.is_err());
     }
 }

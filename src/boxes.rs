@@ -262,9 +262,6 @@ pub use trun::TrunSample;
 pub use dref::DrefEntryView;
 pub use stsd::StsdEntryView;
 
-// Re-export box utils
-pub use minf::MediaHeader;
-
 // Re-export fullbox flags and specs
 pub use co64::{Co64Flags, Co64Spec};
 pub use cslg::{CslgFlags, CslgSpec};

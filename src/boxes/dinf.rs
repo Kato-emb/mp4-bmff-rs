@@ -77,6 +77,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Data Information Box (`dinf`).
+    #[derive(Debug, Clone)]
     pub struct DinfBox {
         /// The Data Reference Box (`dref`).
         pub dref: DrefBox,
