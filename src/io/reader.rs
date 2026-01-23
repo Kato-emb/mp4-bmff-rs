@@ -1,4 +1,4 @@
-//!
+//! BMFF box reader for stream-based I/O.
 
 use std::error::Error;
 use std::io::Read;

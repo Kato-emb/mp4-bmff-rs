@@ -1,4 +1,4 @@
-//!
+//! Raw BMFF box representation.
 
 use crate::BoxHeader;
 use crate::BoxSize;

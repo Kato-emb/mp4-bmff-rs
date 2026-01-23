@@ -1,4 +1,4 @@
-//!
+//! BMFF box writer for stream-based I/O.
 
 use std::io::Write;
 

@@ -224,7 +224,7 @@ fn describe_size(view: &RawBoxRef<'_>, actual: u64) -> String {
 }
 
 #[cfg(feature = "std")]
-fn format_fourcc_list<'a>(brands: impl Iterator<Item = FourCC>) -> Option<String> {
+fn format_fourcc_list(brands: impl Iterator<Item = FourCC>) -> Option<String> {
     let list: Vec<String> = brands.map(|b| b.to_string()).collect();
     if list.is_empty() {
         None
