@@ -46,7 +46,9 @@ impl Default for TkhdBox {
     fn default() -> Self {
         TkhdBox {
             version: 0,
-            flags: TkhdFlags::empty(),
+            flags: TkhdFlags::TRACK_ENABLED
+                | TkhdFlags::TRACK_IN_MOVIE
+                | TkhdFlags::TRACK_IN_PREVIEW,
             creation_time: QuickTimeDateTime::default(),
             modification_time: QuickTimeDateTime::default(),
             track_id: 1,
