@@ -1,8 +1,8 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use crate::cursor::ReadCursor;
 
@@ -234,6 +234,7 @@ mod owned {
     use super::*;
     use crate::BoxEncode;
 
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
 
@@ -264,27 +265,6 @@ mod owned {
         pub flags: DrefFlags,
         /// The entries in the Data Reference Box.
         pub entries: Vec<DrefEntry>,
-    }
-
-    impl DrefBox {
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            let mut size = 4 + 4; // version(1) + flags(3) + entry_count(4)
-            for entry in &self.entries {
-                size += 8 + entry.size(); // header + payload
-            }
-            size
-        }
-    }
-
-    impl DrefEntry {
-        /// Returns the size of the entry payload in bytes.
-        pub fn size(&self) -> usize {
-            match self {
-                DrefEntry::Url(url) => url.size(),
-                DrefEntry::Urn(urn) => urn.size(),
-            }
-        }
     }
 
     impl BoxCodec for DrefBox {
@@ -320,7 +300,24 @@ mod owned {
     }
 
     impl BoxEncode for DrefBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let mut size = 4; // version(1) + flags(3)
+            size += 4; // entry_count(4)
+            for entry in &self.entries {
+                match entry {
+                    DrefEntry::Url(url_box) => {
+                        size += boxed_len(url_box);
+                    }
+                    DrefEntry::Urn(urn_box) => {
+                        size += boxed_len(urn_box);
+                    }
+                }
+            }
+            size
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;
@@ -360,17 +357,6 @@ mod owned {
         }
     }
 
-    impl UrlBox {
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            let mut size = 4; // version(1) + flags(3)
-            if let Some(location) = &self.location {
-                size += location.len() + 1; // location + null terminator
-            }
-            size
-        }
-    }
-
     impl BoxCodec for UrlBox {
         fn boxtype(&self) -> BoxType {
             BoxType::URL_
@@ -385,7 +371,16 @@ mod owned {
     }
 
     impl BoxEncode for UrlBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let mut size = 4; // version(1) + flags(3)
+            if let Some(location) = &self.location {
+                size += location.len() + 1; // location + null terminator
+            }
+            size
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;
@@ -424,13 +419,6 @@ mod owned {
         }
     }
 
-    impl UrnBox {
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            4 + self.name.len() + 1 + self.location.len() + 1 // version/flags + name + null + location + null
-        }
-    }
-
     impl BoxCodec for UrnBox {
         fn boxtype(&self) -> BoxType {
             BoxType::URN_
@@ -445,7 +433,12 @@ mod owned {
     }
 
     impl BoxEncode for UrnBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            4 + self.name.len() + 1 + self.location.len() + 1 // version/flags + name + null + location + null
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;
@@ -609,7 +602,7 @@ mod tests {
 
         // Write to buffer
         let mut buf = vec![0u8; 256];
-        let written = owned.encode(&mut buf).unwrap();
+        let written = owned.encode_into(&mut buf).unwrap();
 
         // Parse again and compare
         let reparsed = DrefBoxView::decode(&buf[..written]).unwrap();

@@ -9,7 +9,7 @@ use crate::base::header::BoxHeader;
 use crate::base::header::BoxType;
 use crate::base::rawbox::RawBox;
 
-use crate::error::Result;
+use crate::error::*;
 
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
@@ -28,8 +28,52 @@ pub trait BoxDecode<'de>: Sized {
 
 /// A trait for encoding BMFF boxes into byte slices.
 pub trait BoxEncode {
-    /// Encodes the box into the given byte slice.
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize>;
+    /// Returns the encoded length of the box.
+    fn encoded_len(&self) -> usize {
+        0
+    }
+
+    /// Encodes the box into the given byte slice, returning the number of bytes written.
+    #[doc(hidden)]
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize>;
+
+    /// Encodes the box into the given byte slice, returning an error if the slice is too small.
+    fn encode(&self, bytes: &mut [u8]) -> Result<()> {
+        let expected = self.encoded_len();
+        let remaining = bytes.len();
+
+        if remaining < expected {
+            return Err(Error::new(ErrorKind::NotEnoughBytes {
+                expected,
+                remaining,
+            }));
+        }
+
+        let written = self.encode_into(&mut bytes[..expected])?;
+        debug_assert!(written == expected);
+
+        Ok(())
+    }
+
+    /// Encodes the box into a `Vec<u8>`.
+    #[cfg(feature = "alloc")]
+    fn encode_to_vec(&self) -> Result<Vec<u8>> {
+        let len = self.encoded_len();
+        let mut buf = vec![0u8; len];
+        self.encode(&mut buf)?;
+
+        Ok(buf)
+    }
+}
+
+/// Calculates box total length helper function.
+pub(crate) fn boxed_len<B>(boxed: &B) -> usize
+where
+    B: BoxCodec + BoxEncode,
+{
+    let payload_len = boxed.encoded_len();
+    let header = BoxHeader::new(boxed.boxtype(), payload_len as u64);
+    header.header_len() + payload_len
 }
 
 /// Reads and decodes a BMFF box from the given byte slice.
@@ -68,23 +112,13 @@ pub(crate) fn write_box_in<B>(cur: &mut WriteCursor<'_>, boxed: &B) -> Result<()
 where
     B: BoxCodec + BoxEncode,
 {
-    let start_pos = cur.position();
-    let header = BoxHeader::new(boxed.boxtype(), 0);
+    let payload_len = boxed.encoded_len();
+    let header = BoxHeader::new(boxed.boxtype(), payload_len as u64);
     let header_len = header.header_len();
     header.write(&mut cur.take_mut(header_len)?)?;
 
-    let buf = cur.take_mut(cur.remaining())?;
-    let payload_size = boxed.encode(buf)?;
-
-    let total_size = header.header_len() + payload_size;
-
-    // patch the size
-    // TODO. handle extended size if needed
-    cur.set_position(start_pos);
-    cur.write_u32_be(total_size as u32)?;
-
-    // advance to the end of the box
-    cur.set_position(start_pos + total_size);
+    let buf = cur.take_mut(payload_len)?;
+    boxed.encode(buf)?;
 
     Ok(())
 }

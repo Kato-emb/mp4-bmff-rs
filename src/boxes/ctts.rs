@@ -4,6 +4,8 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::FixedSizeEntry;
+use crate::iter::FixedSizeEntryIter;
 
 use super::FullBoxFlags;
 
@@ -15,6 +17,28 @@ pub struct CttsEntry {
     /// The composition offset for each sample in the group.
     /// This is a signed value to handle version 1 negative offsets.
     pub sample_offset: i32,
+}
+
+impl FixedSizeEntry for CttsEntry {
+    const ENTRY_SIZE: usize = 8;
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+
+        let sample_count = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let sample_offset = i32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+
+        CttsEntry {
+            sample_count,
+            sample_offset,
+        }
+    }
+
+    fn to_bytes(&self, bytes: &mut [u8]) {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+        bytes[0..4].copy_from_slice(&self.sample_count.to_be_bytes());
+        bytes[4..8].copy_from_slice(&self.sample_offset.to_be_bytes());
+    }
 }
 
 /// A reference to a Composition Time to Sample Box (`ctts`).
@@ -33,31 +57,8 @@ impl<'a> CttsBoxView<'a> {
     const ENTRY_SIZE: usize = 8;
 
     /// Returns an iterator over the entries in the Composition Time to Sample Box (`ctts`).
-    pub fn entries(&self) -> impl Iterator<Item = Result<CttsEntry>> + 'a {
-        let entry_bytes = self.entries;
-        let entry_count = self.entry_count as usize;
-        let version = self.version;
-
-        entry_bytes
-            .chunks_exact(Self::ENTRY_SIZE)
-            .take(entry_count)
-            .map(move |chunk| {
-                let sample_count = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-
-                // Version 0: unsigned 32-bit offset
-                // Version 1: signed 32-bit offset
-                let sample_offset = if version == 0 {
-                    let offset = u32::from_be_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
-                    offset as i32
-                } else {
-                    i32::from_be_bytes([chunk[4], chunk[5], chunk[6], chunk[7]])
-                };
-
-                Ok(CttsEntry {
-                    sample_count,
-                    sample_offset,
-                })
-            })
+    pub fn entries(&self) -> FixedSizeEntryIter<'a, CttsEntry> {
+        FixedSizeEntryIter::new(self.entries)
     }
 }
 
@@ -144,16 +145,14 @@ mod owned {
         pub entries: Vec<CttsEntry>,
     }
 
-    impl TryFrom<&CttsBoxView<'_>> for CttsBox {
-        type Error = Error;
-
-        fn try_from(view: &CttsBoxView<'_>) -> Result<Self> {
-            let entries: Result<Vec<CttsEntry>> = view.entries().collect();
-            Ok(CttsBox {
-                version: view.version,
-                flags: view.flags,
-                entries: entries?,
-            })
+    impl From<&CttsBoxView<'_>> for CttsBox {
+        fn from(value: &CttsBoxView<'_>) -> Self {
+            let entries: Vec<CttsEntry> = value.entries().collect();
+            CttsBox {
+                version: value.version,
+                flags: value.flags,
+                entries,
+            }
         }
     }
 
@@ -166,12 +165,21 @@ mod owned {
     impl BoxDecode<'_> for CttsBox {
         fn decode(bytes: &[u8]) -> Result<Self> {
             let view = CttsBoxView::decode(bytes)?;
-            CttsBox::try_from(&view)
+            Ok(CttsBox::from(&view))
         }
     }
 
     impl BoxEncode for CttsBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let size = 1 // version
+                + 3 // flags
+                + 4 // entry_count
+                + (self.entries.len() * CttsEntry::ENTRY_SIZE); // entries
+            size
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;
@@ -241,7 +249,7 @@ mod tests {
 
         // Write to buffer
         let mut buf = vec![0u8; 256];
-        let written = owned.encode(&mut buf).unwrap();
+        let written = owned.encode_into(&mut buf).unwrap();
 
         // Parse again and compare
         let reparsed = CttsBox::decode(&buf[..written]).unwrap();
@@ -254,7 +262,7 @@ mod tests {
 
         // Error case: buffer too small
         let mut small_buf = vec![0u8; 10];
-        assert!(owned.encode(&mut small_buf).is_err());
+        assert!(owned.encode_into(&mut small_buf).is_err());
 
         // Error case: entry count mismatch
         let mut bad_payload = make_full_box_header(0, 0);

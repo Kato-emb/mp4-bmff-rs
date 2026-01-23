@@ -75,7 +75,18 @@ impl TryFrom<&[u8]> for MehdBox {
 }
 
 impl BoxEncode for MehdBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        let base_len = 4; // version(1) + flags(3)
+        let duration_len = match self.version {
+            0 => 4, // fragment_duration(4)
+            _ => 8, // fragment_duration(8)
+        };
+
+        base_len + duration_len
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         cur.write_u8(self.version)?;
@@ -103,7 +114,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 32];
-        original.encode(&mut buf).unwrap();
+        original.encode_into(&mut buf).unwrap();
 
         let parsed = MehdBox::decode(&buf).unwrap();
         assert_eq!(parsed, original);
@@ -118,7 +129,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 32];
-        original.encode(&mut buf).unwrap();
+        original.encode_into(&mut buf).unwrap();
 
         let parsed = MehdBox::decode(&buf).unwrap();
         assert_eq!(parsed, original);

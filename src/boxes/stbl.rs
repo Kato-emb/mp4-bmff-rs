@@ -1,8 +1,8 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use crate::boxes::Co64BoxView;
 use crate::boxes::CslgBox;
@@ -230,6 +230,7 @@ pub use owned::StblBox;
 mod owned {
     use crate::cursor::WriteCursor;
 
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use super::*;
@@ -304,34 +305,34 @@ mod owned {
                     }
                     BoxType::STTS if stts.is_none() => {
                         let stts_view = SttsBoxView::decode(child.payload())?;
-                        stts = Some(SttsBox::try_from(&stts_view)?);
+                        stts = Some(SttsBox::from(&stts_view));
                     }
                     BoxType::CTTS if ctts.is_none() => {
                         let ctts_view = CttsBoxView::decode(child.payload())?;
-                        ctts = Some(CttsBox::try_from(&ctts_view)?);
+                        ctts = Some(CttsBox::from(&ctts_view));
                     }
                     BoxType::CSLG if cslg.is_none() => {
                         cslg = Some(CslgBox::decode(child.payload())?);
                     }
                     BoxType::STSC if stsc.is_none() => {
                         let stsc_view = StscBoxView::decode(child.payload())?;
-                        stsc = Some(StscBox::try_from(&stsc_view)?);
+                        stsc = Some(StscBox::from(&stsc_view));
                     }
                     BoxType::STSZ if stsz.is_none() => {
                         let stsz_view = StszBoxView::decode(child.payload())?;
-                        stsz = Some(StszBox::try_from(&stsz_view)?);
+                        stsz = Some(StszBox::from(&stsz_view));
                     }
                     BoxType::STSS if stss.is_none() => {
                         let stss_view = StssBoxView::decode(child.payload())?;
-                        stss = Some(StssBox::try_from(&stss_view)?);
+                        stss = Some(StssBox::from(&stss_view));
                     }
                     BoxType::STCO if chunk_offsets.is_none() => {
                         let stco_view = StcoBoxView::decode(child.payload())?;
-                        chunk_offsets = Some(ChunkOffsets::Stco(StcoBox::try_from(&stco_view)?));
+                        chunk_offsets = Some(ChunkOffsets::Stco(StcoBox::from(&stco_view)));
                     }
                     BoxType::CO64 if chunk_offsets.is_none() => {
                         let co64_view = Co64BoxView::decode(child.payload())?;
-                        chunk_offsets = Some(ChunkOffsets::Co64(Co64Box::try_from(&co64_view)?));
+                        chunk_offsets = Some(ChunkOffsets::Co64(Co64Box::from(&co64_view)));
                     }
                     BoxType::STSD
                     | BoxType::STTS
@@ -402,7 +403,49 @@ mod owned {
     }
 
     impl BoxEncode for StblBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let mut len = 0;
+
+            // stsd
+            len += boxed_len(&self.stsd);
+
+            // stts
+            len += boxed_len(&self.stts);
+
+            // ctts (optional)
+            if let Some(ref ctts) = self.ctts {
+                len += boxed_len(ctts);
+            }
+
+            // cslg (optional)
+            if let Some(ref cslg) = self.cslg {
+                len += boxed_len(cslg);
+            }
+
+            // stsc
+            len += boxed_len(&self.stsc);
+
+            // stsz (optional)
+            if let Some(ref stsz) = self.stsz {
+                len += boxed_len(stsz);
+            }
+
+            // stss (optional)
+            if let Some(ref stss) = self.stss {
+                len += boxed_len(stss);
+            }
+
+            // chunk_offsets
+            match &self.chunk_offsets {
+                ChunkOffsets::Stco(stco) => len += boxed_len(stco),
+                ChunkOffsets::Co64(co64) => len += boxed_len(co64),
+            }
+
+            len
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             // stsd

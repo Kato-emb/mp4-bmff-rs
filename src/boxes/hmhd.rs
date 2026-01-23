@@ -96,7 +96,16 @@ impl TryFrom<&[u8]> for HmhdBox {
 }
 
 impl BoxEncode for HmhdBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        2  // max_pdu_size(2)
+        + 2  // avg_pdu_size(2)
+        + 4  // max_bitrate(4)
+        + 4  // avg_bitrate(4)
+        + Self::RESERVED_SIZE // reserved(4)
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         // Write version (1 byte)
@@ -140,7 +149,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 256];
-        original.encode(&mut buf).unwrap();
+        original.encode_into(&mut buf).unwrap();
 
         let reparsed = HmhdBox::decode(&buf).unwrap();
         assert_eq!(reparsed.version, original.version);

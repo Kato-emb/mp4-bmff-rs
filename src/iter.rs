@@ -1,4 +1,4 @@
-//! Iterator for traversing BMFF boxes.
+//! Iterators for BMFF structures.
 
 use crate::base::rawbox::RawBoxRef;
 use crate::cursor::ReadCursor;
@@ -12,7 +12,7 @@ pub struct BoxIter<'a> {
 
 impl<'a> BoxIter<'a> {
     /// Creates a new `BoxIter` from the given byte slice.
-    pub fn new(data: &'a [u8]) -> Self {
+    pub(crate) fn new(data: &'a [u8]) -> Self {
         Self {
             cur: ReadCursor::new(data),
         }
@@ -38,6 +38,56 @@ impl<'a> Iterator for BoxIter<'a> {
             }
             Err(e) => Some(Err(e)),
         }
+    }
+}
+
+/// Creates an iterator over BMFF boxes in the given byte slice.
+pub fn iter_boxes(data: &[u8]) -> BoxIter<'_> {
+    BoxIter::new(data)
+}
+
+/// A trait for entries with fixed size that can be converted to and from bytes.
+pub trait FixedSizeEntry: Sized + Copy {
+    /// The size of the entry in bytes.
+    const ENTRY_SIZE: usize;
+
+    /// Creates an entry from the given byte slice.
+    fn from_bytes(bytes: &[u8]) -> Self;
+    /// Writes the entry into the given byte slice.
+    fn to_bytes(&self, bytes: &mut [u8]);
+}
+
+/// An iterator over fixed-size entries in a byte slice.
+pub struct FixedSizeEntryIter<'a, E: FixedSizeEntry> {
+    bytes: &'a [u8],
+    remaining: usize,
+    _marker: core::marker::PhantomData<E>,
+}
+
+impl<'a, E: FixedSizeEntry> FixedSizeEntryIter<'a, E> {
+    /// Creates a new `FixedSizeEntryIter` from the given byte slice.
+    pub(crate) fn new(data: &'a [u8]) -> Self {
+        Self {
+            bytes: data,
+            remaining: data.len() / E::ENTRY_SIZE,
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<'a, E: FixedSizeEntry> Iterator for FixedSizeEntryIter<'a, E> {
+    type Item = E;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+        self.remaining -= 1;
+
+        let (entry_bytes, rest) = self.bytes.split_at(E::ENTRY_SIZE);
+        self.bytes = rest;
+
+        Some(E::from_bytes(entry_bytes))
     }
 }
 

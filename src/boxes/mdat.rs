@@ -62,7 +62,12 @@ mod owned {
     }
 
     impl BoxEncode for MdatBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            self.data.len()
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
             cur.write_slice(&self.data)?;
 
@@ -92,7 +97,7 @@ mod tests {
             data: b"example media data".to_vec(),
         };
         let mut buffer = vec![0u8; 18];
-        mdat_box.encode(&mut buffer).unwrap();
+        mdat_box.encode_into(&mut buffer).unwrap();
         assert_eq!(&buffer, b"example media data");
     }
 }

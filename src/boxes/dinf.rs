@@ -1,8 +1,8 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use super::DrefBoxView;
 
@@ -69,6 +69,7 @@ pub use owned::DinfBox;
 mod owned {
     use super::*;
     use crate::BoxEncode;
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use crate::boxes::DrefBox;
@@ -79,19 +80,6 @@ mod owned {
     pub struct DinfBox {
         /// The Data Reference Box (`dref`).
         pub dref: DrefBox,
-    }
-
-    impl DinfBox {
-        /// Constructs a `DinfBox` from a `DinfBoxView`.
-        pub fn from_view(view: &DinfBoxView<'_>) -> Result<DinfBox> {
-            DinfBox::try_from(view)
-        }
-
-        /// Returns the size of the payload in bytes.
-        pub fn size(&self) -> usize {
-            // dref box header (8 bytes) + dref payload
-            8 + self.dref.size()
-        }
     }
 
     impl BoxCodec for DinfBox {
@@ -133,7 +121,11 @@ mod owned {
     }
 
     impl BoxEncode for DinfBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        fn encoded_len(&self) -> usize {
+            boxed_len(&self.dref)
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
             write_box_in(&mut cur, &self.dref)?;
             Ok(cur.position())

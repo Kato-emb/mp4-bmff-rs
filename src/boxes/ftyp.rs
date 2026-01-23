@@ -123,7 +123,16 @@ mod owned {
     }
 
     impl BoxEncode for FtypBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let size = 4 // major_brand(4)
+                + 4 // minor_version(4)
+                + (4 * self.compatible_brands.len()); // compatible_brands
+
+            size
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             // Write major_brand (4 bytes)
@@ -198,7 +207,7 @@ mod tests {
         };
 
         let mut buffer = vec![0u8; 20];
-        ftyp_view.encode(&mut buffer).unwrap();
+        ftyp_view.encode_into(&mut buffer).unwrap();
 
         let expected: [u8; 20] = [
             b'i', b's', b'o', b'm', // major_brand

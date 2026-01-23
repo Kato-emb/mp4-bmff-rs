@@ -5,6 +5,8 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::FixedSizeEntry;
+use crate::iter::FixedSizeEntryIter;
 
 use super::FullBoxFlags;
 
@@ -16,6 +18,25 @@ pub struct SbgpEntry {
     /// An index that identifies a sample group description entry.
     /// The value 0 means that the samples are not assigned to any group.
     pub group_description_index: u32,
+}
+
+impl FixedSizeEntry for SbgpEntry {
+    const ENTRY_SIZE: usize = 8;
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+
+        SbgpEntry {
+            sample_count: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+            group_description_index: u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
+        }
+    }
+
+    fn to_bytes(&self, bytes: &mut [u8]) {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+        bytes[0..4].copy_from_slice(&self.sample_count.to_be_bytes());
+        bytes[4..8].copy_from_slice(&self.group_description_index.to_be_bytes());
+    }
 }
 
 /// A reference to a Sample to Group Box (`sbgp`).
@@ -38,23 +59,8 @@ impl<'a> SbgpBoxView<'a> {
     const ENTRY_SIZE: usize = 8;
 
     /// Returns an iterator over the entries in the Sample to Group Box.
-    pub fn entries(&self) -> impl Iterator<Item = Result<SbgpEntry>> + 'a {
-        let entry_bytes = self.entries;
-        let entry_count = self.entry_count as usize;
-
-        entry_bytes
-            .chunks_exact(Self::ENTRY_SIZE)
-            .take(entry_count)
-            .map(|chunk| {
-                let sample_count = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-                let group_description_index =
-                    u32::from_be_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
-
-                Ok(SbgpEntry {
-                    sample_count,
-                    group_description_index,
-                })
-            })
+    pub fn entries(&self) -> FixedSizeEntryIter<'a, SbgpEntry> {
+        FixedSizeEntryIter::new(self.entries)
     }
 }
 
@@ -159,18 +165,16 @@ mod owned {
         pub entries: Vec<SbgpEntry>,
     }
 
-    impl TryFrom<&SbgpBoxView<'_>> for SbgpBox {
-        type Error = Error;
-
-        fn try_from(view: &SbgpBoxView<'_>) -> Result<Self> {
-            let entries: Result<Vec<SbgpEntry>> = view.entries().collect();
-            Ok(SbgpBox {
-                version: view.version,
-                flags: view.flags,
-                grouping_type: view.grouping_type,
-                grouping_type_parameter: view.grouping_type_parameter,
-                entries: entries?,
-            })
+    impl From<&SbgpBoxView<'_>> for SbgpBox {
+        fn from(value: &SbgpBoxView<'_>) -> Self {
+            let entries: Vec<SbgpEntry> = value.entries().collect();
+            SbgpBox {
+                version: value.version,
+                flags: value.flags,
+                grouping_type: value.grouping_type,
+                grouping_type_parameter: value.grouping_type_parameter,
+                entries,
+            }
         }
     }
 
@@ -183,12 +187,22 @@ mod owned {
     impl BoxDecode<'_> for SbgpBox {
         fn decode(bytes: &[u8]) -> Result<Self> {
             let view = SbgpBoxView::decode(bytes)?;
-            SbgpBox::try_from(&view)
+            Ok(SbgpBox::from(&view))
         }
     }
 
     impl BoxEncode for SbgpBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            1 // version
+                + 3 // flags
+                + 4 // grouping_type
+                + if self.version == 1 { 4 } else { 0 } // grouping_type_parameter
+                + 4 // entry_count
+                + self.entries.len() * SbgpEntry::ENTRY_SIZE // entries
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;
@@ -241,7 +255,7 @@ mod tests {
         let payload = make_sbgp_payload_v0(b"seig", &[(10, 1), (20, 2), (30, 0)]);
         let sbgp = SbgpBoxView::decode(&payload).unwrap();
         assert_eq!(sbgp.entry_count, 3);
-        let parsed: Vec<_> = sbgp.entries().map(|r| r.unwrap()).collect();
+        let parsed: Vec<_> = sbgp.entries().collect();
         assert_eq!(parsed.len(), 3);
         assert_eq!(parsed[0].sample_count, 10);
         assert_eq!(parsed[0].group_description_index, 1);

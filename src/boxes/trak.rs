@@ -1,8 +1,8 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use crate::boxes::MdiaBoxView;
 use crate::boxes::TkhdBox;
@@ -97,6 +97,7 @@ pub use owned::TrakBox;
 mod owned {
     use crate::cursor::WriteCursor;
 
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use super::*;
@@ -202,7 +203,17 @@ mod owned {
     }
 
     impl BoxEncode for TrakBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            boxed_len(&self.tkhd)
+                + match &self.tref {
+                    Some(tref) => boxed_len(tref),
+                    None => 0,
+                }
+                + boxed_len(&self.mdia)
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             write_box_in(&mut cur, &self.tkhd)?;

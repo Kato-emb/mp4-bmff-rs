@@ -76,7 +76,15 @@ impl TryFrom<&[u8]> for SmhdBox {
 }
 
 impl BoxEncode for SmhdBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        1 // version
+            + 3 // flags
+            + 2 // balance
+            + Self::RESERVED_SIZE // reserved
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         // Write version (1 byte)
@@ -114,7 +122,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 32];
-        let written = original.encode(&mut buf).unwrap();
+        let written = original.encode_into(&mut buf).unwrap();
 
         let reparsed = SmhdBox::decode(&buf[..written]).unwrap();
         assert_eq!(reparsed.version, original.version);

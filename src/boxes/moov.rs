@@ -1,8 +1,8 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use crate::boxes::MvexBoxView;
 use crate::boxes::MvhdBox;
@@ -91,6 +91,7 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use super::*;
@@ -180,7 +181,20 @@ mod owned {
     }
 
     impl BoxEncode for MoovBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let mut size = 0;
+            size += boxed_len(&self.mvhd);
+            if let Some(ref mvex) = self.mvex {
+                size += boxed_len(mvex);
+            }
+            for trak in &self.traks {
+                size += boxed_len(trak);
+            }
+            size
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             write_box_in(&mut cur, &self.mvhd)?;

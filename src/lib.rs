@@ -53,7 +53,7 @@ pub use base::header::{
     BoxType,
 };
 pub use base::rawbox::RawBoxRef;
-pub use iter::BoxIter;
+pub use iter::iter_boxes;
 
 pub use codec::{
     BoxCodec, //

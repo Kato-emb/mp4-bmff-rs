@@ -1,11 +1,11 @@
-use crate::BoxCodec;
-use crate::BoxDecode;
 use crate::cursor::ReadCursor;
 
-use crate::BoxIter;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
 use crate::RawBoxRef;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use super::FullBoxFlags;
 
@@ -109,6 +109,7 @@ mod owned {
     use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use super::*;
@@ -204,7 +205,35 @@ mod owned {
     }
 
     impl BoxEncode for StsdBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let mut len = 1 // version
+                + 3 // flags
+                + 4; // entry_count
+
+            for entry in &self.entries {
+                match entry {
+                    StsdEntry::Mp4a(box_) => {
+                        len += boxed_len(box_);
+                    }
+                    StsdEntry::Avc1(box_) => {
+                        len += boxed_len(box_);
+                    }
+                    StsdEntry::Other {
+                        boxtype: _,
+                        payload,
+                    } => {
+                        // TODO: handle Other box length properly
+                        let header = 8; // 4 bytes size + 4 bytes type
+                        len += header + payload.len(); // box header + payload
+                    }
+                }
+            }
+
+            len
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;

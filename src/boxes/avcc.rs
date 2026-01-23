@@ -2,8 +2,8 @@ use crate::BoxType;
 
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use crate::boxes::VisualSampleEntry;
 
@@ -209,6 +209,7 @@ mod owned {
     use super::*;
 
     use crate::codec::BoxEncode;
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use crate::cursor::WriteCursor;
@@ -267,7 +268,34 @@ mod owned {
     }
 
     impl BoxEncode for AvcCBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let mut len = 5; // fixed fields
+            len += 1; // numOfSequenceParameterSets
+
+            // SPS NAL units
+            for sps in &self.sps {
+                len += 2; // length field
+                len += sps.len();
+            }
+
+            len += 1; // numOfPictureParameterSets
+
+            // PPS NAL units
+            for pps in &self.pps {
+                len += 2; // length field
+                len += pps.len();
+            }
+
+            // Extensions (optional)
+            if let Some(ext) = &self.ext {
+                len += ext.len();
+            }
+
+            len
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.configuration_version)?;
@@ -370,7 +398,15 @@ mod owned {
     }
 
     impl BoxEncode for Avc1Box {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let base_len = VisualSampleEntry::size();
+            let avcc_len = boxed_len(&self.avcc);
+
+            base_len + avcc_len
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
             self.base.write_in(&mut cur)?;
 
@@ -545,8 +581,8 @@ mod tests {
         let original = Avc1Box::decode(&original_payload).unwrap();
 
         // Write
-        let mut buf = vec![0u8; 256];
-        original.encode(&mut buf).unwrap();
+        let mut buf = vec![0u8; original.encoded_len()];
+        original.encode_into(&mut buf).unwrap();
 
         // Parse again
         let reparsed = Avc1Box::decode(&buf).unwrap();

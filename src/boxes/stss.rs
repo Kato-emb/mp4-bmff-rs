@@ -4,6 +4,8 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::FixedSizeEntry;
+use crate::iter::FixedSizeEntryIter;
 
 use super::FullBoxFlags;
 
@@ -12,6 +14,23 @@ use super::FullBoxFlags;
 pub struct StssEntry {
     /// The sample number (1-indexed as per ISO specification).
     pub sample_number: u32,
+}
+
+impl FixedSizeEntry for StssEntry {
+    const ENTRY_SIZE: usize = 4;
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+
+        StssEntry {
+            sample_number: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+        }
+    }
+
+    fn to_bytes(&self, bytes: &mut [u8]) {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+        bytes[0..4].copy_from_slice(&self.sample_number.to_be_bytes());
+    }
 }
 
 /// A reference to a Sync Sample Box (`stss`).
@@ -32,17 +51,8 @@ impl<'a> StssBoxView<'a> {
     const ENTRY_SIZE: usize = 4;
 
     /// Returns an iterator over the entries in the Sync Sample Box.
-    pub fn entries(&self) -> impl Iterator<Item = Result<StssEntry>> + 'a {
-        let entry_bytes = self.entries;
-        let entry_count = self.entry_count as usize;
-
-        entry_bytes
-            .chunks_exact(Self::ENTRY_SIZE)
-            .take(entry_count)
-            .map(|chunk| {
-                let sample_number = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-                Ok(StssEntry { sample_number })
-            })
+    pub fn entries(&self) -> FixedSizeEntryIter<'a, StssEntry> {
+        FixedSizeEntryIter::new(self.entries)
     }
 
     /// Checks if a given sample number is a sync sample.
@@ -50,8 +60,7 @@ impl<'a> StssBoxView<'a> {
     /// Note: This performs a linear search through the entries.
     /// For frequent lookups, consider collecting the entries into a set.
     pub fn is_sync_sample(&self, sample_number: u32) -> Result<bool> {
-        for result in self.entries() {
-            let entry = result?;
+        for entry in self.entries() {
             if entry.sample_number == sample_number {
                 return Ok(true);
             }
@@ -138,16 +147,14 @@ mod owned {
         pub entries: Vec<StssEntry>,
     }
 
-    impl TryFrom<&StssBoxView<'_>> for StssBox {
-        type Error = Error;
-
-        fn try_from(view: &StssBoxView<'_>) -> Result<Self> {
-            let entries: Result<Vec<StssEntry>> = view.entries().collect();
-            Ok(StssBox {
+    impl From<&StssBoxView<'_>> for StssBox {
+        fn from(view: &StssBoxView<'_>) -> Self {
+            let entries: Vec<StssEntry> = view.entries().collect();
+            StssBox {
                 version: view.version,
                 flags: view.flags,
-                entries: entries?,
-            })
+                entries,
+            }
         }
     }
 
@@ -171,12 +178,20 @@ mod owned {
     impl BoxDecode<'_> for StssBox {
         fn decode(bytes: &[u8]) -> Result<Self> {
             let view = StssBoxView::decode(bytes)?;
-            StssBox::try_from(&view)
+            Ok(StssBox::from(&view))
         }
     }
 
     impl BoxEncode for StssBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            1 // version
+                + 3 // flags
+                + 4 // entry_count
+                + self.entries.len() * StssEntry::ENTRY_SIZE // entries
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;
@@ -224,14 +239,14 @@ mod tests {
         // Single
         let payload = make_stss_payload(vec![10]);
         let stss = StssBoxView::decode(&payload).unwrap();
-        let entry = stss.entries().next().unwrap().unwrap();
+        let entry = stss.entries().next().unwrap();
         assert_eq!(entry.sample_number, 10);
 
         // Multiple
         let samples = vec![1, 5, 10, 15];
         let payload = make_stss_payload(samples.clone());
         let stss = StssBoxView::decode(&payload).unwrap();
-        let parsed: Vec<_> = stss.entries().map(|r| r.unwrap().sample_number).collect();
+        let parsed: Vec<_> = stss.entries().map(|r| r.sample_number).collect();
         assert_eq!(parsed, samples);
     }
 

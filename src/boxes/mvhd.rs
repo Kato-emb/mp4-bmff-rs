@@ -155,7 +155,24 @@ impl<'a> TryFrom<&'a [u8]> for MvhdBox {
 }
 
 impl BoxEncode for MvhdBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        let base_len = 4; // version(1) + flags(3)
+        let time_len = match self.version {
+            1 => 8 + 8 + 4 + 8, // creation_time(8) + modification_time(8) + timescale(4) + duration(8)
+            _ => 4 + 4 + 4 + 4, // creation_time(4) + modification_time(4) + timescale(4) + duration(4)
+        };
+        base_len
+            + time_len
+            + 4 // rate(4)
+            + 2 // volume(2)
+            + Self::RESERVED_SIZE // reserved(6)
+            + 9 * 4 // matrix(36)
+            + Self::PRE_DEFINED_SIZE // pre_defined(24)
+            + 4 // next_track_id(4)
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         cur.write_u8(self.version)?;
@@ -216,7 +233,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 256];
-        let written = mvhd.encode(&mut buf).unwrap();
+        let written = mvhd.encode_into(&mut buf).unwrap();
 
         let parsed = MvhdBox::decode(&buf[..written]).unwrap();
         assert_eq!(parsed.version, mvhd.version);
@@ -252,7 +269,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 256];
-        let written = mvhd.encode(&mut buf).unwrap();
+        let written = mvhd.encode_into(&mut buf).unwrap();
 
         let parsed = MvhdBox::decode(&buf[..written]).unwrap();
         assert_eq!(parsed.version, mvhd.version);

@@ -118,7 +118,14 @@ mod owned {
     }
 
     impl BoxEncode for EsdsBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let base_len = 4; // version(1) + flags(3)
+            let esd_len = self.esd.size(); // ES Descriptor length
+            base_len + esd_len
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             // Write version (1 byte)
@@ -177,7 +184,7 @@ mod tests {
 
         // Write
         let mut buf = vec![0u8; 256];
-        let written = esds.encode(&mut buf).unwrap();
+        let written = esds.encode_into(&mut buf).unwrap();
 
         // Parse again and verify values match
         let reparsed = EsdsBox::decode(&buf[..written]).unwrap();

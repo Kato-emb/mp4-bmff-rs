@@ -4,6 +4,8 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::FixedSizeEntry;
+use crate::iter::FixedSizeEntryIter;
 
 use super::FullBoxFlags;
 
@@ -12,6 +14,23 @@ use super::FullBoxFlags;
 pub struct StcoEntry {
     /// The chunk offset.
     pub chunk_offset: u32,
+}
+
+impl FixedSizeEntry for StcoEntry {
+    const ENTRY_SIZE: usize = 4;
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+
+        StcoEntry {
+            chunk_offset: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+        }
+    }
+
+    fn to_bytes(&self, bytes: &mut [u8]) {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+        bytes[0..4].copy_from_slice(&self.chunk_offset.to_be_bytes());
+    }
 }
 
 /// A reference to a Chunk Offset Box (`stco`).
@@ -30,14 +49,8 @@ impl<'a> StcoBoxView<'a> {
     const ENTRY_SIZE: usize = 4;
 
     /// Returns an iterator over the entries in the Chunk Offset Box.
-    pub fn entries(&self) -> impl Iterator<Item = StcoEntry> + 'a {
-        let entry_bytes = self.entries;
-        let entry_count = self.entry_count as usize;
-
-        entry_bytes.chunks_exact(4).take(entry_count).map(|chunk| {
-            let chunk_offset = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-            StcoEntry { chunk_offset }
-        })
+    pub fn entries(&self) -> FixedSizeEntryIter<'a, StcoEntry> {
+        FixedSizeEntryIter::new(self.entries)
     }
 }
 
@@ -115,21 +128,14 @@ mod owned {
         pub entries: Vec<StcoEntry>,
     }
 
-    impl TryFrom<&StcoBoxView<'_>> for StcoBox {
-        type Error = Error;
-
-        fn try_from(view: &StcoBoxView<'_>) -> Result<Self> {
-            let mut entries = Vec::with_capacity(view.entry_count as usize);
-
-            for entry in view.entries() {
-                entries.push(entry);
-            }
-
-            Ok(StcoBox {
+    impl From<&StcoBoxView<'_>> for StcoBox {
+        fn from(view: &StcoBoxView<'_>) -> Self {
+            let entries: Vec<StcoEntry> = view.entries().collect();
+            StcoBox {
                 version: view.version,
                 flags: view.flags,
                 entries,
-            })
+            }
         }
     }
 
@@ -142,12 +148,20 @@ mod owned {
     impl BoxDecode<'_> for StcoBox {
         fn decode(bytes: &[u8]) -> Result<Self> {
             let view = StcoBoxView::decode(bytes)?;
-            StcoBox::try_from(&view)
+            Ok(StcoBox::from(&view))
         }
     }
 
     impl BoxEncode for StcoBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            1 // version
+                + 3 // flags
+                + 4 // entry_count
+                + self.entries.len() * StcoEntry::ENTRY_SIZE // entries
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;

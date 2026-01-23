@@ -147,7 +147,19 @@ mod owned {
     }
 
     impl BoxEncode for HdlrBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let base_len = 4 // version(1) + flags(3)
+                + HdlrBoxView::PRE_DEFINED_SIZE // pre_defined(4)
+                + 4 // handler_type(4)
+                + HdlrBoxView::RESERVED_SIZE; // reserved(12)
+
+            let name_len = self.name.as_bytes().len() + 1; // name + null terminator
+
+            base_len + name_len
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             // Write version (1 byte)
@@ -192,7 +204,7 @@ mod tests {
 
         // Write
         let mut buf = vec![0u8; 256];
-        let written = original.encode(&mut buf).unwrap();
+        let written = original.encode_into(&mut buf).unwrap();
 
         // Parse
         let reparsed = HdlrBox::decode(&buf[..written]).unwrap();
@@ -217,7 +229,7 @@ mod tests {
 
         // Write
         let mut buf = vec![0u8; 256];
-        let written = original.encode(&mut buf).unwrap();
+        let written = original.encode_into(&mut buf).unwrap();
 
         // Parse
         let reparsed = HdlrBox::decode(&buf[..written]).unwrap();

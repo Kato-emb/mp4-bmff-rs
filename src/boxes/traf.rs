@@ -1,8 +1,8 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use crate::boxes::SbgpBoxView;
 use crate::boxes::TfdtBox;
@@ -104,6 +104,7 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use super::*;
@@ -142,7 +143,7 @@ mod owned {
             let mut sbgps = Vec::new();
             for sbgp_result in view.sbgps() {
                 let sbgp_view = sbgp_result?;
-                sbgps.push(SbgpBox::try_from(&sbgp_view)?);
+                sbgps.push(SbgpBox::from(&sbgp_view));
             }
 
             Ok(TrafBox {
@@ -168,7 +169,28 @@ mod owned {
     }
 
     impl BoxEncode for TrafBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let mut len = 0;
+
+            len += boxed_len(&self.tfhd);
+
+            if let Some(ref tfdt) = self.tfdt {
+                len += boxed_len(tfdt);
+            }
+
+            for trun in &self.truns {
+                len += boxed_len(trun);
+            }
+
+            for sbgp in &self.sbgps {
+                len += boxed_len(sbgp);
+            }
+
+            len
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             write_box_in(&mut cur, &self.tfhd)?;

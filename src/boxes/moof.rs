@@ -1,8 +1,8 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use crate::boxes::MfhdBox;
 use crate::boxes::TrafBoxView;
@@ -80,6 +80,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use super::*;
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use crate::BoxCodec;
@@ -126,7 +127,13 @@ mod owned {
     }
 
     impl BoxEncode for MoofBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            boxed_len(&self.mfhd) // mfhd
+            + self.trafs.iter().map(|traf| boxed_len(traf)).sum::<usize>() // trafs
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             write_box_in(&mut cur, &self.mfhd)?;

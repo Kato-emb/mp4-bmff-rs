@@ -130,7 +130,19 @@ impl BoxDecode<'_> for TfhdBox {
 }
 
 impl BoxEncode for TfhdBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        1 // version
+            + 3 // flags
+            + 4 // track_id
+            + if self.base_data_offset.is_some() { 8 } else { 0 } // base_data_offset
+            + if self.sample_description_index.is_some() { 4 } else { 0 } // sample_description_index
+            + if self.default_sample_duration.is_some() { 4 } else { 0 } // default_sample_duration
+            + if self.default_sample_size.is_some() { 4 } else { 0 } // default_sample_size
+            + if self.default_sample_flags.is_some() { 4 } else { 0 } // default_sample_flags
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         let flags = self.compute_flags();
@@ -236,7 +248,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 32];
-        original.encode(&mut buf).unwrap();
+        original.encode_into(&mut buf).unwrap();
 
         let parsed = TfhdBox::decode(&buf).unwrap();
         assert_eq!(parsed.track_id, original.track_id);
@@ -258,7 +270,7 @@ mod tests {
         original.flags = original.compute_flags();
 
         let mut buf = vec![0u8; 32];
-        original.encode(&mut buf).unwrap();
+        original.encode_into(&mut buf).unwrap();
 
         let parsed = TfhdBox::decode(&buf).unwrap();
         assert_eq!(parsed, original);

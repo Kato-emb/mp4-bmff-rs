@@ -2,10 +2,10 @@ use crate::types::FourCC;
 
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::RawBoxRef;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 /// A reference to a Track Reference Type Box.
 ///
@@ -107,6 +107,7 @@ pub use owned::*;
 mod owned {
     use crate::cursor::WriteCursor;
 
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use super::*;
@@ -143,7 +144,12 @@ mod owned {
     }
 
     impl BoxEncode for TrackReferenceTypeBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            self.track_ids.len() * 4
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
             for &track_id in &self.track_ids {
                 cur.write_u32_be(track_id)?;
@@ -194,7 +200,15 @@ mod owned {
     }
 
     impl BoxEncode for TrefBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            self.references
+                .iter()
+                .map(|reference| boxed_len(reference))
+                .sum()
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
             for reference in &self.references {
                 write_box_in(&mut cur, reference)?;

@@ -122,7 +122,14 @@ mod owned {
     }
 
     impl BoxEncode for StypBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            4 // major_brand
+                + 4 // minor_version
+                + self.compatible_brands.len() * 4 // compatible_brands
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             // Write major_brand (4 bytes)
@@ -162,7 +169,7 @@ mod tests {
 
         // Write
         let mut buf = vec![0u8; 256];
-        let written = original.encode(&mut buf).unwrap();
+        let written = original.encode_into(&mut buf).unwrap();
 
         // Parse
         let reparsed = StypBox::decode(&buf[..written]).unwrap();

@@ -85,7 +85,17 @@ impl BoxDecode<'_> for TfdtBox {
 }
 
 impl BoxEncode for TfdtBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        1 // version
+            + 3 // flags
+            + match self.version {
+                0 => 4, // base_media_decode_time (u32)
+                _ => 8, // base_media_decode_time (u64)
+            }
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         cur.write_u8(self.version)?;
@@ -113,7 +123,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 32];
-        let written = original.encode(&mut buf).unwrap();
+        let written = original.encode_into(&mut buf).unwrap();
 
         let parsed = TfdtBox::decode(&buf[..written]).unwrap();
         assert_eq!(parsed, original);
@@ -128,7 +138,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 32];
-        let written = original.encode(&mut buf).unwrap();
+        let written = original.encode_into(&mut buf).unwrap();
 
         let parsed = TfdtBox::decode(&buf[..written]).unwrap();
         assert_eq!(parsed, original);

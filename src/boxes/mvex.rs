@@ -1,8 +1,8 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use crate::boxes::MehdBox;
 use crate::boxes::TrexBox;
@@ -82,6 +82,7 @@ pub use owned::MvexBox;
 mod owned {
     use crate::lib::Vec;
 
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use super::*;
@@ -152,7 +153,19 @@ mod owned {
     }
 
     impl BoxEncode for MvexBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let mut size = 0;
+            if let Some(ref mehd) = self.mehd {
+                size += boxed_len(mehd);
+            }
+            for trex in &self.trexs {
+                size += boxed_len(trex);
+            }
+            size
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             if let Some(ref mehd) = self.mehd {

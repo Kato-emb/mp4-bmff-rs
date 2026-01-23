@@ -163,7 +163,25 @@ impl<'a> TryFrom<&'a [u8]> for TkhdBox {
 }
 
 impl BoxEncode for TkhdBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        1 // version
+            + 3 // flags
+            + match self.version {
+                1 => 8 + 8 + 4 + Self::RESERVED_1_SIZE + 8, // creation_time + modification_time + track_id + reserved + duration
+                _ => 4 + 4 + 4 + Self::RESERVED_1_SIZE + 4, // creation_time + modification_time + track_id + reserved + duration
+            }
+            + Self::RESERVED_2_SIZE // reserved[2]
+            + 2 // layer
+            + 2 // alternate_group
+            + 2 // volume
+            + Self::RESERVED_3_SIZE // reserved
+            + mem::size_of::<i32>() * 9 // matrix
+            + 4 // width
+            + 4 // height
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         cur.write_u8(self.version)?;
@@ -267,7 +285,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 256];
-        let written = tkhd.encode(&mut buf).unwrap();
+        let written = tkhd.encode_into(&mut buf).unwrap();
 
         let parsed = TkhdBox::decode(&buf[..written]).unwrap();
         assert_eq!(parsed.version, tkhd.version);
@@ -318,7 +336,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 256];
-        let written = tkhd.encode(&mut buf).unwrap();
+        let written = tkhd.encode_into(&mut buf).unwrap();
 
         let parsed = TkhdBox::decode(&buf[..written]).unwrap();
         assert_eq!(parsed.version, tkhd.version);

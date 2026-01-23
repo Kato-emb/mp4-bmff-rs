@@ -270,6 +270,7 @@ impl<'a> WriteCursor<'a> {
         self.inner.len() - self.pos
     }
 
+    #[allow(dead_code)]
     /// Returns `true` if there are no bytes left to write.
     #[inline]
     pub const fn is_empty(&self) -> bool {

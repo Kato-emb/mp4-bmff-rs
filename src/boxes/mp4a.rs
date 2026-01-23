@@ -1,8 +1,8 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::cursor::ReadCursor;
+use crate::iter::BoxIter;
 
 use crate::error::*;
 
@@ -70,6 +70,7 @@ mod owned {
     use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use super::*;
@@ -111,7 +112,13 @@ mod owned {
     }
 
     impl BoxEncode for Mp4aBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        fn encoded_len(&self) -> usize {
+            let base_len = AudioSampleEntry::size();
+            let esds_len = boxed_len(&self.esds);
+            base_len + esds_len
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             self.base.write_in(&mut cur)?;

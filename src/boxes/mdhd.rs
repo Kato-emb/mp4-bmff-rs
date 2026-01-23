@@ -142,7 +142,19 @@ impl TryFrom<&[u8]> for MdhdBox {
 }
 
 impl BoxEncode for MdhdBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        let base_len = 4; // version(1) + flags(3)
+        let time_fields_len = match self.version {
+            1 => 8 + 8 + 4 + 8, // creation_time(8) + modification_time(8) + timescale(4) + duration(8)
+            _ => 4 + 4 + 4 + 4, // creation_time(4) + modification_time(4) + timescale(4) + duration(4)
+        };
+        let lang_and_predef_len = 2 + Self::PRE_DEFINED_SIZE; // language(2) + pre_defined(2)
+
+        base_len + time_fields_len + lang_and_predef_len
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         cur.write_u8(self.version)?;
@@ -189,7 +201,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 256];
-        mdhd.encode(&mut buf).unwrap();
+        mdhd.encode_into(&mut buf).unwrap();
 
         let parsed = MdhdBox::decode(&buf).unwrap();
         assert_eq!(parsed.version, mdhd.version);
@@ -219,7 +231,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 256];
-        mdhd.encode(&mut buf).unwrap();
+        mdhd.encode_into(&mut buf).unwrap();
 
         let parsed = MdhdBox::decode(&buf).unwrap();
         assert_eq!(parsed.version, mdhd.version);

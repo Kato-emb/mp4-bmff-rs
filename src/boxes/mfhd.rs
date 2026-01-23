@@ -63,7 +63,13 @@ impl TryFrom<&[u8]> for MfhdBox {
 }
 
 impl BoxEncode for MfhdBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        4 // version(1) + flags(3)
+        + 4 // sequence_number(4)
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         cur.write_u8(self.version)?;
@@ -87,7 +93,7 @@ mod tests {
         };
 
         let mut buf = vec![0u8; 32];
-        original.encode(&mut buf).unwrap();
+        original.encode_into(&mut buf).unwrap();
 
         let parsed = MfhdBox::decode(&buf).unwrap();
         assert_eq!(parsed, original);

@@ -1,8 +1,8 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use crate::boxes::MfroBox;
 use crate::boxes::TfraBoxView;
@@ -83,6 +83,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use super::*;
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use crate::BoxEncode;
@@ -127,7 +128,17 @@ mod owned {
     }
 
     impl BoxEncode for MfraBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let mut size = 0;
+            for tfra in &self.tfras {
+                size += boxed_len(tfra);
+            }
+            size += boxed_len(&self.mfro);
+            size
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             for tfra in &self.tfras {

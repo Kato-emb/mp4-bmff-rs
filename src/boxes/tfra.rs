@@ -345,7 +345,17 @@ mod owned {
     }
 
     impl BoxEncode for TfraBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            1 // version
+                + 3 // flags
+                + 4 // track_id
+                + 4 // reserved and length_size fields
+                + 4 // number_of_entry
+                + self.entries.len() // raw entry data
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;
@@ -466,7 +476,7 @@ mod tests {
 
         // Write
         let mut buf = vec![0u8; 256];
-        let written = original.encode(&mut buf).unwrap();
+        let written = original.encode_into(&mut buf).unwrap();
 
         // Parse again
         let reparsed = TfraBox::decode(&buf[..written]).unwrap();
@@ -517,7 +527,7 @@ mod tests {
 
         // Write
         let mut buf = vec![0u8; 256];
-        let written = original.encode(&mut buf).unwrap();
+        let written = original.encode_into(&mut buf).unwrap();
         // Parse again
         let reparsed = TfraBox::decode(&buf[..written]).unwrap();
 

@@ -72,7 +72,13 @@ impl TryFrom<&[u8]> for MfroBox {
 }
 
 impl BoxEncode for MfroBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        4 // version(1) + flags(3)
+        + 4 // size(4)
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         cur.write_u8(self.version)?;

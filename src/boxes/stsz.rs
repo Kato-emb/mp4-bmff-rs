@@ -4,8 +4,33 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::FixedSizeEntry;
+use crate::iter::FixedSizeEntryIter;
 
 use super::FullBoxFlags;
+
+/// An entry in the Sample Size Box (`stsz`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StszEntry {
+    pub sample_size: u32,
+}
+
+impl FixedSizeEntry for StszEntry {
+    const ENTRY_SIZE: usize = 4;
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+
+        StszEntry {
+            sample_size: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+        }
+    }
+
+    fn to_bytes(&self, bytes: &mut [u8]) {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+        bytes[0..4].copy_from_slice(&self.sample_size.to_be_bytes());
+    }
+}
 
 /// A reference to a Sample Size Box (`stsz`).
 #[derive(Debug)]
@@ -23,66 +48,16 @@ pub struct StszBoxView<'a> {
 }
 
 impl<'a> StszBoxView<'a> {
-    const ENTRY_SIZE: usize = 4;
-
-    /// Returns the size of a specific sample (1-indexed as per ISO spec).
-    ///
-    /// If `sample_size` is non-zero, returns that value for all samples.
-    /// Otherwise, returns the size from the entries array.
-    pub fn get_sample_size(&self, sample_number: u32) -> Result<u32> {
-        if sample_number == 0 || sample_number > self.sample_count {
-            return Err(Error::in_box(
-                ErrorKind::Other {
-                    description: "Sample number out of range",
-                },
-                BoxType::STSZ,
-            ));
-        }
-
-        if self.sample_size != 0 {
-            return Ok(self.sample_size);
-        }
-
-        let index = (sample_number - 1) as usize;
-        let offset = index * Self::ENTRY_SIZE;
-
-        if offset + Self::ENTRY_SIZE > self.entries.len() {
-            return Err(Error::in_box(
-                ErrorKind::Other {
-                    description: "Entry index out of bounds",
-                },
-                BoxType::STSZ,
-            ));
-        }
-
-        let mut cursor = ReadCursor::new(&self.entries[offset..offset + Self::ENTRY_SIZE]);
-        let entry_size = cursor.read_u32_be()?;
-
-        Ok(entry_size)
-    }
-
     /// Returns an iterator over all sample sizes.
     ///
     /// If `sample_size` is non-zero, yields that value for each sample.
     /// Otherwise, yields the size from the entries array.
-    pub fn sample_sizes(&self) -> impl Iterator<Item = Result<u32>> + 'a {
-        let sample_size = self.sample_size;
-        let sample_count = self.sample_count as usize;
-        let entries = self.entries;
-
-        (0..sample_count).map(move |i| {
-            if sample_size != 0 {
-                Ok(sample_size)
-            } else {
-                let offset = i * Self::ENTRY_SIZE;
-                Ok(u32::from_be_bytes([
-                    entries[offset],
-                    entries[offset + 1],
-                    entries[offset + 2],
-                    entries[offset + 3],
-                ]))
-            }
-        })
+    pub fn sample_sizes(&self) -> Option<FixedSizeEntryIter<'a, StszEntry>> {
+        if self.sample_size != 0 {
+            None
+        } else {
+            Some(FixedSizeEntryIter::new(self.entries))
+        }
     }
 }
 
@@ -112,7 +87,7 @@ impl<'de> BoxDecode<'de> for StszBoxView<'de> {
         let sample_count = cur.read_u32_be()?;
 
         let entries = if sample_size == 0 {
-            let expected_size = sample_count as usize * Self::ENTRY_SIZE;
+            let expected_size = sample_count as usize * StszEntry::ENTRY_SIZE;
 
             if cur.remaining() != expected_size {
                 return Err(Error::at_in_box(
@@ -174,7 +149,7 @@ mod owned {
         /// All samples have the same size.
         Uniform(u32),
         /// Each sample has its own size.
-        Variable(Vec<u32>),
+        Variable(Vec<StszEntry>),
     }
 
     /// An owned Sample Size Box (`stsz`).
@@ -190,23 +165,21 @@ mod owned {
         pub sample_sizes: SampleSizes,
     }
 
-    impl TryFrom<&StszBoxView<'_>> for StszBox {
-        type Error = Error;
-
-        fn try_from(view: &StszBoxView<'_>) -> Result<Self> {
-            let sample_sizes = if view.sample_size != 0 {
-                SampleSizes::Uniform(view.sample_size)
+    impl From<&StszBoxView<'_>> for StszBox {
+        fn from(value: &StszBoxView<'_>) -> Self {
+            let sample_sizes = if value.sample_size != 0 {
+                SampleSizes::Uniform(value.sample_size)
             } else {
-                let sizes: Result<Vec<u32>> = view.sample_sizes().collect();
-                SampleSizes::Variable(sizes?)
+                let sizes: Vec<StszEntry> = value.sample_sizes().unwrap().collect();
+                SampleSizes::Variable(sizes)
             };
 
-            Ok(StszBox {
-                version: view.version,
-                flags: view.flags,
-                sample_count: view.sample_count,
+            StszBox {
+                version: value.version,
+                flags: value.flags,
+                sample_count: value.sample_count,
                 sample_sizes,
-            })
+            }
         }
     }
 
@@ -219,7 +192,9 @@ mod owned {
 
             match &self.sample_sizes {
                 SampleSizes::Uniform(size) => Some(*size),
-                SampleSizes::Variable(sizes) => sizes.get((sample_number - 1) as usize).copied(),
+                SampleSizes::Variable(sizes) => {
+                    Some(sizes[(sample_number - 1) as usize].sample_size)
+                }
             }
         }
     }
@@ -233,12 +208,24 @@ mod owned {
     impl BoxDecode<'_> for StszBox {
         fn decode(bytes: &[u8]) -> Result<Self> {
             let view = StszBoxView::decode(bytes)?;
-            StszBox::try_from(&view)
+            Ok(StszBox::from(&view))
         }
     }
 
     impl BoxEncode for StszBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            1 // version
+                + 3 // flags
+                + 4 // sample_size
+                + 4 // sample_count
+                + match &self.sample_sizes {
+                    SampleSizes::Uniform(_) => 0,
+                    SampleSizes::Variable(sizes) => sizes.len() * 4,
+                } // entries
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;
@@ -249,11 +236,11 @@ mod owned {
                     cur.write_u32_be(*size)?;
                     cur.write_u32_be(self.sample_count)?;
                 }
-                SampleSizes::Variable(sizes) => {
+                SampleSizes::Variable(entries) => {
                     cur.write_u32_be(0)?;
-                    cur.write_u32_be(sizes.len() as u32)?;
-                    for size in sizes {
-                        cur.write_u32_be(*size)?;
+                    cur.write_u32_be(entries.len() as u32)?;
+                    for entry in entries {
+                        cur.write_u32_be(entry.sample_size)?;
                     }
                 }
             }
@@ -306,12 +293,14 @@ mod tests {
 
         // Write to buffer
         let mut buf = vec![0u8; 256];
-        let written = owned.encode(&mut buf).unwrap();
+        let written = owned.encode_into(&mut buf).unwrap();
 
         // Parse again and compare
         let reparsed = StszBox::decode(&buf[..written]).unwrap();
         if let SampleSizes::Variable(ref s) = reparsed.sample_sizes {
-            assert_eq!(s, &sizes);
+            for (i, size) in sizes.iter().enumerate() {
+                assert_eq!(s[i].sample_size, *size);
+            }
         } else {
             panic!("Expected Variable sample sizes");
         }
@@ -322,7 +311,7 @@ mod tests {
         let owned = StszBox::try_from(&view).unwrap();
 
         let mut buf = vec![0u8; 256];
-        let written = owned.encode(&mut buf).unwrap();
+        let written = owned.encode_into(&mut buf).unwrap();
         let reparsed = StszBox::decode(&buf[..written]).unwrap();
         assert_eq!(reparsed.sample_count, 10);
         if let SampleSizes::Uniform(size) = reparsed.sample_sizes {
@@ -333,7 +322,7 @@ mod tests {
 
         // Error case: buffer too small
         let mut small_buf = vec![0u8; 10];
-        assert!(owned.encode(&mut small_buf).is_err());
+        assert!(owned.encode_into(&mut small_buf).is_err());
 
         // Error case: entry count mismatch
         let mut bad_payload = make_full_box_header(0, 0);

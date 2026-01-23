@@ -350,7 +350,25 @@ mod owned {
     }
 
     impl BoxEncode for TrunBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            1 // version
+                + 3 // flags
+                + 4 // sample_count
+                + if self.flags.data_offset_present() {
+                    4
+                } else {
+                    0
+                } // data_offset
+                + if self.flags.first_sample_flags_present() {
+                    4
+                } else {
+                    0
+                } // first_sample_flags
+                + self.samples.len() // samples
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;
@@ -471,7 +489,7 @@ mod tests {
 
         // Write
         let mut buf = vec![0u8; 256];
-        let written = original.encode(&mut buf).unwrap();
+        let written = original.encode_into(&mut buf).unwrap();
 
         // Parse again
         let reparsed = TrunBox::decode(&buf[..written]).unwrap();

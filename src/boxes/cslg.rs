@@ -96,7 +96,20 @@ impl TryFrom<&[u8]> for CslgBox {
 }
 
 impl BoxEncode for CslgBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    fn encoded_len(&self) -> usize {
+        let mut size = 1 // version
+            + 3; // flags
+
+        size += if self.version == 0 {
+            5 * 4 // five 32-bit fields
+        } else {
+            5 * 8 // five 64-bit fields
+        };
+
+        size
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         cur.write_u8(self.version)?;

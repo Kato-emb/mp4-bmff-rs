@@ -70,7 +70,12 @@ mod owned {
     }
 
     impl BoxEncode for FreeBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            self.data.len()
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
             cur.write_slice(&self.data)?;
 
@@ -100,7 +105,7 @@ mod tests {
         };
 
         let mut buffer = vec![0u8; 23];
-        free_box.encode(&mut buffer).unwrap();
+        free_box.encode_into(&mut buffer).unwrap();
 
         let expected = b"example free space data";
 

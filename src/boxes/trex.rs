@@ -76,7 +76,18 @@ impl BoxDecode<'_> for TrexBox {
 }
 
 impl BoxEncode for TrexBox {
-    fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        1 // version
+            + 3 // flags
+            + 4 // track_id
+            + 4 // default_sample_description_index
+            + 4 // default_sample_duration
+            + 4 // default_sample_size
+            + 4 // default_sample_flags
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 
         cur.write_u8(self.version)?;

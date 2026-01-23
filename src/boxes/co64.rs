@@ -4,6 +4,8 @@ use crate::base::header::BoxType;
 use crate::codec::BoxCodec;
 use crate::codec::BoxDecode;
 use crate::error::*;
+use crate::iter::FixedSizeEntry;
+use crate::iter::FixedSizeEntryIter;
 
 use super::FullBoxFlags;
 
@@ -12,6 +14,23 @@ use super::FullBoxFlags;
 pub struct Co64Entry {
     /// The chunk offset.
     pub chunk_offset: u64,
+}
+
+impl FixedSizeEntry for Co64Entry {
+    const ENTRY_SIZE: usize = 8;
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+
+        Co64Entry {
+            chunk_offset: u64::from_be_bytes(bytes.try_into().unwrap()),
+        }
+    }
+
+    fn to_bytes(&self, bytes: &mut [u8]) {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+        bytes.copy_from_slice(&self.chunk_offset.to_be_bytes());
+    }
 }
 
 /// A reference to a 64-bit Chunk Offset Box (`co64`).
@@ -27,22 +46,9 @@ pub struct Co64BoxView<'a> {
 }
 
 impl<'a> Co64BoxView<'a> {
-    const ENTRY_SIZE: usize = 8;
-
     /// Returns an iterator over the entries in this box.
-    pub fn entries(&self) -> impl Iterator<Item = Co64Entry> + 'a {
-        let entry_bytes = self.entries;
-        let entry_count = self.entry_count as usize;
-
-        entry_bytes
-            .chunks_exact(Self::ENTRY_SIZE)
-            .take(entry_count)
-            .map(|chunk| {
-                let chunk_offset = u64::from_be_bytes([
-                    chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
-                ]);
-                Co64Entry { chunk_offset }
-            })
+    pub fn entries(&self) -> FixedSizeEntryIter<'a, Co64Entry> {
+        FixedSizeEntryIter::new(self.entries)
     }
 }
 
@@ -68,7 +74,7 @@ impl<'de> BoxDecode<'de> for Co64BoxView<'de> {
         let flags = Co64Flags::from_bytes(cur.read_array()?);
 
         let entry_count = cur.read_u32_be()?;
-        let expected_size = entry_count as usize * Self::ENTRY_SIZE;
+        let expected_size = entry_count as usize * Co64Entry::ENTRY_SIZE;
 
         if cur.remaining() != expected_size {
             return Err(Error::at_in_box(
@@ -120,21 +126,15 @@ mod owned {
         pub entries: Vec<Co64Entry>,
     }
 
-    impl TryFrom<&Co64BoxView<'_>> for Co64Box {
-        type Error = Error;
+    impl From<&Co64BoxView<'_>> for Co64Box {
+        fn from(view: &Co64BoxView<'_>) -> Self {
+            let entries = view.entries().collect::<Vec<_>>();
 
-        fn try_from(view: &Co64BoxView<'_>) -> Result<Self> {
-            let mut entries = Vec::with_capacity(view.entry_count as usize);
-
-            for entry in view.entries() {
-                entries.push(entry);
-            }
-
-            Ok(Co64Box {
+            Co64Box {
                 version: view.version,
                 flags: view.flags,
                 entries,
-            })
+            }
         }
     }
 
@@ -147,12 +147,19 @@ mod owned {
     impl BoxDecode<'_> for Co64Box {
         fn decode(bytes: &[u8]) -> Result<Self> {
             let view = Co64BoxView::decode(bytes)?;
-            Co64Box::try_from(&view)
+            Ok(Co64Box::from(&view))
         }
     }
 
     impl BoxEncode for Co64Box {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        fn encoded_len(&self) -> usize {
+            1 // version
+            + 3 // flags
+            + 4 // entry count
+            + (self.entries.len() * Co64Entry::ENTRY_SIZE) // entries
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             cur.write_u8(self.version)?;

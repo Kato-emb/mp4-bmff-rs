@@ -1,8 +1,8 @@
 use crate::BoxCodec;
 use crate::BoxDecode;
-use crate::BoxIter;
 use crate::BoxType;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use crate::boxes::HdlrBoxView;
 use crate::boxes::MdhdBox;
@@ -106,6 +106,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use super::*;
+    use crate::codec::boxed_len;
     use crate::codec::write_box_in;
 
     use crate::BoxCodec;
@@ -215,7 +216,14 @@ mod owned {
     }
 
     impl BoxEncode for MdiaBox {
-        fn encode(&self, bytes: &mut [u8]) -> Result<usize> {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            boxed_len(&self.mdhd) // mdhd
+            + boxed_len(&self.hdlr) // hdlr
+            + boxed_len(&self.minf) // minf
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
             write_box_in(&mut cur, &self.mdhd)?;
