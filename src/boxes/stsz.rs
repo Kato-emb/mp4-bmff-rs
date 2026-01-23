@@ -167,6 +167,17 @@ mod owned {
         pub sample_sizes: SampleSizes,
     }
 
+    impl Default for StszBox {
+        fn default() -> Self {
+            StszBox {
+                version: 0,
+                flags: StszFlags::default(),
+                sample_count: 0,
+                sample_sizes: SampleSizes::Uniform(0),
+            }
+        }
+    }
+
     impl From<&StszBoxView<'_>> for StszBox {
         fn from(value: &StszBoxView<'_>) -> Self {
             let sample_sizes = if value.sample_size != 0 {
