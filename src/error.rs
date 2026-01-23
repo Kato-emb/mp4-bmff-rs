@@ -86,6 +86,9 @@ pub enum ErrorKind {
         /// The type of the required box.
         required: BoxType,
     },
+    #[cfg(feature = "std")]
+    /// An I/O error occurred.
+    Io,
     /// Some other kind of error.
     Other {
         /// A description of the error.
@@ -137,17 +140,21 @@ impl fmt::Display for ErrorKind {
             ErrorKind::BoxMissing { required } => {
                 write!(f, "required box '{required}' is missing")
             }
+            #[cfg(feature = "std")]
+            ErrorKind::Io => write!(f, "I/O error"),
             ErrorKind::Other { description } => write!(f, "error: {description}"),
         }
     }
 }
 
 /// Represents an error that occurred while processing a BMFF box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
     offset: Option<u64>,
     box_type: Option<BoxType>,
+    #[cfg(feature = "std")]
+    source: Option<Box<dyn error::Error + 'static>>,
 }
 
 impl Error {
@@ -156,6 +163,8 @@ impl Error {
             kind,
             offset: None,
             box_type: None,
+            #[cfg(feature = "std")]
+            source: None,
         }
     }
 
@@ -164,6 +173,8 @@ impl Error {
             kind,
             offset: Some(offset),
             box_type: None,
+            #[cfg(feature = "std")]
+            source: None,
         }
     }
 
@@ -172,6 +183,8 @@ impl Error {
             kind,
             offset: None,
             box_type: Some(box_type),
+            #[cfg(feature = "std")]
+            source: None,
         }
     }
 
@@ -180,6 +193,8 @@ impl Error {
             kind,
             offset: Some(offset),
             box_type: Some(box_type),
+            #[cfg(feature = "std")]
+            source: None,
         }
     }
 
@@ -235,11 +250,21 @@ impl fmt::Display for Error {
             write!(f, " at offset {offset}")?;
         }
 
+        #[cfg(feature = "std")]
+        if let Some(source) = &self.source {
+            write!(f, ": {}", source)?;
+        }
+
         Ok(())
     }
 }
 
-impl error::Error for Error {}
+impl error::Error for Error {
+    #[cfg(feature = "std")]
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        self.source.as_deref()
+    }
+}
 
 impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Self {
@@ -268,5 +293,14 @@ impl From<CursorError> for Error {
         };
 
         Self::at(kind, value.offset as u64)
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        let mut error = Self::new(ErrorKind::Io);
+        error.source = Some(Box::new(value));
+        error
     }
 }

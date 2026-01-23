@@ -95,6 +95,24 @@ impl BoxHeader {
         self.size.value().unwrap_or(0)
     }
 
+    /// Calculates the number of additional header bytes based on the base header.
+    pub fn addintional_header_bytes(base: &[u8; Self::BASE_SIZE]) -> usize {
+        let size = u32::from_be_bytes([base[0], base[1], base[2], base[3]]);
+        let fourcc = FourCC::from([base[4], base[5], base[6], base[7]]);
+
+        let mut additional_bytes = 0;
+
+        if size == BoxSize::MARKER_EXTENDED_SIZE {
+            additional_bytes += 8; // Extended size field
+        }
+
+        if fourcc == boxtype::UUID {
+            additional_bytes += 16; // UUID field
+        }
+
+        additional_bytes
+    }
+
     /// Parses a box header from the given byte slice.
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(bytes);
