@@ -161,7 +161,11 @@ pub use owned::EsDescriptor;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::lib::String;
+    use crate::lib::{
+        String, //
+        ToString,
+        Vec,
+    };
 
     use super::*;
     use crate::descriptor::DecoderConfigDescriptor;
@@ -241,7 +245,7 @@ mod owned {
 
         /// Creates an owned EsDescriptor from a view
         pub fn from_view(view: &EsDescriptorView<'_>) -> Result<Self> {
-            let url_string = view.url_string.map(|s| s.to_owned());
+            let url_string = view.url_string.map(|s| s.to_string());
 
             let decoder_config_descriptor = view.decoder_config_descriptor.to_owned();
             let sl_config_descriptor = view.sl_config_descriptor.to_owned();

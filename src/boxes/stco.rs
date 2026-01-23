@@ -112,6 +112,8 @@ pub use owned::StcoBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::Vec;
+
     use super::*;
 
     use crate::BoxEncode;

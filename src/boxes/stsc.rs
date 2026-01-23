@@ -122,6 +122,8 @@ pub use owned::StscBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::Vec;
+
     use crate::BoxEncode;
     use crate::cursor::WriteCursor;
 

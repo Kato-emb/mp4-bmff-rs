@@ -229,7 +229,11 @@ pub use owned::{
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::lib::String;
+    use crate::lib::{
+        String, //
+        ToString,
+        Vec,
+    };
 
     use super::*;
     use crate::BoxEncode;
@@ -304,7 +308,7 @@ mod owned {
         fn encoded_len(&self) -> usize {
             let mut size = 4; // version(1) + flags(3)
             size += 4; // entry_count(4)
-            for entry in &self.entries {
+            for entry in self.entries.iter() {
                 match entry {
                     DrefEntry::Url(url_box) => {
                         size += boxed_len(url_box);

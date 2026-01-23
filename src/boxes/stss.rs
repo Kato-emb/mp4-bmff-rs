@@ -131,6 +131,8 @@ pub use owned::StssBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::Vec;
+
     use super::*;
 
     use crate::BoxEncode;

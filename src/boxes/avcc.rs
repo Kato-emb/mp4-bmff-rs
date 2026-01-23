@@ -204,7 +204,11 @@ pub use owned::{
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::lib::Vec;
+    use crate::lib::{
+        String, //
+        Vec,
+        format,
+    };
 
     use super::*;
 

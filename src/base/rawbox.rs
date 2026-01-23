@@ -23,6 +23,7 @@ pub type RawBoxRef<'a> = RawBox<&'a [u8]>;
 pub type RawBoxOwned = RawBox<Vec<u8>>;
 
 impl<T> RawBox<T> {
+    #[cfg(feature = "std")]
     pub(crate) fn from_parts(header: BoxHeader, payload: T) -> Self {
         Self { header, payload }
     }

@@ -105,6 +105,8 @@ pub use owned::*;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::Vec;
+
     use crate::cursor::WriteCursor;
 
     use crate::codec::boxed_len;
