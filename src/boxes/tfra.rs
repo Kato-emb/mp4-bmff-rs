@@ -1,10 +1,11 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::BoxView;
 use crate::error::*;
-use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
+
+use super::FullBoxFlags;
 
 /// An entry in a Track Fragment Random Access Box (`tfra`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,10 +182,28 @@ impl<'a> TfraBoxView<'a> {
             length_size_of_sample_num: self.length_size_of_sample_num,
         }
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<TfraBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<TfraSpec>::parse_in(cur)?;
-        let version = full_box_header.version();
+impl<'a> TryFrom<&'a [u8]> for TfraBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        TfraBoxView::decode(value)
+    }
+}
+
+impl BoxCodec for TfraBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::TFRA
+    }
+}
+
+impl<'de> BoxDecode<'de> for TfraBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = TfraFlags::from_bytes(cur.read_array()?);
 
         if version > 1 {
             return Err(Error::in_box(
@@ -196,22 +215,16 @@ impl<'a> TfraBoxView<'a> {
             ));
         }
 
-        let track_id = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let track_id = cur.read_u32_be()?;
 
         // Read reserved (26 bits) and length_size fields (2 bits each)
-        let reserved_and_length = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let reserved_and_length = cur.read_u32_be()?;
 
         let length_size_of_traf_num = ((reserved_and_length >> 4) & 0x03) as u8;
         let length_size_of_trun_num = ((reserved_and_length >> 2) & 0x03) as u8;
         let length_size_of_sample_num = (reserved_and_length & 0x03) as u8;
 
-        let number_of_entry = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let number_of_entry = cur.read_u32_be()?;
 
         // Calculate expected entry size
         let time_size = if version == 1 { 8 } else { 4 };
@@ -238,7 +251,7 @@ impl<'a> TfraBoxView<'a> {
 
         Ok(TfraBoxView {
             version,
-            flags: full_box_header.flags(),
+            flags,
             track_id,
             length_size_of_traf_num,
             length_size_of_trun_num,
@@ -246,35 +259,6 @@ impl<'a> TfraBoxView<'a> {
             number_of_entry,
             entries,
         })
-    }
-
-    /// Parses a `TfraBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<TfraBoxView<'a>> {
-        let mut cur = ReadCursor::new(payload);
-        TfraBoxView::parse_in(&mut cur)
-    }
-}
-
-impl<'a> TryFrom<&'a [u8]> for TfraBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &'a [u8]) -> Result<Self> {
-        TfraBoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<&BoxView<'a>> for TfraBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::TFRA {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::TFRA,
-                found: value.header.boxtype(),
-            }));
-        }
-
-        TfraBoxView::parse(value.payload)
     }
 }
 
@@ -292,6 +276,9 @@ pub use owned::TfraBox;
 mod owned {
     extern crate alloc;
     use alloc::vec::Vec;
+
+    use crate::BoxEncode;
+    use crate::cursor::WriteCursor;
 
     use super::*;
 
@@ -317,26 +304,6 @@ mod owned {
     }
 
     impl TfraBox {
-        /// Creates a `TfraBox` from a `TfraBoxView`.
-        pub fn from_view(view: &TfraBoxView<'_>) -> Result<TfraBox> {
-            Ok(TfraBox {
-                version: view.version,
-                flags: view.flags,
-                track_id: view.track_id,
-                length_size_of_traf_num: view.length_size_of_traf_num,
-                length_size_of_trun_num: view.length_size_of_trun_num,
-                length_size_of_sample_num: view.length_size_of_sample_num,
-                number_of_entry: view.number_of_entry,
-                entries: view.entries.to_vec(),
-            })
-        }
-
-        /// Parses a `TfraBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<TfraBox> {
-            let view = TfraBoxView::parse(payload)?;
-            TfraBox::from_view(&view)
-        }
-
         /// Returns an iterator over the entries in the Track Fragment Random Access Box.
         pub fn entries(&self) -> TfraEntryIter<'_> {
             TfraEntryIter {
@@ -349,20 +316,65 @@ mod owned {
         }
     }
 
-    impl TryFrom<&TfraBoxView<'_>> for TfraBox {
-        type Error = Error;
-
-        fn try_from(value: &TfraBoxView<'_>) -> Result<Self> {
-            TfraBox::from_view(value)
+    impl From<&TfraBoxView<'_>> for TfraBox {
+        fn from(view: &TfraBoxView<'_>) -> Self {
+            TfraBox {
+                version: view.version,
+                flags: view.flags,
+                track_id: view.track_id,
+                length_size_of_traf_num: view.length_size_of_traf_num,
+                length_size_of_trun_num: view.length_size_of_trun_num,
+                length_size_of_sample_num: view.length_size_of_sample_num,
+                number_of_entry: view.number_of_entry,
+                entries: view.entries.to_vec(),
+            }
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for TfraBox {
-        type Error = Error;
+    impl BoxCodec for TfraBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::TFRA
+        }
+    }
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
-            let view = TfraBoxView::try_from(value)?;
-            TfraBox::from_view(&view)
+    impl BoxDecode<'_> for TfraBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = TfraBoxView::decode(bytes)?;
+            Ok(TfraBox::from(&view))
+        }
+    }
+
+    impl BoxEncode for TfraBox {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            1 // version
+                + 3 // flags
+                + 4 // track_id
+                + 4 // reserved and length_size fields
+                + 4 // number_of_entry
+                + self.entries.len() // raw entry data
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
+
+            cur.write_u32_be(self.track_id)?;
+
+            // Reserved (26 bits) and length_size fields (2 bits each)
+            let reserved_and_length = ((self.length_size_of_traf_num as u32) << 4)
+                | ((self.length_size_of_trun_num as u32) << 2)
+                | (self.length_size_of_sample_num as u32);
+            cur.write_u32_be(reserved_and_length)?;
+
+            cur.write_u32_be(self.number_of_entry)?;
+
+            // Write raw entry data
+            cur.write_slice(&self.entries)?;
+
+            Ok(cur.position())
         }
     }
 }
@@ -420,44 +432,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_tfra_v0_empty() {
-        let payload = make_tfra_payload_v0(1, (0, 0, 0), &[]);
-        let tfra = TfraBoxView::parse(&payload).unwrap();
-
-        assert_eq!(tfra.version, 0);
-        assert_eq!(tfra.track_id, 1);
-        assert_eq!(tfra.length_size_of_traf_num, 0);
-        assert_eq!(tfra.length_size_of_trun_num, 0);
-        assert_eq!(tfra.length_size_of_sample_num, 0);
-        assert_eq!(tfra.number_of_entry, 0);
-        assert_eq!(tfra.entries().count(), 0);
-    }
-
-    #[test]
-    fn parse_tfra_v0_with_entries() {
-        let entries = vec![(1000, 5000, 1, 1, 1), (2000, 10000, 2, 1, 1)];
-        let payload = make_tfra_payload_v0(1, (0, 0, 0), &entries);
-        let tfra = TfraBoxView::parse(&payload).unwrap();
-
-        assert_eq!(tfra.number_of_entry, 2);
-
-        let parsed: Vec<_> = tfra.entries().collect();
-        assert_eq!(parsed.len(), 2);
-
-        assert_eq!(parsed[0].as_ref().unwrap().time, 1000);
-        assert_eq!(parsed[0].as_ref().unwrap().moof_offset, 5000);
-        assert_eq!(parsed[0].as_ref().unwrap().traf_number, 1);
-
-        assert_eq!(parsed[1].as_ref().unwrap().time, 2000);
-        assert_eq!(parsed[1].as_ref().unwrap().moof_offset, 10000);
-    }
-
-    #[test]
     fn parse_tfra_v0_with_larger_fields() {
         let entries = vec![(1000, 5000, 256, 512, 1024)];
         // Use size 1 (2 bytes) for traf, size 1 (2 bytes) for trun, size 1 (2 bytes) for sample
         let payload = make_tfra_payload_v0(1, (1, 1, 1), &entries);
-        let tfra = TfraBoxView::parse(&payload).unwrap();
+        let tfra = TfraBoxView::decode(&payload).unwrap();
 
         let parsed: Vec<_> = tfra.entries().collect();
         assert_eq!(parsed[0].as_ref().unwrap().traf_number, 256);
@@ -471,29 +450,93 @@ mod tests {
         payload.extend_from_slice(&make_full_box_header(2, 0));
         payload.extend_from_slice(&1u32.to_be_bytes()); // track_id
 
-        let result = TfraBoxView::parse(&payload);
+        let result = TfraBoxView::decode(&payload);
         assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::InvalidBoxVersion { .. }));
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            ErrorKind::InvalidBoxVersion { .. }
+        ));
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn tfra_box_round_trip_v0() {
+        // Test with multiple entries and various length sizes
+
+        use crate::BoxEncode;
+        let entries = vec![
+            (1000, 5000, 1, 1, 1),
+            (2000, 10000, 2, 3, 4),
+            (3000, 15000, 255, 255, 255), // Max values for 1-byte fields
+        ];
+        let original_payload = make_tfra_payload_v0(42, (0, 0, 0), &entries);
+
+        // Parse
+        let original = TfraBox::decode(&original_payload).unwrap();
+
+        // Write
+        let mut buf = vec![0u8; 256];
+        let written = original.encode_into(&mut buf).unwrap();
+
+        // Parse again
+        let reparsed = TfraBox::decode(&buf[..written]).unwrap();
+        // Compare
+        assert_eq!(reparsed.version, original.version);
+        assert_eq!(reparsed.flags.get(), original.flags.get());
+        assert_eq!(reparsed.track_id, original.track_id);
+        assert_eq!(
+            reparsed.length_size_of_traf_num,
+            original.length_size_of_traf_num
+        );
+        assert_eq!(
+            reparsed.length_size_of_trun_num,
+            original.length_size_of_trun_num
+        );
+        assert_eq!(
+            reparsed.length_size_of_sample_num,
+            original.length_size_of_sample_num
+        );
+        assert_eq!(reparsed.number_of_entry, original.number_of_entry);
+
+        let orig_entries: Vec<_> = original.entries().collect();
+        let reparsed_entries: Vec<_> = reparsed.entries().collect();
+        assert_eq!(orig_entries.len(), reparsed_entries.len());
+
+        for (o, r) in orig_entries.iter().zip(reparsed_entries.iter()) {
+            let o = o.as_ref().unwrap();
+            let r = r.as_ref().unwrap();
+            assert_eq!(o.time, r.time);
+            assert_eq!(o.moof_offset, r.moof_offset);
+            assert_eq!(o.traf_number, r.traf_number);
+            assert_eq!(o.trun_number, r.trun_number);
+            assert_eq!(o.sample_number, r.sample_number);
         }
     }
 
     #[cfg(feature = "alloc")]
-    mod alloc_tests {
-        use super::*;
+    #[test]
+    fn tfra_box_round_trip_with_variable_sizes() {
+        // Test with 2-byte variable fields
 
-        #[test]
-        fn tfra_box_from_view() {
-            let entries = vec![(1000, 5000, 1, 1, 1)];
-            let payload = make_tfra_payload_v0(1, (0, 0, 0), &entries);
-            let view = TfraBoxView::parse(&payload).unwrap();
-            let owned = TfraBox::from_view(&view).unwrap();
+        use crate::BoxEncode;
+        let entries = vec![(1000, 5000, 256, 512, 1024)];
+        let original_payload = make_tfra_payload_v0(1, (1, 1, 1), &entries);
 
-            assert_eq!(owned.track_id, 1);
-            assert_eq!(owned.number_of_entry, 1);
+        // Parse
+        let original = TfraBox::decode(&original_payload).unwrap();
 
-            let parsed: Vec<_> = owned.entries().collect();
-            assert_eq!(parsed[0].as_ref().unwrap().time, 1000);
-        }
+        // Write
+        let mut buf = vec![0u8; 256];
+        let written = original.encode_into(&mut buf).unwrap();
+        // Parse again
+        let reparsed = TfraBox::decode(&buf[..written]).unwrap();
+
+        // Compare entry values
+        let orig_entry = original.entries().next().unwrap().unwrap();
+        let reparsed_entry = reparsed.entries().next().unwrap().unwrap();
+
+        assert_eq!(orig_entry.traf_number, reparsed_entry.traf_number);
+        assert_eq!(orig_entry.trun_number, reparsed_entry.trun_number);
+        assert_eq!(orig_entry.sample_number, reparsed_entry.sample_number);
     }
 }

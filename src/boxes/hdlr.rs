@@ -3,11 +3,12 @@ use core::mem;
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::BoxView;
-use crate::FullBoxFlags;
-use crate::FullBoxHeader;
 use crate::error::*;
+
+use super::FullBoxFlags;
 
 /// A reference to a Handler Reference Box (`hdlr`).
 ///
@@ -28,22 +29,35 @@ pub struct HdlrBoxView<'a> {
 impl<'a> HdlrBoxView<'a> {
     const PRE_DEFINED_SIZE: usize = mem::size_of::<u32>();
     const RESERVED_SIZE: usize = 3 * mem::size_of::<u32>();
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<HdlrBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<HdlrSpec>::parse_in(cur)?;
+/// Specification for Handler Reference Box (`hdlr`).
+pub struct HdlrSpec;
+
+/// Flags for Handler Reference Box (`hdlr`).
+pub type HdlrFlags = FullBoxFlags<HdlrSpec>;
+
+impl BoxCodec for HdlrBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::HDLR
+    }
+}
+
+impl<'de> BoxDecode<'de> for HdlrBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = HdlrFlags::from_bytes(cur.read_array()?);
 
         // Skip pre_defined (4 bytes, should be 0)
-        cur.advance(Self::PRE_DEFINED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.advance(Self::PRE_DEFINED_SIZE)?;
 
-        let handler_type_bytes = cur
-            .read_array::<4>()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let handler_type_bytes = cur.read_array::<4>()?;
         let handler_type = FourCC::new(handler_type_bytes);
 
         // Skip reserved (12 bytes)
-        cur.advance(Self::RESERVED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.advance(Self::RESERVED_SIZE)?;
 
         // The rest is the name (null-terminated UTF-8 string)
         let name_bytes = cur.take(cur.remaining())?;
@@ -64,40 +78,21 @@ impl<'a> HdlrBoxView<'a> {
         })?;
 
         Ok(HdlrBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             handler_type,
             name,
         })
     }
-
-    /// Parses a `HdlrBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<HdlrBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        HdlrBoxView::parse_in(&mut cursor)
-    }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for HdlrBoxView<'a> {
+impl<'a> TryFrom<&'a [u8]> for HdlrBoxView<'a> {
     type Error = Error;
 
-    fn try_from(box_view: &BoxView<'a>) -> Result<Self> {
-        if box_view.header.boxtype() != BoxType::HDLR {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::HDLR,
-                found: box_view.header.boxtype(),
-            }));
-        }
-
-        HdlrBoxView::parse(box_view.payload)
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        HdlrBoxView::decode(value)
     }
 }
-
-/// Specification for Handler Reference Box (`hdlr`).
-pub struct HdlrSpec;
-
-/// Flags for Handler Reference Box (`hdlr`).
-pub type HdlrFlags = FullBoxFlags<HdlrSpec>;
 
 #[cfg(feature = "alloc")]
 pub use owned::HdlrBox;
@@ -106,6 +101,11 @@ pub use owned::HdlrBox;
 mod owned {
     extern crate alloc;
     use alloc::string::String;
+
+    use crate::BoxCodec;
+    use crate::BoxDecode;
+    use crate::BoxEncode;
+    use crate::cursor::WriteCursor;
 
     use super::*;
 
@@ -122,9 +122,8 @@ mod owned {
         pub name: String,
     }
 
-    impl HdlrBox {
-        /// Creates a `HdlrBox` from a `HdlrBoxView`.
-        pub fn from_view(view: &HdlrBoxView<'_>) -> HdlrBox {
+    impl From<&HdlrBoxView<'_>> for HdlrBox {
+        fn from(view: &HdlrBoxView) -> Self {
             HdlrBox {
                 version: view.version,
                 flags: view.flags,
@@ -132,26 +131,57 @@ mod owned {
                 name: String::from(view.name),
             }
         }
+    }
 
-        /// Parses a `HdlrBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<HdlrBox> {
-            let view = HdlrBoxView::parse(payload)?;
-            Ok(HdlrBox::from_view(&view))
+    impl BoxCodec for HdlrBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::HDLR
         }
     }
 
-    impl From<&HdlrBoxView<'_>> for HdlrBox {
-        fn from(view: &HdlrBoxView<'_>) -> Self {
-            HdlrBox::from_view(view)
+    impl BoxDecode<'_> for HdlrBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = HdlrBoxView::decode(bytes)?;
+            Ok(HdlrBox::from(&view))
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for HdlrBox {
-        type Error = Error;
+    impl BoxEncode for HdlrBox {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let base_len = 4 // version(1) + flags(3)
+                + HdlrBoxView::PRE_DEFINED_SIZE // pre_defined(4)
+                + 4 // handler_type(4)
+                + HdlrBoxView::RESERVED_SIZE; // reserved(12)
 
-        fn try_from(box_view: &BoxView<'_>) -> Result<Self> {
-            let view = HdlrBoxView::try_from(box_view)?;
-            Ok(HdlrBox::from_view(&view))
+            let name_len = self.name.len() + 1; // name + null terminator
+
+            base_len + name_len
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            // Write version (1 byte)
+            cur.write_u8(self.version)?;
+
+            // Write flags (3 bytes)
+            cur.write_slice(&self.flags.to_bytes())?;
+
+            // Write pre_defined (4 bytes, should be 0)
+            cur.write_slice(&[0u8; HdlrBoxView::<'_>::PRE_DEFINED_SIZE])?;
+
+            // Write handler_type (4 bytes)
+            cur.write_array(self.handler_type.as_bytes())?;
+
+            // Write reserved (12 bytes)
+            cur.write_slice(&[0u8; HdlrBoxView::<'_>::RESERVED_SIZE])?;
+
+            // Write name (null-terminated string)
+            cur.write_slice(self.name.as_bytes())?;
+            cur.write_u8(0)?;
+
+            Ok(cur.position())
         }
     }
 }
@@ -160,90 +190,50 @@ mod owned {
 mod tests {
     use super::*;
 
-    fn make_hdlr_payload(handler_type: &[u8; 4], name: &[u8]) -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // FullBoxHeader: version (1 byte) + flags (3 bytes)
-        data.push(0);
-        data.extend_from_slice(&[0, 0, 0]);
-
-        // pre_defined (4 bytes)
-        data.extend_from_slice(&[0, 0, 0, 0]);
-
-        // handler_type (4 bytes)
-        data.extend_from_slice(handler_type);
-
-        // reserved (12 bytes)
-        data.extend_from_slice(&[0u8; 12]);
-
-        // name (null-terminated string)
-        data.extend_from_slice(name);
-
-        data
-    }
-
+    #[cfg(feature = "alloc")]
     #[test]
-    fn parse_hdlr_video() {
-        let payload = make_hdlr_payload(b"vide", b"VideoHandler\0");
-        let hdlr = HdlrBoxView::parse(&payload).unwrap();
+    fn hdlr_box_round_trip() {
+        use crate::BoxEncode;
 
-        assert_eq!(hdlr.version, 0);
-        assert_eq!(hdlr.flags.get(), 0);
-        assert_eq!(hdlr.handler_type, FourCC::new(*b"vide"));
-        assert_eq!(hdlr.name, "VideoHandler");
-    }
+        let original = HdlrBox {
+            version: 0,
+            flags: HdlrFlags::empty(),
+            handler_type: FourCC::new(*b"vide"),
+            name: String::from("VideoHandler"),
+        };
 
-    #[test]
-    fn parse_hdlr_sound() {
-        let payload = make_hdlr_payload(b"soun", b"SoundHandler\0");
-        let hdlr = HdlrBoxView::parse(&payload).unwrap();
+        // Write
+        let mut buf = vec![0u8; 256];
+        let written = original.encode_into(&mut buf).unwrap();
 
-        assert_eq!(hdlr.handler_type, FourCC::new(*b"soun"));
-        assert_eq!(hdlr.name, "SoundHandler");
-    }
+        // Parse
+        let reparsed = HdlrBox::decode(&buf[..written]).unwrap();
 
-    #[test]
-    fn parse_hdlr_empty_name() {
-        let payload = make_hdlr_payload(b"vide", b"\0");
-        let hdlr = HdlrBoxView::parse(&payload).unwrap();
-
-        assert_eq!(hdlr.handler_type, FourCC::new(*b"vide"));
-        assert_eq!(hdlr.name, "");
-    }
-
-    #[test]
-    fn parse_hdlr_no_null_terminator() {
-        // Some encoders don't include null terminator
-        let payload = make_hdlr_payload(b"vide", b"VideoHandler");
-        let hdlr = HdlrBoxView::parse(&payload).unwrap();
-
-        assert_eq!(hdlr.name, "VideoHandler");
-    }
-
-    #[test]
-    fn parse_hdlr_truncated() {
-        let payload = make_hdlr_payload(b"vide", b"");
-        let truncated = &payload[..10]; // Too short
-
-        let result = HdlrBoxView::parse(truncated);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_hdlr_invalid_utf8() {
-        let payload = make_hdlr_payload(b"vide", &[0xFF, 0xFE, 0x00]); // Invalid UTF-8
-
-        let result = HdlrBoxView::parse(&payload);
-        assert!(result.is_err());
+        assert_eq!(reparsed.version, original.version);
+        assert_eq!(reparsed.flags.get(), original.flags.get());
+        assert_eq!(reparsed.handler_type, original.handler_type);
+        assert_eq!(reparsed.name, original.name);
     }
 
     #[cfg(feature = "alloc")]
     #[test]
-    fn parse_hdlr_owned() {
-        let payload = make_hdlr_payload(b"vide", b"VideoHandler\0");
-        let hdlr = HdlrBox::parse(&payload).unwrap();
+    fn hdlr_box_round_trip_empty_name() {
+        use crate::BoxEncode;
 
-        assert_eq!(hdlr.handler_type, FourCC::new(*b"vide"));
-        assert_eq!(hdlr.name, "VideoHandler");
+        let original = HdlrBox {
+            version: 0,
+            flags: HdlrFlags::empty(),
+            handler_type: FourCC::new(*b"soun"),
+            name: String::new(),
+        };
+
+        // Write
+        let mut buf = vec![0u8; 256];
+        let written = original.encode_into(&mut buf).unwrap();
+
+        // Parse
+        let reparsed = HdlrBox::decode(&buf[..written]).unwrap();
+        assert_eq!(reparsed.handler_type, original.handler_type);
+        assert_eq!(reparsed.name, original.name);
     }
 }

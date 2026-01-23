@@ -125,6 +125,8 @@ pub use owned::DecoderConfigDescriptor;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::Vec;
+
     use super::*;
     use crate::descriptor::DescriptorOwned;
 

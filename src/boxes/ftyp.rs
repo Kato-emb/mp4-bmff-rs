@@ -1,9 +1,11 @@
-use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::BoxView;
 use crate::error::*;
+
+use crate::cursor::ReadCursor;
 
 /// A reference to a File Type Box (`ftyp`).
 #[derive(Debug)]
@@ -22,18 +24,24 @@ impl<'a> FtypBoxView<'a> {
             .chunks_exact(4)
             .map(|chunk| FourCC::new([chunk[0], chunk[1], chunk[2], chunk[3]]))
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<FtypBoxView<'a>> {
+impl BoxCodec for FtypBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::FTYP
+    }
+}
+
+impl<'de> BoxDecode<'de> for FtypBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         // Read major_brand (4 bytes)
-        let major_brand = cur
-            .read_array::<4>()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let major_brand = cur.read_array::<4>()?;
         let major_brand = FourCC::new(major_brand);
 
         // Read minor_version (4 bytes)
-        let minor_version = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let minor_version = cur.read_u32_be()?;
 
         // The remaining bytes are compatible_brands
         let remaining = cur.remaining();
@@ -56,36 +64,13 @@ impl<'a> FtypBoxView<'a> {
             compatible_brands,
         })
     }
-
-    /// Parses an `FtypBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<FtypBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = FtypBoxView::parse_in(&mut cursor)?;
-
-        Ok(this)
-    }
 }
 
 impl<'a> TryFrom<&'a [u8]> for FtypBoxView<'a> {
     type Error = Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self> {
-        FtypBoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<BoxView<'a>> for FtypBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::FTYP {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::FTYP,
-                found: value.header.boxtype(),
-            }));
-        }
-
-        FtypBoxView::parse(value.payload)
+        FtypBoxView::decode(value)
     }
 }
 
@@ -97,6 +82,9 @@ mod owned {
     use crate::lib::Vec;
 
     use super::*;
+    use crate::BoxEncode;
+
+    use crate::cursor::WriteCursor;
 
     /// An owned File Type Box (`ftyp`).
     #[derive(Debug, Clone)]
@@ -109,9 +97,14 @@ mod owned {
         pub compatible_brands: Vec<FourCC>,
     }
 
-    impl FtypBox {
-        /// Creates an `FtypBox` from an `FtypBoxView`.
-        pub fn from_view(view: &FtypBoxView) -> Self {
+    impl BoxCodec for FtypBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::FTYP
+        }
+    }
+
+    impl From<&FtypBoxView<'_>> for FtypBox {
+        fn from(view: &FtypBoxView) -> Self {
             let compatible_brands = view.compatible_brands().collect::<Vec<FourCC>>();
 
             FtypBox {
@@ -120,24 +113,46 @@ mod owned {
                 compatible_brands,
             }
         }
+    }
 
-        /// Parses an `FtypBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let ftyp_view = FtypBoxView::parse(payload)?;
-            Ok(Self::from_view(&ftyp_view))
+    impl BoxDecode<'_> for FtypBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = FtypBoxView::decode(bytes)?;
+            Ok(FtypBox::from(&view))
         }
     }
 
-    impl FtypBoxView<'_> {
-        /// Converts this `FtypBoxView` into an owned `FtypBox`.
-        pub fn to_owned(&self) -> FtypBox {
-            FtypBox::from_view(self)
+    impl BoxEncode for FtypBox {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            4 // major_brand(4)
+                + 4 // minor_version(4)
+                + (4 * self.compatible_brands.len()) // compatible_brands
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            // Write major_brand (4 bytes)
+            cur.write_array(self.major_brand.as_bytes())?;
+
+            // Write minor_version (4 bytes)
+            cur.write_u32_be(self.minor_version)?;
+
+            // Write compatible_brands
+            for brand in &self.compatible_brands {
+                cur.write_array(brand.as_bytes())?;
+            }
+
+            Ok(cur.position())
         }
     }
 
-    impl From<FtypBoxView<'_>> for FtypBox {
-        fn from(view: FtypBoxView) -> Self {
-            Self::from_view(&view)
+    impl<'a> TryFrom<&'a [u8]> for FtypBox {
+        type Error = Error;
+
+        fn try_from(value: &'a [u8]) -> Result<Self> {
+            FtypBox::decode(value)
         }
     }
 }
@@ -148,6 +163,8 @@ mod tests {
 
     #[test]
     fn test_ftyp_box_ref_parse() {
+        use crate::BoxDecode;
+
         let data: [u8; 20] = [
             b'i', b's', b'o', b'm', // major_brand
             0x00, 0x00, 0x02, 0x00, // minor_version (512)
@@ -156,7 +173,7 @@ mod tests {
             b'a', b'v', b'c', b'1', // compatible_brand 3
         ];
 
-        let ftyp_view = FtypBoxView::parse(&data).unwrap();
+        let ftyp_view = FtypBoxView::decode(&data).unwrap();
 
         assert_eq!(ftyp_view.major_brand, FourCC::new(*b"isom"));
         assert_eq!(ftyp_view.minor_version, 512);
@@ -170,5 +187,34 @@ mod tests {
                 FourCC::new(*b"avc1"),
             ]
         );
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_ftyp_box_write() {
+        use crate::BoxEncode;
+
+        let ftyp_view = FtypBox {
+            major_brand: FourCC::new(*b"isom"),
+            minor_version: 512,
+            compatible_brands: vec![
+                FourCC::new(*b"isom"),
+                FourCC::new(*b"iso2"),
+                FourCC::new(*b"avc1"),
+            ],
+        };
+
+        let mut buffer = vec![0u8; 20];
+        ftyp_view.encode_into(&mut buffer).unwrap();
+
+        let expected: [u8; 20] = [
+            b'i', b's', b'o', b'm', // major_brand
+            0x00, 0x00, 0x02, 0x00, // minor_version (512)
+            b'i', b's', b'o', b'm', // compatible_brand 1
+            b'i', b's', b'o', b'2', // compatible_brand 2
+            b'a', b'v', b'c', b'1', // compatible_brand 3
+        ];
+
+        assert_eq!(buffer, expected);
     }
 }

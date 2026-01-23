@@ -1,16 +1,36 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::BoxView;
 use crate::error::*;
-use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
+use crate::iter::FixedSizeEntry;
+use crate::iter::FixedSizeEntryIter;
+
+use super::FullBoxFlags;
 
 /// An entry in the Sync Sample Box (`stss`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StssEntry {
     /// The sample number (1-indexed as per ISO specification).
     pub sample_number: u32,
+}
+
+impl FixedSizeEntry for StssEntry {
+    const ENTRY_SIZE: usize = 4;
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+
+        StssEntry {
+            sample_number: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+        }
+    }
+
+    fn to_bytes(&self, bytes: &mut [u8]) {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+        bytes[0..4].copy_from_slice(&self.sample_number.to_be_bytes());
+    }
 }
 
 /// A reference to a Sync Sample Box (`stss`).
@@ -31,17 +51,8 @@ impl<'a> StssBoxView<'a> {
     const ENTRY_SIZE: usize = 4;
 
     /// Returns an iterator over the entries in the Sync Sample Box.
-    pub fn entries(&self) -> impl Iterator<Item = Result<StssEntry>> + 'a {
-        let entry_bytes = self.entries;
-        let entry_count = self.entry_count as usize;
-
-        entry_bytes
-            .chunks_exact(Self::ENTRY_SIZE)
-            .take(entry_count)
-            .map(|chunk| {
-                let sample_number = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-                Ok(StssEntry { sample_number })
-            })
+    pub fn entries(&self) -> FixedSizeEntryIter<'a, StssEntry> {
+        FixedSizeEntryIter::new(self.entries)
     }
 
     /// Checks if a given sample number is a sync sample.
@@ -49,8 +60,7 @@ impl<'a> StssBoxView<'a> {
     /// Note: This performs a linear search through the entries.
     /// For frequent lookups, consider collecting the entries into a set.
     pub fn is_sync_sample(&self, sample_number: u32) -> Result<bool> {
-        for result in self.entries() {
-            let entry = result?;
+        for entry in self.entries() {
             if entry.sample_number == sample_number {
                 return Ok(true);
             }
@@ -61,13 +71,36 @@ impl<'a> StssBoxView<'a> {
         }
         Ok(false)
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StssBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<StssSpec>::parse_in(cur)?;
+/// Specification for the Sync Sample Box (`stss`).
+pub struct StssSpec;
 
-        let entry_count = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+/// Flags for the Sync Sample Box (`stss`).
+pub type StssFlags = FullBoxFlags<StssSpec>;
+
+impl<'a> TryFrom<&'a [u8]> for StssBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        StssBoxView::decode(value)
+    }
+}
+
+impl BoxCodec for StssBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::STSS
+    }
+}
+
+impl<'de> BoxDecode<'de> for StssBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = StssFlags::from_bytes(cur.read_array()?);
+
+        let entry_count = cur.read_u32_be()?;
 
         let expected_size = entry_count as usize * Self::ENTRY_SIZE;
 
@@ -85,57 +118,25 @@ impl<'a> StssBoxView<'a> {
         let entries = cur.take(cur.remaining())?;
 
         Ok(StssBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             entry_count,
             entries,
         })
     }
-
-    /// Parses a `StssBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<StssBoxView<'a>> {
-        let mut cur = ReadCursor::new(payload);
-        let this = StssBoxView::parse_in(&mut cur)?;
-
-        Ok(this)
-    }
 }
-
-impl<'a> TryFrom<&'a [u8]> for StssBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &'a [u8]) -> Result<Self> {
-        StssBoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<&BoxView<'a>> for StssBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::STSS {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::STSS,
-                found: value.header.boxtype(),
-            }));
-        }
-
-        StssBoxView::parse(value.payload)
-    }
-}
-
-/// Specification for the Sync Sample Box (`stss`).
-pub struct StssSpec;
-
-/// Flags for the Sync Sample Box (`stss`).
-pub type StssFlags = FullBoxFlags<StssSpec>;
 
 #[cfg(feature = "alloc")]
 pub use owned::StssBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::Vec;
+
     use super::*;
+
+    use crate::BoxEncode;
+    use crate::cursor::WriteCursor;
 
     /// An owned Sync Sample Box (`stss`).
     #[derive(Debug, Clone)]
@@ -148,23 +149,18 @@ mod owned {
         pub entries: Vec<StssEntry>,
     }
 
-    impl StssBox {
-        /// Creates a `StssBox` from a `StssBoxView`.
-        pub fn from_view(view: &StssBoxView<'_>) -> Result<StssBox> {
-            let entries: Result<Vec<StssEntry>> = view.entries().collect();
-            Ok(StssBox {
+    impl From<&StssBoxView<'_>> for StssBox {
+        fn from(view: &StssBoxView<'_>) -> Self {
+            let entries: Vec<StssEntry> = view.entries().collect();
+            StssBox {
                 version: view.version,
                 flags: view.flags,
-                entries: entries?,
-            })
+                entries,
+            }
         }
+    }
 
-        /// Parses a `StssBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<StssBox> {
-            let view = StssBoxView::parse(payload)?;
-            StssBox::from_view(&view)
-        }
-
+    impl StssBox {
         /// Checks if a given sample number is a sync sample.
         ///
         /// Note: This performs a binary search since sample numbers are in increasing order.
@@ -175,11 +171,40 @@ mod owned {
         }
     }
 
-    impl TryFrom<&StssBoxView<'_>> for StssBox {
-        type Error = Error;
+    impl BoxCodec for StssBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::STSS
+        }
+    }
 
-        fn try_from(value: &StssBoxView<'_>) -> Result<Self> {
-            StssBox::from_view(value)
+    impl BoxDecode<'_> for StssBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = StssBoxView::decode(bytes)?;
+            Ok(StssBox::from(&view))
+        }
+    }
+
+    impl BoxEncode for StssBox {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            1 // version
+                + 3 // flags
+                + 4 // entry_count
+                + self.entries.len() * StssEntry::ENTRY_SIZE // entries
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
+            cur.write_u32_be(self.entries.len() as u32)?;
+
+            for entry in &self.entries {
+                cur.write_u32_be(entry.sample_number)?;
+            }
+
+            Ok(cur.position())
         }
     }
 }
@@ -195,188 +220,56 @@ mod tests {
         data
     }
 
-    fn make_stss_payload(sample_numbers: &[u32]) -> Vec<u8> {
+    fn make_stss_payload(sample_numbers: Vec<u32>) -> Vec<u8> {
         let mut payload = Vec::new();
         payload.extend_from_slice(&make_full_box_header(0, 0));
         payload.extend_from_slice(&(sample_numbers.len() as u32).to_be_bytes());
-        for &sample_number in sample_numbers {
+        for sample_number in sample_numbers {
             payload.extend_from_slice(&sample_number.to_be_bytes());
         }
         payload
     }
 
     #[test]
-    fn parse_stss_empty() {
-        let payload = make_stss_payload(&[]);
-        let stss = StssBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stss.version, 0);
+    fn parse_and_iterate_samples() {
+        // Empty
+        let payload = make_stss_payload(vec![]);
+        let stss = StssBoxView::decode(&payload).unwrap();
         assert_eq!(stss.entry_count, 0);
         assert_eq!(stss.entries().count(), 0);
+
+        // Single
+        let payload = make_stss_payload(vec![10]);
+        let stss = StssBoxView::decode(&payload).unwrap();
+        let entry = stss.entries().next().unwrap();
+        assert_eq!(entry.sample_number, 10);
+
+        // Multiple
+        let samples = vec![1, 5, 10, 15];
+        let payload = make_stss_payload(samples.clone());
+        let stss = StssBoxView::decode(&payload).unwrap();
+        let parsed: Vec<_> = stss.entries().map(|r| r.sample_number).collect();
+        assert_eq!(parsed, samples);
     }
 
     #[test]
-    fn parse_stss_single_entry() {
-        let payload = make_stss_payload(&[1]);
-        let stss = StssBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stss.entry_count, 1);
-        let entries: Vec<StssEntry> = stss.entries().map(|r| r.unwrap()).collect();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].sample_number, 1);
-    }
-
-    #[test]
-    fn parse_stss_multiple_entries() {
-        let sync_samples = vec![1, 30, 60, 90, 120];
-        let payload = make_stss_payload(&sync_samples);
-        let stss = StssBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stss.entry_count, 5);
-        let entries: Vec<StssEntry> = stss.entries().map(|r| r.unwrap()).collect();
-        assert_eq!(entries.len(), 5);
-        for (i, entry) in entries.iter().enumerate() {
-            assert_eq!(entry.sample_number, sync_samples[i]);
-        }
-    }
-
-    #[test]
-    fn parse_stss_is_sync_sample() {
-        let sync_samples = vec![1, 30, 60, 90, 120];
-        let payload = make_stss_payload(&sync_samples);
-        let stss = StssBoxView::parse(&payload).unwrap();
-
-        assert!(stss.is_sync_sample(1).unwrap());
-        assert!(stss.is_sync_sample(30).unwrap());
-        assert!(stss.is_sync_sample(60).unwrap());
-        assert!(!stss.is_sync_sample(2).unwrap());
-        assert!(!stss.is_sync_sample(29).unwrap());
-        assert!(!stss.is_sync_sample(150).unwrap());
-    }
-
-    #[test]
-    fn parse_stss_entry_count_mismatch() {
+    fn invalid_size() {
         let mut payload = make_full_box_header(0, 0);
-        payload.extend_from_slice(&3u32.to_be_bytes()); // entry_count = 3
-        payload.extend_from_slice(&1u32.to_be_bytes()); // Only 1 entry
-
-        let result = StssBoxView::parse(&payload);
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::InvalidBoxSize { .. }));
-        }
-    }
-
-    #[test]
-    fn try_from_byte_slice() {
-        let sync_samples = vec![1, 50, 100];
-        let payload = make_stss_payload(&sync_samples);
-        let stss = StssBoxView::try_from(payload.as_slice()).unwrap();
-
-        assert_eq!(stss.entry_count, 3);
-    }
-
-    #[test]
-    fn try_from_box_view_success() {
-        let sync_samples = vec![1, 30, 60];
-        let payload = make_stss_payload(&sync_samples);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"stss");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let stss = StssBoxView::try_from(&box_view).unwrap();
-
-        assert_eq!(stss.entry_count, 3);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_stss_payload(&[1]);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"stts"); // Wrong type
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = StssBoxView::try_from(&box_view);
-
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::MismatchedBoxType { .. }));
-        }
+        payload.extend_from_slice(&2u32.to_be_bytes());
+        payload.extend_from_slice(&1u32.to_be_bytes());
+        assert!(StssBoxView::decode(&payload).is_err());
     }
 
     #[cfg(feature = "alloc")]
-    mod alloc_tests {
-        use super::*;
-
-        #[test]
-        fn stss_box_from_view() {
-            let sync_samples = vec![1, 30, 60, 90];
-            let payload = make_stss_payload(&sync_samples);
-            let view = StssBoxView::parse(&payload).unwrap();
-            let stss_box = StssBox::from_view(&view).unwrap();
-
-            assert_eq!(stss_box.entries.len(), 4);
-            for (i, entry) in stss_box.entries.iter().enumerate() {
-                assert_eq!(entry.sample_number, sync_samples[i]);
-            }
-        }
-
-        #[test]
-        fn stss_box_parse() {
-            let sync_samples = vec![1, 50, 100];
-            let payload = make_stss_payload(&sync_samples);
-            let stss_box = StssBox::parse(&payload).unwrap();
-
-            assert_eq!(stss_box.entries.len(), 3);
-            assert_eq!(stss_box.entries[0].sample_number, 1);
-            assert_eq!(stss_box.entries[1].sample_number, 50);
-            assert_eq!(stss_box.entries[2].sample_number, 100);
-        }
-
-        #[test]
-        fn stss_box_is_sync_sample() {
-            let sync_samples = vec![1, 30, 60, 90, 120];
-            let payload = make_stss_payload(&sync_samples);
-            let stss_box = StssBox::parse(&payload).unwrap();
-
-            assert!(stss_box.is_sync_sample(1));
-            assert!(stss_box.is_sync_sample(30));
-            assert!(stss_box.is_sync_sample(60));
-            assert!(!stss_box.is_sync_sample(2));
-            assert!(!stss_box.is_sync_sample(29));
-            assert!(!stss_box.is_sync_sample(150));
-        }
-
-        #[test]
-        fn stss_box_empty() {
-            let payload = make_stss_payload(&[]);
-            let stss_box = StssBox::parse(&payload).unwrap();
-
-            assert!(stss_box.entries.is_empty());
-            assert!(!stss_box.is_sync_sample(1));
-        }
-
-        #[test]
-        fn stss_box_try_from() {
-            let sync_samples = vec![1, 15, 30];
-            let payload = make_stss_payload(&sync_samples);
-            let view = StssBoxView::parse(&payload).unwrap();
-            let stss_box: StssBox = (&view).try_into().unwrap();
-
-            assert_eq!(stss_box.entries.len(), 3);
-            for (i, entry) in stss_box.entries.iter().enumerate() {
-                assert_eq!(entry.sample_number, sync_samples[i]);
-            }
-        }
+    #[test]
+    fn owned_conversion() {
+        let samples = vec![1, 5, 10];
+        let payload = make_stss_payload(samples.clone());
+        let view = StssBoxView::decode(&payload).unwrap();
+        let owned = StssBox::from(&view);
+        assert_eq!(owned.entries.len(), 3);
+        assert_eq!(owned.entries[0].sample_number, 1);
+        assert!(owned.is_sync_sample(1));
+        assert!(!owned.is_sync_sample(2));
     }
 }

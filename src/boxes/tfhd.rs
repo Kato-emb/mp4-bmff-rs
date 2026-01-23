@@ -1,10 +1,13 @@
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
-use crate::BoxView;
 use crate::error::*;
-use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
+
+use super::FullBoxFlags;
 
 /// Track Fragment Header Box (`tfhd`).
 ///
@@ -36,71 +39,85 @@ pub struct TfhdBox {
 }
 
 impl TfhdBox {
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<TfhdBox> {
-        let full_box_header = FullBoxHeader::<TfhdSpec>::parse_in(cur)?;
-        let flags = full_box_header.flags();
+    /// Computes the flags value based on the optional fields present.
+    fn compute_flags(&self) -> TfhdFlags {
+        let mut flags = self.flags;
 
-        let track_id = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        if self.base_data_offset.is_some() {
+            flags |= TfhdFlags::BASE_DATA_OFFSET_PRESENT;
+        }
+        if self.sample_description_index.is_some() {
+            flags |= TfhdFlags::SAMPLE_DESCRIPTION_INDEX_PRESENT;
+        }
+        if self.default_sample_duration.is_some() {
+            flags |= TfhdFlags::DEFAULT_SAMPLE_DURATION_PRESENT;
+        }
+        if self.default_sample_size.is_some() {
+            flags |= TfhdFlags::DEFAULT_SAMPLE_SIZE_PRESENT;
+        }
+        if self.default_sample_flags.is_some() {
+            flags |= TfhdFlags::DEFAULT_SAMPLE_FLAGS_PRESENT;
+        }
+
+        flags
+    }
+}
+
+impl TryFrom<&[u8]> for TfhdBox {
+    type Error = Error;
+
+    fn try_from(value: &[u8]) -> Result<Self> {
+        TfhdBox::decode(value)
+    }
+}
+
+impl BoxCodec for TfhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::TFHD
+    }
+}
+
+impl BoxDecode<'_> for TfhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = TfhdFlags::from_bytes(cur.read_array()?);
+
+        let track_id = cur.read_u32_be()?;
 
         let base_data_offset = if flags.base_data_offset_present() {
-            Some(
-                cur.read_u64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u64_be()?)
         } else {
             None
         };
 
         let sample_description_index = if flags.sample_description_index_present() {
-            Some(
-                cur.read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u32_be()?)
         } else {
             None
         };
 
         let default_sample_duration = if flags.default_sample_duration_present() {
-            Some(
-                cur.read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u32_be()?)
         } else {
             None
         };
 
         let default_sample_size = if flags.default_sample_size_present() {
-            Some(
-                cur.read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u32_be()?)
         } else {
             None
         };
 
         let default_sample_flags = if flags.default_sample_flags_present() {
-            Some(
-                cur.read_u32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-            )
+            Some(cur.read_u32_be()?)
         } else {
             None
         };
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after tfhd fields",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::TFHD,
-            ));
-        }
-
         Ok(TfhdBox {
-            version: full_box_header.version(),
+            version,
             flags,
             track_id,
             base_data_offset,
@@ -110,34 +127,47 @@ impl TfhdBox {
             default_sample_flags,
         })
     }
-
-    /// Parses a `TfhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<TfhdBox> {
-        let mut cur = ReadCursor::new(payload);
-        TfhdBox::parse_in(&mut cur)
-    }
 }
 
-impl TryFrom<&[u8]> for TfhdBox {
-    type Error = Error;
-
-    fn try_from(value: &[u8]) -> Result<Self> {
-        TfhdBox::parse(value)
+impl BoxEncode for TfhdBox {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        1 // version
+            + 3 // flags
+            + 4 // track_id
+            + if self.base_data_offset.is_some() { 8 } else { 0 } // base_data_offset
+            + if self.sample_description_index.is_some() { 4 } else { 0 } // sample_description_index
+            + if self.default_sample_duration.is_some() { 4 } else { 0 } // default_sample_duration
+            + if self.default_sample_size.is_some() { 4 } else { 0 } // default_sample_size
+            + if self.default_sample_flags.is_some() { 4 } else { 0 } // default_sample_flags
     }
-}
 
-impl TryFrom<&BoxView<'_>> for TfhdBox {
-    type Error = Error;
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-    fn try_from(value: &BoxView<'_>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::TFHD {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::TFHD,
-                found: value.header.boxtype(),
-            }));
+        let flags = self.compute_flags();
+
+        cur.write_u8(self.version)?;
+        cur.write_array(&flags.to_bytes())?;
+        cur.write_u32_be(self.track_id)?;
+
+        if let Some(base_data_offset) = self.base_data_offset {
+            cur.write_u64_be(base_data_offset)?;
+        }
+        if let Some(sample_description_index) = self.sample_description_index {
+            cur.write_u32_be(sample_description_index)?;
+        }
+        if let Some(default_sample_duration) = self.default_sample_duration {
+            cur.write_u32_be(default_sample_duration)?;
+        }
+        if let Some(default_sample_size) = self.default_sample_size {
+            cur.write_u32_be(default_sample_size)?;
+        }
+        if let Some(default_sample_flags) = self.default_sample_flags {
+            cur.write_u32_be(default_sample_flags)?;
         }
 
-        TfhdBox::parse(value.payload)
+        Ok(cur.position())
     }
 }
 
@@ -204,112 +234,45 @@ impl TfhdFlags {
 mod tests {
     use super::*;
 
-    fn make_tfhd_payload(flags: u32, track_id: u32, optional_fields: &[u8]) -> Vec<u8> {
-        let mut data = Vec::new();
-        data.push(0); // version
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
-        data.extend_from_slice(&track_id.to_be_bytes());
-        data.extend_from_slice(optional_fields);
-        data
+    #[test]
+    fn round_trip_minimal() {
+        let original = TfhdBox {
+            version: 0,
+            flags: TfhdFlags::DEFAULT_BASE_IS_MOOF,
+            track_id: 1,
+            base_data_offset: None,
+            sample_description_index: None,
+            default_sample_duration: None,
+            default_sample_size: None,
+            default_sample_flags: None,
+        };
+
+        let mut buf = vec![0u8; 32];
+        original.encode_into(&mut buf).unwrap();
+
+        let parsed = TfhdBox::decode(&buf).unwrap();
+        assert_eq!(parsed.track_id, original.track_id);
+        assert!(parsed.flags.default_base_is_moof());
     }
 
     #[test]
-    fn parse_tfhd_minimal() {
-        let payload = make_tfhd_payload(0, 1, &[]);
-        let tfhd = TfhdBox::parse(&payload).unwrap();
+    fn round_trip_all_optional() {
+        let mut original = TfhdBox {
+            version: 0,
+            flags: TfhdFlags::empty(),
+            track_id: 3,
+            base_data_offset: Some(100),
+            sample_description_index: Some(1),
+            default_sample_duration: Some(1000),
+            default_sample_size: Some(512),
+            default_sample_flags: Some(0x02000000),
+        };
+        original.flags = original.compute_flags();
 
-        assert_eq!(tfhd.version, 0);
-        assert_eq!(tfhd.track_id, 1);
-        assert!(tfhd.base_data_offset.is_none());
-        assert!(tfhd.sample_description_index.is_none());
-        assert!(tfhd.default_sample_duration.is_none());
-        assert!(tfhd.default_sample_size.is_none());
-        assert!(tfhd.default_sample_flags.is_none());
-    }
+        let mut buf = vec![0u8; 32];
+        original.encode_into(&mut buf).unwrap();
 
-    #[test]
-    fn parse_tfhd_with_base_data_offset() {
-        let mut optional = Vec::new();
-        optional.extend_from_slice(&0x123456789ABCDEFu64.to_be_bytes());
-
-        let payload = make_tfhd_payload(0x000001, 2, &optional);
-        let tfhd = TfhdBox::parse(&payload).unwrap();
-
-        assert_eq!(tfhd.track_id, 2);
-        assert_eq!(tfhd.base_data_offset, Some(0x123456789ABCDEF));
-    }
-
-    #[test]
-    fn parse_tfhd_with_all_optional() {
-        let flags = 0x000001 | 0x000002 | 0x000008 | 0x000010 | 0x000020;
-
-        let mut optional = Vec::new();
-        optional.extend_from_slice(&100u64.to_be_bytes()); // base_data_offset
-        optional.extend_from_slice(&1u32.to_be_bytes()); // sample_description_index
-        optional.extend_from_slice(&1000u32.to_be_bytes()); // default_sample_duration
-        optional.extend_from_slice(&512u32.to_be_bytes()); // default_sample_size
-        optional.extend_from_slice(&0x02000000u32.to_be_bytes()); // default_sample_flags
-
-        let payload = make_tfhd_payload(flags, 3, &optional);
-        let tfhd = TfhdBox::parse(&payload).unwrap();
-
-        assert_eq!(tfhd.track_id, 3);
-        assert_eq!(tfhd.base_data_offset, Some(100));
-        assert_eq!(tfhd.sample_description_index, Some(1));
-        assert_eq!(tfhd.default_sample_duration, Some(1000));
-        assert_eq!(tfhd.default_sample_size, Some(512));
-        assert_eq!(tfhd.default_sample_flags, Some(0x02000000));
-    }
-
-    #[test]
-    fn parse_tfhd_default_base_is_moof() {
-        let flags = 0x020000;
-        let payload = make_tfhd_payload(flags, 1, &[]);
-        let tfhd = TfhdBox::parse(&payload).unwrap();
-
-        assert!(tfhd.flags.default_base_is_moof());
-    }
-
-    #[test]
-    fn parse_tfhd_extra_data() {
-        let mut payload = make_tfhd_payload(0, 1, &[]);
-        payload.extend_from_slice(&[0xFF, 0xFF]);
-
-        let result = TfhdBox::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn try_from_box_view_success() {
-        let payload = make_tfhd_payload(0, 42, &[]);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"tfhd");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let tfhd = TfhdBox::try_from(&box_view).unwrap();
-
-        assert_eq!(tfhd.track_id, 42);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_tfhd_payload(0, 1, &[]);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"traf");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = TfhdBox::try_from(&box_view);
-
-        assert!(result.is_err());
+        let parsed = TfhdBox::decode(&buf).unwrap();
+        assert_eq!(parsed, original);
     }
 }

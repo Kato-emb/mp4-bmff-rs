@@ -1,10 +1,16 @@
 use core::mem;
 
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 use crate::types::*;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
+use crate::BoxType;
 use crate::error::*;
-use crate::header::*;
+
+use super::FullBoxFlags;
 
 /// A reference to a Movie Header Box (`mvhd`).
 #[derive(Debug, Clone, Copy)]
@@ -55,103 +61,79 @@ impl MvhdBox {
 
     const RESERVED_SIZE: usize = mem::size_of::<u16>() + 2 * mem::size_of::<u32>(); // reserved
     const PRE_DEFINED_SIZE: usize = 6 * mem::size_of::<u32>(); // pre_defined
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<MvhdBox> {
-        let full_box_header = FullBoxHeader::<MvhdSpec>::parse_in(cur)?;
+/// The specification for the Movie Header Box (`mvhd`).
+pub struct MvhdSpec;
 
-        let (creation_time, modification_time, timescale, duration) =
-            match full_box_header.version() {
-                1 => {
-                    let creation_time = cur
-                        .read_u64_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    let modification_time = cur
-                        .read_u64_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    let timescale = cur
-                        .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    let duration = cur
-                        .read_u64_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    (
-                        QuickTimeDateTime::from_quicktime_seconds(creation_time),
-                        QuickTimeDateTime::from_quicktime_seconds(modification_time),
-                        timescale,
-                        duration,
-                    )
-                }
-                0 => {
-                    let creation_time = cur
-                        .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                        as u64;
-                    let modification_time = cur
-                        .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                        as u64;
-                    let timescale = cur
-                        .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-                    let duration = cur
-                        .read_u32_be()
-                        .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                        as u64;
-                    (
-                        QuickTimeDateTime::from_quicktime_seconds(creation_time),
-                        QuickTimeDateTime::from_quicktime_seconds(modification_time),
-                        timescale,
-                        duration,
-                    )
-                }
-                other => {
-                    return Err(Error::new(ErrorKind::InvalidBoxVersion {
-                        reason: "0 or 1 in this specification",
-                        got: other,
-                    }));
-                }
-            };
+/// The flags for the Movie Header Box (`mvhd`).
+pub type MvhdFlags = FullBoxFlags<MvhdSpec>;
 
-        let rate = cur
-            .read_i32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+impl BoxCodec for MvhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::MVHD
+    }
+}
+
+impl BoxDecode<'_> for MvhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = MvhdFlags::from_bytes(cur.read_array()?);
+
+        let (creation_time, modification_time, timescale, duration) = match version {
+            1 => {
+                let creation_time = cur.read_u64_be()?;
+                let modification_time = cur.read_u64_be()?;
+                let timescale = cur.read_u32_be()?;
+                let duration = cur.read_u64_be()?;
+                (
+                    QuickTimeDateTime::from_quicktime_seconds(creation_time),
+                    QuickTimeDateTime::from_quicktime_seconds(modification_time),
+                    timescale,
+                    duration,
+                )
+            }
+            0 => {
+                let creation_time = cur.read_u32_be()? as u64;
+                let modification_time = cur.read_u32_be()? as u64;
+                let timescale = cur.read_u32_be()?;
+                let duration = cur.read_u32_be()? as u64;
+                (
+                    QuickTimeDateTime::from_quicktime_seconds(creation_time),
+                    QuickTimeDateTime::from_quicktime_seconds(modification_time),
+                    timescale,
+                    duration,
+                )
+            }
+            other => {
+                return Err(Error::new(ErrorKind::InvalidBoxVersion {
+                    reason: "0 or 1 in this specification",
+                    got: other,
+                }));
+            }
+        };
+
+        let rate = cur.read_i32_be()?;
         let rate = I16F16::from_raw(rate);
-        let volume = cur
-            .read_u16_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let volume = cur.read_u16_be()?;
         let volume = U8F8::from_raw(volume);
 
-        cur.advance(MvhdBox::RESERVED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        cur.advance(MvhdBox::RESERVED_SIZE)?;
 
         let mut matrix = [0i32; 9];
         for m in &mut matrix {
-            *m = cur
-                .read_i32_be()
-                .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+            *m = cur.read_i32_be()?;
         }
         let matrix = Matrix::from_raw(matrix);
 
-        cur.advance(MvhdBox::PRE_DEFINED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-        let next_track_id = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-
-        if !cur.is_empty() {
-            return Err(Error::at_in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data remaining after parsing",
-                    got: cur.remaining() as u64,
-                },
-                cur.position() as u64,
-                BoxType::MVHD,
-            ));
-        }
+        cur.advance(MvhdBox::PRE_DEFINED_SIZE)?;
+        let next_track_id = cur.read_u32_be()?;
 
         Ok(MvhdBox {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             creation_time,
             modification_time,
             timescale,
@@ -162,157 +144,148 @@ impl MvhdBox {
             next_track_id,
         })
     }
+}
 
-    /// Parses an `MvhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<MvhdBox> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = MvhdBox::parse_in(&mut cursor)?;
+impl<'a> TryFrom<&'a [u8]> for MvhdBox {
+    type Error = Error;
 
-        Ok(this)
+    fn try_from(bytes: &'a [u8]) -> Result<Self> {
+        MvhdBox::decode(bytes)
     }
 }
 
-/// The specification for the Movie Header Box (`mvhd`).
-pub struct MvhdSpec;
+impl BoxEncode for MvhdBox {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        let base_len = 4; // version(1) + flags(3)
+        let time_len = match self.version {
+            1 => 8 + 8 + 4 + 8, // creation_time(8) + modification_time(8) + timescale(4) + duration(8)
+            _ => 4 + 4 + 4 + 4, // creation_time(4) + modification_time(4) + timescale(4) + duration(4)
+        };
+        base_len
+            + time_len
+            + 4 // rate(4)
+            + 2 // volume(2)
+            + Self::RESERVED_SIZE // reserved(6)
+            + 9 * 4 // matrix(36)
+            + Self::PRE_DEFINED_SIZE // pre_defined(24)
+            + 4 // next_track_id(4)
+    }
 
-/// The flags for the Movie Header Box (`mvhd`).
-pub type MvhdFlags = FullBoxFlags<MvhdSpec>;
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
+
+        cur.write_u8(self.version)?;
+        cur.write_array(&self.flags.to_bytes())?;
+
+        match self.version {
+            1 => {
+                cur.write_u64_be(self.creation_time.to_quicktime_seconds())?;
+                cur.write_u64_be(self.modification_time.to_quicktime_seconds())?;
+                cur.write_u32_be(self.timescale)?;
+                cur.write_u64_be(self.duration)?;
+            }
+            _ => {
+                cur.write_u32_be(self.creation_time.to_quicktime_seconds() as u32)?;
+                cur.write_u32_be(self.modification_time.to_quicktime_seconds() as u32)?;
+                cur.write_u32_be(self.timescale)?;
+                cur.write_u32_be(self.duration as u32)?;
+            }
+        }
+
+        cur.write_i32_be(self.rate.to_raw())?;
+        cur.write_u16_be(self.volume.to_raw())?;
+
+        // reserved
+        cur.reserve_zeros(Self::RESERVED_SIZE)?;
+
+        // matrix
+        for &m in &self.matrix.to_raw() {
+            cur.write_i32_be(m)?;
+        }
+
+        // pre_defined
+        cur.reserve_zeros(Self::PRE_DEFINED_SIZE)?;
+
+        cur.write_u32_be(self.next_track_id)?;
+
+        Ok(cur.position())
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_v0_payload() -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // FullBoxHeader: version=0, flags=0
-        data.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-
-        // creation_time (u32): 0x12345678
-        data.extend_from_slice(&0x12345678u32.to_be_bytes());
-        // modification_time (u32): 0x23456789
-        data.extend_from_slice(&0x23456789u32.to_be_bytes());
-        // timescale (u32): 1000
-        data.extend_from_slice(&1000u32.to_be_bytes());
-        // duration (u32): 5000
-        data.extend_from_slice(&5000u32.to_be_bytes());
-
-        // rate (i32): 0x00010000 = 1.0
-        data.extend_from_slice(&0x00010000i32.to_be_bytes());
-        // volume (u16): 0x0100 = 1.0
-        data.extend_from_slice(&0x0100u16.to_be_bytes());
-
-        // reserved: 2 bytes + 2 * 4 bytes = 10 bytes
-        data.extend_from_slice(&[0u8; 10]);
-
-        // matrix: identity matrix (9 * i32)
-        // [0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000]
-        data.extend_from_slice(&0x00010000i32.to_be_bytes()); // a
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // b
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // u
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // c
-        data.extend_from_slice(&0x00010000i32.to_be_bytes()); // d
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // v
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // x
-        data.extend_from_slice(&0x00000000i32.to_be_bytes()); // y
-        data.extend_from_slice(&0x40000000i32.to_be_bytes()); // w
-
-        // pre_defined: 6 * 4 bytes = 24 bytes
-        data.extend_from_slice(&[0u8; 24]);
-
-        // next_track_id (u32): 2
-        data.extend_from_slice(&2u32.to_be_bytes());
-
-        data
-    }
-
-    fn make_v1_payload() -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // FullBoxHeader: version=1, flags=0
-        data.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]);
-
-        // creation_time (u64): 0x0000000112345678
-        data.extend_from_slice(&0x0000000112345678u64.to_be_bytes());
-        // modification_time (u64): 0x0000000123456789
-        data.extend_from_slice(&0x0000000123456789u64.to_be_bytes());
-        // timescale (u32): 90000
-        data.extend_from_slice(&90000u32.to_be_bytes());
-        // duration (u64): 0x0000000200000000 (exceeds u32::MAX)
-        data.extend_from_slice(&0x0000000200000000u64.to_be_bytes());
-
-        // rate (i32): 0x00020000 = 2.0
-        data.extend_from_slice(&0x00020000i32.to_be_bytes());
-        // volume (u16): 0x0080 = 0.5
-        data.extend_from_slice(&0x0080u16.to_be_bytes());
-
-        // reserved: 10 bytes
-        data.extend_from_slice(&[0u8; 10]);
-
-        // matrix: identity matrix
-        data.extend_from_slice(&0x00010000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x00010000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x00000000i32.to_be_bytes());
-        data.extend_from_slice(&0x40000000i32.to_be_bytes());
-
-        // pre_defined: 24 bytes
-        data.extend_from_slice(&[0u8; 24]);
-
-        // next_track_id (u32): 5
-        data.extend_from_slice(&5u32.to_be_bytes());
-
-        data
-    }
-
     #[test]
-    fn parse_v0() {
-        let payload = make_v0_payload();
-        let mvhd = MvhdBox::parse(&payload).unwrap();
+    fn round_trip_v0() {
+        let mvhd = MvhdBox {
+            version: 0,
+            flags: MvhdFlags::empty(),
+            creation_time: QuickTimeDateTime::from_quicktime_seconds(0x12345678),
+            modification_time: QuickTimeDateTime::from_quicktime_seconds(0x23456789),
+            timescale: 1000,
+            duration: 5000,
+            rate: I16F16::from_raw(0x00010000),
+            volume: U8F8::from_raw(0x0100),
+            matrix: Matrix::identity(),
+            next_track_id: 2,
+        };
 
-        assert_eq!(mvhd.creation_time.to_quicktime_seconds(), 0x12345678);
-        assert_eq!(mvhd.modification_time.to_quicktime_seconds(), 0x23456789);
-        assert_eq!(mvhd.timescale, 1000);
-        assert_eq!(mvhd.duration, 5000);
-        assert_eq!(mvhd.rate.to_raw(), 0x00010000);
-        assert_eq!(mvhd.volume.to_raw(), 0x0100);
-        assert_eq!(mvhd.matrix, Matrix::identity());
-        assert_eq!(mvhd.next_track_id, 2);
-        assert_eq!(mvhd.version, 0);
-    }
+        let mut buf = vec![0u8; 256];
+        let written = mvhd.encode_into(&mut buf).unwrap();
 
-    #[test]
-    fn parse_v1() {
-        let payload = make_v1_payload();
-        let mvhd = MvhdBox::parse(&payload).unwrap();
-
+        let parsed = MvhdBox::decode(&buf[..written]).unwrap();
+        assert_eq!(parsed.version, mvhd.version);
         assert_eq!(
-            mvhd.creation_time.to_quicktime_seconds(),
-            0x0000000112345678
+            parsed.creation_time.to_quicktime_seconds(),
+            mvhd.creation_time.to_quicktime_seconds()
         );
         assert_eq!(
-            mvhd.modification_time.to_quicktime_seconds(),
-            0x0000000123456789
+            parsed.modification_time.to_quicktime_seconds(),
+            mvhd.modification_time.to_quicktime_seconds()
         );
-        assert_eq!(mvhd.timescale, 90000);
-        assert_eq!(mvhd.duration, 0x0000000200000000);
-        assert_eq!(mvhd.rate.to_raw(), 0x00020000);
-        assert_eq!(mvhd.volume.to_raw(), 0x0080);
-        assert_eq!(mvhd.matrix, Matrix::identity());
-        assert_eq!(mvhd.next_track_id, 5);
-        assert_eq!(mvhd.version, 1);
+        assert_eq!(parsed.timescale, mvhd.timescale);
+        assert_eq!(parsed.duration, mvhd.duration);
+        assert_eq!(parsed.rate.to_raw(), mvhd.rate.to_raw());
+        assert_eq!(parsed.volume.to_raw(), mvhd.volume.to_raw());
+        assert_eq!(parsed.matrix, mvhd.matrix);
+        assert_eq!(parsed.next_track_id, mvhd.next_track_id);
     }
 
     #[test]
-    fn default_values() {
-        let mvhd = MvhdBox::default();
+    fn round_trip_v1() {
+        let mvhd = MvhdBox {
+            version: 1,
+            flags: MvhdFlags::empty(),
+            creation_time: QuickTimeDateTime::from_quicktime_seconds(0x0000000112345678),
+            modification_time: QuickTimeDateTime::from_quicktime_seconds(0x0000000123456789),
+            timescale: 90000,
+            duration: 0x0000000200000000, // exceeds u32::MAX
+            rate: I16F16::from_raw(0x00020000),
+            volume: U8F8::from_raw(0x0080),
+            matrix: Matrix::identity(),
+            next_track_id: 5,
+        };
 
-        assert_eq!(mvhd.rate.to_raw(), 0x00010000); // 1.0
-        assert_eq!(mvhd.volume.to_raw(), 0x0100); // 1.0
-        assert_eq!(mvhd.matrix, Matrix::identity());
+        let mut buf = vec![0u8; 256];
+        let written = mvhd.encode_into(&mut buf).unwrap();
+
+        let parsed = MvhdBox::decode(&buf[..written]).unwrap();
+        assert_eq!(parsed.version, mvhd.version);
+        assert_eq!(
+            parsed.creation_time.to_quicktime_seconds(),
+            mvhd.creation_time.to_quicktime_seconds()
+        );
+        assert_eq!(
+            parsed.modification_time.to_quicktime_seconds(),
+            mvhd.modification_time.to_quicktime_seconds()
+        );
+        assert_eq!(parsed.timescale, mvhd.timescale);
+        assert_eq!(parsed.duration, mvhd.duration);
+        assert_eq!(parsed.rate.to_raw(), mvhd.rate.to_raw());
+        assert_eq!(parsed.volume.to_raw(), mvhd.volume.to_raw());
+        assert_eq!(parsed.matrix, mvhd.matrix);
+        assert_eq!(parsed.next_track_id, mvhd.next_track_id);
     }
 }

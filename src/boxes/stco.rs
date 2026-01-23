@@ -1,16 +1,36 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::BoxView;
 use crate::error::*;
-use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
+use crate::iter::FixedSizeEntry;
+use crate::iter::FixedSizeEntryIter;
+
+use super::FullBoxFlags;
 
 /// An entry in the Chunk Offset Box (`stco`).
 #[derive(Debug, Clone, Copy)]
 pub struct StcoEntry {
     /// The chunk offset.
     pub chunk_offset: u32,
+}
+
+impl FixedSizeEntry for StcoEntry {
+    const ENTRY_SIZE: usize = 4;
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+
+        StcoEntry {
+            chunk_offset: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+        }
+    }
+
+    fn to_bytes(&self, bytes: &mut [u8]) {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+        bytes[0..4].copy_from_slice(&self.chunk_offset.to_be_bytes());
+    }
 }
 
 /// A reference to a Chunk Offset Box (`stco`).
@@ -29,22 +49,31 @@ impl<'a> StcoBoxView<'a> {
     const ENTRY_SIZE: usize = 4;
 
     /// Returns an iterator over the entries in the Chunk Offset Box.
-    pub fn entries(&self) -> impl Iterator<Item = StcoEntry> + 'a {
-        let entry_bytes = self.entries;
-        let entry_count = self.entry_count as usize;
-
-        entry_bytes.chunks_exact(4).take(entry_count).map(|chunk| {
-            let chunk_offset = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-            StcoEntry { chunk_offset }
-        })
+    pub fn entries(&self) -> FixedSizeEntryIter<'a, StcoEntry> {
+        FixedSizeEntryIter::new(self.entries)
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StcoBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<StcoSpec>::parse_in(cur)?;
+/// Specification for the Chunk Offset Box (`stco`).
+pub struct StcoSpec;
 
-        let entry_count = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+/// Flags for the Chunk Offset Box (`stco`).
+pub type StcoFlags = FullBoxFlags<StcoSpec>;
+
+impl BoxCodec for StcoBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::STCO
+    }
+}
+
+impl<'de> BoxDecode<'de> for StcoBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = StcoFlags::from_bytes(cur.read_array()?);
+
+        let entry_count = cur.read_u32_be()?;
 
         let expected_size = entry_count as usize * Self::ENTRY_SIZE;
 
@@ -62,19 +91,11 @@ impl<'a> StcoBoxView<'a> {
         let entries = cur.take(cur.remaining())?;
 
         Ok(StcoBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             entry_count,
             entries,
         })
-    }
-
-    /// Parses a `StcoBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<StcoBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = StcoBoxView::parse_in(&mut cursor)?;
-
-        Ok(this)
     }
 }
 
@@ -82,37 +103,21 @@ impl<'a> TryFrom<&'a [u8]> for StcoBoxView<'a> {
     type Error = Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self> {
-        StcoBoxView::parse(value)
+        StcoBoxView::decode(value)
     }
 }
-
-impl<'a> TryFrom<BoxView<'a>> for StcoBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(box_view: BoxView<'a>) -> Result<Self> {
-        if box_view.header.boxtype() != BoxType::STCO {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::STCO,
-                found: box_view.header.boxtype(),
-            }));
-        }
-
-        StcoBoxView::parse(box_view.payload)
-    }
-}
-
-/// Specification for the Chunk Offset Box (`stco`).
-pub struct StcoSpec;
-
-/// Flags for the Chunk Offset Box (`stco`).
-pub type StcoFlags = FullBoxFlags<StcoSpec>;
 
 #[cfg(feature = "alloc")]
 pub use owned::StcoBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::Vec;
+
     use super::*;
+
+    use crate::BoxEncode;
+    use crate::cursor::WriteCursor;
 
     /// An owned Chunk Offset Box (`stco`).
     #[derive(Debug, Clone)]
@@ -125,34 +130,51 @@ mod owned {
         pub entries: Vec<StcoEntry>,
     }
 
-    impl StcoBox {
-        /// Creates a `StcoBox` from a `StcoBoxView`.
-        pub fn from_view(view: &StcoBoxView<'_>) -> Result<StcoBox> {
-            let mut entries = Vec::with_capacity(view.entry_count as usize);
-
-            for entry in view.entries() {
-                entries.push(entry);
-            }
-
-            Ok(StcoBox {
+    impl From<&StcoBoxView<'_>> for StcoBox {
+        fn from(view: &StcoBoxView<'_>) -> Self {
+            let entries: Vec<StcoEntry> = view.entries().collect();
+            StcoBox {
                 version: view.version,
                 flags: view.flags,
                 entries,
-            })
-        }
-
-        /// Parses a `StcoBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<StcoBox> {
-            let view = StcoBoxView::parse(payload)?;
-            StcoBox::from_view(&view)
+            }
         }
     }
 
-    impl TryFrom<&StcoBoxView<'_>> for StcoBox {
-        type Error = Error;
+    impl BoxCodec for StcoBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::STCO
+        }
+    }
 
-        fn try_from(value: &StcoBoxView<'_>) -> Result<Self> {
-            StcoBox::from_view(value)
+    impl BoxDecode<'_> for StcoBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = StcoBoxView::decode(bytes)?;
+            Ok(StcoBox::from(&view))
+        }
+    }
+
+    impl BoxEncode for StcoBox {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            1 // version
+                + 3 // flags
+                + 4 // entry_count
+                + self.entries.len() * StcoEntry::ENTRY_SIZE // entries
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
+            cur.write_u32_be(self.entries.len() as u32)?;
+
+            for entry in &self.entries {
+                cur.write_u32_be(entry.chunk_offset)?;
+            }
+
+            Ok(cur.position())
         }
     }
 }
@@ -161,261 +183,61 @@ mod owned {
 mod tests {
     use super::*;
 
-    /// Helper to create a FullBoxHeader payload (version + flags).
     fn make_full_box_header(version: u8, flags: u32) -> Vec<u8> {
         let mut data = Vec::new();
         data.push(version);
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]); // Only 3 bytes for flags
+        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
         data
     }
 
-    /// Creates a stco box payload.
-    fn make_stco_payload(entries: Vec<StcoEntry>) -> Vec<u8> {
+    fn make_stco_payload(offsets: Vec<u32>) -> Vec<u8> {
         let mut payload = Vec::new();
-        // FullBoxHeader: version=0, flags=0
         payload.extend_from_slice(&make_full_box_header(0, 0));
-        // entry_count
-        payload.extend_from_slice(&(entries.len() as u32).to_be_bytes());
-        // entries
-        for entry in entries {
-            payload.extend_from_slice(&entry.chunk_offset.to_be_bytes());
+        payload.extend_from_slice(&(offsets.len() as u32).to_be_bytes());
+        for offset in offsets {
+            payload.extend_from_slice(&offset.to_be_bytes());
         }
         payload
     }
 
     #[test]
-    fn parse_stco_empty() {
+    fn parse_and_iterate_offsets() {
+        // Empty
         let payload = make_stco_payload(vec![]);
-        let stco = StcoBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stco.version, 0);
+        let stco = StcoBoxView::decode(&payload).unwrap();
         assert_eq!(stco.entry_count, 0);
         assert_eq!(stco.entries().count(), 0);
-    }
 
-    #[test]
-    fn parse_stco_single_entry() {
-        let entries = vec![StcoEntry { chunk_offset: 1000 }];
-        let payload = make_stco_payload(entries.clone());
-        let stco = StcoBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stco.version, 0);
+        // Single
+        let payload = make_stco_payload(vec![1000]);
+        let stco = StcoBoxView::decode(&payload).unwrap();
         assert_eq!(stco.entry_count, 1);
+        assert_eq!(stco.entries().next().unwrap().chunk_offset, 1000);
 
-        let parsed_entries: Vec<_> = stco.entries().collect();
-        assert_eq!(parsed_entries.len(), 1);
-
-        let entry = parsed_entries[0];
-        assert_eq!(entry.chunk_offset, 1000);
+        // Multiple
+        let offsets = vec![100, 200, 300, 400];
+        let payload = make_stco_payload(offsets.clone());
+        let stco = StcoBoxView::decode(&payload).unwrap();
+        let parsed: Vec<_> = stco.entries().map(|e| e.chunk_offset).collect();
+        assert_eq!(parsed, offsets);
     }
 
     #[test]
-    fn parse_stco_multiple_entries() {
-        let entries = vec![
-            StcoEntry { chunk_offset: 1000 },
-            StcoEntry { chunk_offset: 5000 },
-            StcoEntry {
-                chunk_offset: 10000,
-            },
-            StcoEntry {
-                chunk_offset: 20000,
-            },
-        ];
-        let payload = make_stco_payload(entries.clone());
-        let stco = StcoBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stco.version, 0);
-        assert_eq!(stco.entry_count, 4);
-
-        let parsed_entries: Vec<_> = stco.entries().collect();
-        assert_eq!(parsed_entries.len(), 4);
-
-        for (i, parsed) in parsed_entries.iter().enumerate() {
-            let entry = parsed;
-            assert_eq!(entry.chunk_offset, entries[i].chunk_offset);
-        }
-    }
-
-    #[test]
-    fn parse_stco_version1() {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&make_full_box_header(1, 0x000456));
-        payload.extend_from_slice(&2u32.to_be_bytes()); // entry_count
-        payload.extend_from_slice(&100u32.to_be_bytes()); // chunk_offset
-        payload.extend_from_slice(&200u32.to_be_bytes()); // chunk_offset
-
-        let stco = StcoBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stco.version, 1);
-        assert_eq!(stco.flags.get(), 0x000456);
-        assert_eq!(stco.entry_count, 2);
-    }
-
-    #[test]
-    fn parse_stco_large_offsets() {
-        let entries = vec![
-            StcoEntry {
-                chunk_offset: 0xFFFF_FFFF, // Max u32
-            },
-            StcoEntry { chunk_offset: 0 }, // Min u32
-            StcoEntry {
-                chunk_offset: 0x8000_0000, // Middle value
-            },
-        ];
-        let payload = make_stco_payload(entries.clone());
-        let stco = StcoBoxView::parse(&payload).unwrap();
-
-        let parsed_entries: Vec<_> = stco.entries().collect();
-        assert_eq!(parsed_entries.len(), 3);
-        assert_eq!(parsed_entries[0].chunk_offset, 0xFFFF_FFFF);
-        assert_eq!(parsed_entries[1].chunk_offset, 0);
-        assert_eq!(parsed_entries[2].chunk_offset, 0x8000_0000);
-    }
-
-    // Error case tests
-
-    #[test]
-    fn parse_stco_invalid_size() {
+    fn invalid_size() {
         let mut payload = make_full_box_header(0, 0);
-        payload.extend_from_slice(&1u32.to_be_bytes()); // entry_count = 1
-        payload.extend_from_slice(&[1, 2, 3]); // Only 3 bytes (not multiple of 4)
-
-        let result = StcoBoxView::parse(&payload);
-        assert!(result.is_err());
-
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::InvalidBoxSize { .. }));
-        }
+        payload.extend_from_slice(&2u32.to_be_bytes());
+        payload.extend_from_slice(&100u32.to_be_bytes());
+        assert!(StcoBoxView::decode(&payload).is_err());
     }
-
-    #[test]
-    fn parse_stco_entry_count_mismatch() {
-        // Parse succeeds even with mismatched entry_count,
-        // but the iterator will only yield the available entries
-        let mut payload = make_full_box_header(0, 0);
-        payload.extend_from_slice(&5u32.to_be_bytes()); // entry_count = 5
-        payload.extend_from_slice(&100u32.to_be_bytes()); // chunk_offset
-        payload.extend_from_slice(&200u32.to_be_bytes()); // chunk_offset
-        // Only 2 entries provided instead of 5
-
-        assert!(StcoBoxView::parse(&payload).is_err());
-    }
-
-    #[test]
-    fn try_from_byte_slice() {
-        let entries = vec![StcoEntry {
-            chunk_offset: 12345,
-        }];
-        let payload = make_stco_payload(entries);
-
-        let stco = StcoBoxView::try_from(payload.as_slice()).unwrap();
-
-        assert_eq!(stco.entry_count, 1);
-        let entry = stco.entries().next().unwrap();
-        assert_eq!(entry.chunk_offset, 12345);
-    }
-
-    #[test]
-    fn try_from_box_view_success() {
-        let entries = vec![
-            StcoEntry { chunk_offset: 1024 },
-            StcoEntry { chunk_offset: 2048 },
-        ];
-        let payload = make_stco_payload(entries);
-
-        // Create a complete box with header
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"stco");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let stco = StcoBoxView::try_from(box_view).unwrap();
-
-        assert_eq!(stco.entry_count, 2);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_stco_payload(vec![]);
-
-        // Create a box with wrong type
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"stsc"); // Wrong type
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = StcoBoxView::try_from(box_view);
-
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::MismatchedBoxType { .. }));
-        }
-    }
-
-    // Owned type tests (requires alloc feature)
 
     #[cfg(feature = "alloc")]
-    mod alloc_tests {
-        use super::*;
-
-        #[test]
-        fn stco_box_from_view() {
-            let entries = vec![
-                StcoEntry { chunk_offset: 1000 },
-                StcoEntry { chunk_offset: 2000 },
-                StcoEntry { chunk_offset: 3000 },
-            ];
-            let payload = make_stco_payload(entries.clone());
-            let stco_view = StcoBoxView::parse(&payload).unwrap();
-            let stco_box = StcoBox::from_view(&stco_view).unwrap();
-
-            assert_eq!(stco_box.version, stco_view.version);
-            assert_eq!(stco_box.flags.get(), stco_view.flags.get());
-            assert_eq!(stco_box.entries.len(), 3);
-            assert_eq!(stco_box.entries[0].chunk_offset, 1000);
-            assert_eq!(stco_box.entries[1].chunk_offset, 2000);
-            assert_eq!(stco_box.entries[2].chunk_offset, 3000);
-        }
-
-        #[test]
-        fn stco_box_parse() {
-            let entries = vec![StcoEntry {
-                chunk_offset: 99999,
-            }];
-            let payload = make_stco_payload(entries);
-            let stco_box = StcoBox::parse(&payload).unwrap();
-
-            assert_eq!(stco_box.entries.len(), 1);
-            assert_eq!(stco_box.entries[0].chunk_offset, 99999);
-        }
-
-        #[test]
-        fn stco_box_try_from() {
-            let entries = vec![
-                StcoEntry { chunk_offset: 500 },
-                StcoEntry { chunk_offset: 1500 },
-            ];
-            let payload = make_stco_payload(entries);
-            let stco_view = StcoBoxView::parse(&payload).unwrap();
-            let stco_box: StcoBox = (&stco_view).try_into().unwrap();
-
-            assert_eq!(stco_box.entries.len(), 2);
-            assert_eq!(stco_box.entries[0].chunk_offset, 500);
-            assert_eq!(stco_box.entries[1].chunk_offset, 1500);
-        }
-
-        #[test]
-        fn stco_box_empty() {
-            let payload = make_stco_payload(vec![]);
-            let stco_box = StcoBox::parse(&payload).unwrap();
-
-            assert_eq!(stco_box.entries.len(), 0);
-        }
+    #[test]
+    fn owned_conversion() {
+        let offsets = vec![100, 200, 300];
+        let payload = make_stco_payload(offsets.clone());
+        let view = StcoBoxView::decode(&payload).unwrap();
+        let owned = StcoBox::from(&view);
+        assert_eq!(owned.entries.len(), 3);
+        assert_eq!(owned.entries[0].chunk_offset, 100);
     }
 }

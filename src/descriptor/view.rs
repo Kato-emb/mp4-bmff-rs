@@ -1,4 +1,6 @@
 use crate::cursor::ReadCursor;
+#[cfg(feature = "alloc")]
+use crate::cursor::WriteCursor;
 
 use crate::error::*;
 
@@ -17,6 +19,13 @@ pub struct DescriptorView<'a> {
 }
 
 impl<'a> DescriptorView<'a> {
+    /// Returns the size of the Descriptor when serialized
+    pub fn size(&self) -> usize {
+        1 // tag
+        + self.size_of_instance.size_in_bytes() // size_of_instance
+        + self.instance.len() // instance
+    }
+
     pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<Self> {
         let tag_byte = cur.read_u8()?;
         let tag = Tag(tag_byte);
@@ -38,6 +47,18 @@ impl<'a> DescriptorView<'a> {
             size_of_instance,
             instance,
         })
+    }
+
+    #[cfg(feature = "alloc")]
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        cur.write_u8(self.tag.0)?;
+
+        let (size_bytes, byte_count) = self.size_of_instance.to_bytes();
+        cur.write_slice(&size_bytes[..byte_count])?;
+
+        cur.write_slice(self.instance)?;
+
+        Ok(())
     }
 }
 
@@ -62,12 +83,28 @@ mod owned {
     }
 
     impl DescriptorOwned {
+        /// Returns the size of the Descriptor when serialized
+        pub fn size(&self) -> usize {
+            1 // tag
+            + self.size_of_instance.size_in_bytes() // size_of_instance
+            + self.instance.len() // instance
+        }
+
         /// Creates an owned descriptor from a view
         pub fn from_view(view: &DescriptorView) -> Self {
             Self {
                 tag: view.tag,
                 size_of_instance: view.size_of_instance,
                 instance: view.instance.to_vec(),
+            }
+        }
+
+        /// Converts the owned descriptor into a view
+        pub fn to_view(&self) -> DescriptorView<'_> {
+            DescriptorView {
+                tag: self.tag,
+                size_of_instance: self.size_of_instance,
+                instance: &self.instance,
             }
         }
     }

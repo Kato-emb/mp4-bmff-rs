@@ -5,6 +5,9 @@ use crate::types::*;
 
 use crate::error::*;
 
+#[cfg(feature = "alloc")]
+use crate::cursor::WriteCursor;
+
 /// Fields common to all Sample Entry boxes.
 #[derive(Debug, Clone, Copy)]
 pub struct SampleEntry {
@@ -15,6 +18,11 @@ pub struct SampleEntry {
 impl SampleEntry {
     const RESERVED_SIZE: usize = 6;
 
+    /// Returns the size of the `SampleEntry` data.
+    pub const fn size() -> usize {
+        Self::RESERVED_SIZE + 2 // reserved + data_reference_index
+    }
+
     pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
         // Skip reserved bytes
         cur.advance(Self::RESERVED_SIZE)?;
@@ -23,6 +31,14 @@ impl SampleEntry {
         Ok(SampleEntry {
             data_reference_index,
         })
+    }
+
+    #[cfg(feature = "alloc")]
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        // Write reserved bytes (6 bytes of zeros)
+        cur.write_slice(&[0u8; Self::RESERVED_SIZE])?;
+        cur.write_u16_be(self.data_reference_index)?;
+        Ok(())
     }
 }
 
@@ -69,6 +85,23 @@ impl VisualSampleEntry {
     const PRE_DEFINED_SIZE_2: usize = mem::size_of::<[u32; 3]>();
     const RESERVED_SIZE_2: usize = mem::size_of::<u32>();
     const PRE_DEFINED_SIZE_3: usize = mem::size_of::<i16>();
+
+    /// Returns the size of the `VisualSampleEntry` data.
+    pub const fn size() -> usize {
+        SampleEntry::size()
+            + Self::PRE_DEFINED_SIZE_1
+            + Self::RESERVED_SIZE_1
+            + Self::PRE_DEFINED_SIZE_2
+            + 2 // width
+            + 2 // height
+            + 4 // horizresolution
+            + 4 // vertresolution
+            + Self::RESERVED_SIZE_2
+            + 2 // frame_count
+            + 32 // compressorname
+            + 2 // depth
+            + Self::PRE_DEFINED_SIZE_3
+    }
 
     /// Returns a reference to the base `SampleEntry`.
     pub fn sample_entry(&self) -> &SampleEntry {
@@ -138,6 +171,38 @@ impl VisualSampleEntry {
             depth,
         })
     }
+
+    #[cfg(feature = "alloc")]
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        self.base.write_in(cur)?;
+
+        // pre_defined (2 bytes)
+        cur.write_slice(&[0u8; Self::PRE_DEFINED_SIZE_1])?;
+        // reserved (2 bytes)
+        cur.write_slice(&[0u8; Self::RESERVED_SIZE_1])?;
+        // pre_defined (12 bytes)
+        cur.write_slice(&[0u8; Self::PRE_DEFINED_SIZE_2])?;
+
+        cur.write_u16_be(self.width)?;
+        cur.write_u16_be(self.height)?;
+
+        cur.write_u32_be(self.horizresolution.to_raw())?;
+        cur.write_u32_be(self.vertresolution.to_raw())?;
+
+        // reserved (4 bytes)
+        cur.write_slice(&[0u8; Self::RESERVED_SIZE_2])?;
+
+        cur.write_u16_be(self.frame_count)?;
+
+        cur.write_array(&self.compressorname)?;
+
+        cur.write_u16_be(self.depth)?;
+
+        // pre_defined (2 bytes, -1)
+        cur.write_slice(&[0xFF, 0xFF])?;
+
+        Ok(())
+    }
 }
 
 /// Audio Sample Entry box (`mp4a`, etc.).
@@ -170,6 +235,17 @@ impl AudioSampleEntry {
     const PRE_DEFINED_SIZE: usize = mem::size_of::<u16>();
     const RESERVED_SIZE_2: usize = mem::size_of::<u16>();
 
+    /// Returns the size of the `AudioSampleEntry` data.
+    pub const fn size() -> usize {
+        SampleEntry::size()
+            + Self::RESERVED_SIZE_1
+            + 2 // channelcount
+            + 2 // samplesize
+            + Self::PRE_DEFINED_SIZE
+            + Self::RESERVED_SIZE_2
+            + 4 // samplerate
+    }
+
     /// Returns a reference to the base `SampleEntry`.
     pub fn sample_entry(&self) -> &SampleEntry {
         &self.base
@@ -197,5 +273,25 @@ impl AudioSampleEntry {
             samplesize,
             samplerate,
         })
+    }
+
+    #[cfg(feature = "alloc")]
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+        self.base.write_in(cur)?;
+
+        // reserved (8 bytes)
+        cur.write_slice(&[0u8; Self::RESERVED_SIZE_1])?;
+
+        cur.write_u16_be(self.channelcount)?;
+        cur.write_u16_be(self.samplesize)?;
+
+        // pre_defined (2 bytes)
+        cur.write_slice(&[0u8; Self::PRE_DEFINED_SIZE])?;
+        // reserved (2 bytes)
+        cur.write_slice(&[0u8; Self::RESERVED_SIZE_2])?;
+
+        cur.write_u32_be(self.samplerate.to_raw())?;
+
+        Ok(())
     }
 }

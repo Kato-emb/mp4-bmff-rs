@@ -1,14 +1,16 @@
-use crate::BoxIter;
-use crate::BoxType;
-use crate::BoxView;
 use crate::cursor::ReadCursor;
 
-use crate::FullBoxFlags;
-use crate::FullBoxHeader;
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxType;
+use crate::RawBoxRef;
 use crate::error::*;
+use crate::iter::BoxIter;
 
-use crate::boxes::Avc1BoxView;
-use crate::boxes::Mp4aBoxView;
+use super::FullBoxFlags;
+
+use super::Avc1BoxView;
+use super::Mp4aBoxView;
 
 /// An enum representing the different types of entries in a Sample Description Box (`stsd`).
 #[derive(Debug)]
@@ -18,7 +20,7 @@ pub enum StsdEntryView<'a> {
     /// An Avc1 Box entry.
     Avc1(Avc1BoxView<'a>),
     /// An unrecognized box entry.
-    Other(BoxView<'a>),
+    Other(RawBoxRef<'a>),
 }
 
 /// An reference to a Sample Description Box (`stsd`).
@@ -39,50 +41,12 @@ impl<'a> StsdBoxView<'a> {
     pub fn entries(&self) -> impl Iterator<Item = Result<StsdEntryView<'a>>> + 'a {
         BoxIter::new(self.entries).map(|box_result| {
             let view = box_result?;
-            match view.header.boxtype() {
-                BoxType::AVC1 => Avc1BoxView::parse(view.payload).map(StsdEntryView::Avc1),
-                BoxType::MP4A => Mp4aBoxView::parse(view.payload).map(StsdEntryView::Mp4a),
+            match view.boxtype() {
+                BoxType::AVC1 => Avc1BoxView::decode(view.into_payload()).map(StsdEntryView::Avc1),
+                BoxType::MP4A => Mp4aBoxView::decode(view.into_payload()).map(StsdEntryView::Mp4a),
                 _ => Ok(StsdEntryView::Other(view)),
             }
         })
-    }
-
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> crate::error::Result<Self> {
-        let full_box_header = FullBoxHeader::<StsdSpec>::parse_in(cur)?;
-
-        let entry_count = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-
-        let entries = cur.remaining_slice();
-        for _ in 0..entry_count {
-            BoxView::parse_in(cur)?;
-        }
-
-        if !cur.is_empty() {
-            return Err(Error::at(
-                ErrorKind::InvalidBoxSize {
-                    reason: "stsd entries size does not match entry_count",
-                    got: cur.remaining() as u64,
-                },
-                cur.position() as u64,
-            ));
-        }
-
-        Ok(StsdBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
-            entry_count,
-            entries,
-        })
-    }
-
-    /// Parses an `StsdBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(payload);
-        let this = StsdBoxView::parse_in(&mut cur)?;
-
-        Ok(this)
     }
 }
 
@@ -92,6 +56,48 @@ pub struct StsdSpec;
 /// The flags for the Sample Description Box ('stsd')
 pub type StsdFlags = FullBoxFlags<StsdSpec>;
 
+impl BoxCodec for StsdBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::STSD
+    }
+}
+
+impl<'de> BoxDecode<'de> for StsdBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = StsdFlags::from_bytes(cur.read_array()?);
+
+        let entry_count = cur.read_u32_be()?;
+
+        let entries = cur.remaining_slice();
+
+        let mut count = 0;
+        for result in BoxIter::new(entries).take(entry_count as usize) {
+            result?;
+            count += 1;
+        }
+
+        if count < entry_count {
+            return Err(Error::in_box(
+                ErrorKind::InvalidBoxField {
+                    field: "entry_count",
+                    reason: "does not match actual number of entries",
+                },
+                BoxType::STSD,
+            ));
+        }
+
+        Ok(StsdBoxView {
+            version,
+            flags,
+            entry_count,
+            entries,
+        })
+    }
+}
+
 #[cfg(feature = "alloc")]
 pub use owned::{
     StsdBox, //
@@ -100,11 +106,17 @@ pub use owned::{
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::BoxOwned;
-    use crate::boxes::Avc1Box;
-    use crate::boxes::Mp4aBox;
+    use crate::lib::Vec;
+
+    use crate::BoxEncode;
+    use crate::cursor::WriteCursor;
+
+    use crate::codec::boxed_len;
+    use crate::codec::write_box_in;
 
     use super::*;
+    use crate::boxes::Avc1Box;
+    use crate::boxes::Mp4aBox;
 
     /// An enum representing the different types of entries in a Sample Description Box (`stsd`).
     #[derive(Debug, Clone)]
@@ -114,7 +126,12 @@ mod owned {
         /// An Avc1 Box entry.
         Avc1(Avc1Box),
         /// An unrecognized box entry.
-        Other(BoxOwned),
+        Other {
+            /// The box type.
+            boxtype: BoxType,
+            /// The box payload.
+            payload: Vec<u8>,
+        },
     }
 
     impl TryFrom<&StsdEntryView<'_>> for StsdEntry {
@@ -122,9 +139,23 @@ mod owned {
 
         fn try_from(value: &StsdEntryView<'_>) -> Result<Self> {
             match value {
-                StsdEntryView::Mp4a(view) => Ok(StsdEntry::Mp4a(Mp4aBox::from_view(view)?)),
-                StsdEntryView::Avc1(view) => Ok(StsdEntry::Avc1(Avc1Box::from_view(view)?)),
-                StsdEntryView::Other(view) => Ok(StsdEntry::Other(view.to_owned())),
+                StsdEntryView::Mp4a(view) => Ok(StsdEntry::Mp4a(Mp4aBox::try_from(view)?)),
+                StsdEntryView::Avc1(view) => Ok(StsdEntry::Avc1(Avc1Box::try_from(view)?)),
+                StsdEntryView::Other(view) => Ok(StsdEntry::Other {
+                    boxtype: view.boxtype(),
+                    payload: view.payload().to_vec(),
+                }),
+            }
+        }
+    }
+
+    impl StsdEntry {
+        /// Returns the box type for this entry.
+        pub fn boxtype(&self) -> BoxType {
+            match self {
+                StsdEntry::Mp4a(_) => BoxType::MP4A,
+                StsdEntry::Avc1(_) => BoxType::AVC1,
+                StsdEntry::Other { boxtype, .. } => *boxtype,
             }
         }
     }
@@ -142,9 +173,10 @@ mod owned {
         pub entries: Vec<StsdEntry>,
     }
 
-    impl StsdBox {
-        /// Creates an owned Sample Description Box from a view.
-        pub fn from_view(view: &StsdBoxView) -> Result<Self> {
+    impl TryFrom<&StsdBoxView<'_>> for StsdBox {
+        type Error = Error;
+
+        fn try_from(view: &StsdBoxView<'_>) -> Result<Self> {
             let mut entries = Vec::with_capacity(view.entry_count as usize);
 
             for entry_view in view.entries() {
@@ -159,19 +191,71 @@ mod owned {
                 entries,
             })
         }
+    }
 
-        /// Parses an owned `StsdBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let view = StsdBoxView::parse(payload)?;
-            Self::from_view(&view)
+    impl BoxCodec for StsdBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::STSD
         }
     }
 
-    impl TryFrom<&StsdBoxView<'_>> for StsdBox {
-        type Error = Error;
+    impl BoxDecode<'_> for StsdBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = StsdBoxView::decode(bytes)?;
+            StsdBox::try_from(&view)
+        }
+    }
 
-        fn try_from(value: &StsdBoxView<'_>) -> Result<Self> {
-            StsdBox::from_view(value)
+    impl BoxEncode for StsdBox {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let mut len = 1 // version
+                + 3 // flags
+                + 4; // entry_count
+
+            for entry in &self.entries {
+                match entry {
+                    StsdEntry::Mp4a(box_) => {
+                        len += boxed_len(box_);
+                    }
+                    StsdEntry::Avc1(box_) => {
+                        len += boxed_len(box_);
+                    }
+                    StsdEntry::Other {
+                        boxtype: _,
+                        payload,
+                    } => {
+                        // TODO: handle Other box length properly
+                        let header = 8; // 4 bytes size + 4 bytes type
+                        len += header + payload.len(); // box header + payload
+                    }
+                }
+            }
+
+            len
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
+            cur.write_u32_be(self.entries.len() as u32)?;
+
+            for entry in &self.entries {
+                match entry {
+                    StsdEntry::Mp4a(box_) => write_box_in(&mut cur, box_)?,
+                    StsdEntry::Avc1(box_) => write_box_in(&mut cur, box_)?,
+                    StsdEntry::Other {
+                        boxtype,
+                        payload: _,
+                    } => {
+                        todo!("Write Other box type {}", boxtype)
+                    }
+                }
+            }
+
+            Ok(cur.position())
         }
     }
 }

@@ -3,12 +3,12 @@
 use core::error;
 use core::fmt;
 
-use crate::cursor::Error as CursorError;
 use crate::types::FourCC;
 
-use crate::header::boxsize::BoxSizeError;
-use crate::header::boxtype::BoxTypeError;
-use crate::header::{BoxSize, BoxType};
+use crate::BoxType;
+
+use crate::cursor::Error as CursorError;
+use crate::cursor::ErrorKind as CursorErrorKind;
 
 /// Result type for BMFF box operations.
 pub type Result<T> = core::result::Result<T, Error>;
@@ -24,6 +24,13 @@ pub enum ErrorKind {
         expected: usize,
         /// Number of bytes remaining.
         remaining: usize,
+    },
+    /// The provided buffer is too large.
+    BufferTooLarge {
+        /// Number of bytes expected.
+        expected: u64,
+        /// Maximum allowed size.
+        max: u64,
     },
     /// Mismatched box size.
     MismatchedBoxSize {
@@ -79,6 +86,9 @@ pub enum ErrorKind {
         /// The type of the required box.
         required: BoxType,
     },
+    #[cfg(feature = "std")]
+    /// An I/O error occurred.
+    Io,
     /// Some other kind of error.
     Other {
         /// A description of the error.
@@ -97,6 +107,12 @@ impl fmt::Display for ErrorKind {
                 f,
                 "not enough bytes: expected {expected}, but only {remaining} remaining"
             ),
+            ErrorKind::BufferTooLarge { expected, max } => {
+                write!(
+                    f,
+                    "buffer too large: expected {expected}, maximum allowed is {max}"
+                )
+            }
             ErrorKind::MismatchedBoxSize { expected, found } => {
                 write!(f, "mismatched box size: expected {expected}, found {found}")
             }
@@ -124,17 +140,21 @@ impl fmt::Display for ErrorKind {
             ErrorKind::BoxMissing { required } => {
                 write!(f, "required box '{required}' is missing")
             }
+            #[cfg(feature = "std")]
+            ErrorKind::Io => write!(f, "I/O error"),
             ErrorKind::Other { description } => write!(f, "error: {description}"),
         }
     }
 }
 
 /// Represents an error that occurred while processing a BMFF box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
     offset: Option<u64>,
     box_type: Option<BoxType>,
+    #[cfg(feature = "std")]
+    source: Option<Box<dyn error::Error + 'static>>,
 }
 
 impl Error {
@@ -143,6 +163,8 @@ impl Error {
             kind,
             offset: None,
             box_type: None,
+            #[cfg(feature = "std")]
+            source: None,
         }
     }
 
@@ -151,6 +173,8 @@ impl Error {
             kind,
             offset: Some(offset),
             box_type: None,
+            #[cfg(feature = "std")]
+            source: None,
         }
     }
 
@@ -159,6 +183,8 @@ impl Error {
             kind,
             offset: None,
             box_type: Some(box_type),
+            #[cfg(feature = "std")]
+            source: None,
         }
     }
 
@@ -167,6 +193,8 @@ impl Error {
             kind,
             offset: Some(offset),
             box_type: Some(box_type),
+            #[cfg(feature = "std")]
+            source: None,
         }
     }
 
@@ -222,11 +250,21 @@ impl fmt::Display for Error {
             write!(f, " at offset {offset}")?;
         }
 
+        #[cfg(feature = "std")]
+        if let Some(source) = &self.source {
+            write!(f, ": {}", source)?;
+        }
+
         Ok(())
     }
 }
 
-impl error::Error for Error {}
+impl error::Error for Error {
+    #[cfg(feature = "std")]
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        self.source.as_deref()
+    }
+}
 
 impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Self {
@@ -234,70 +272,35 @@ impl From<ErrorKind> for Error {
     }
 }
 
-impl From<CursorError> for ErrorKind {
-    fn from(value: CursorError) -> Self {
-        match value {
-            CursorError::Overflow => ErrorKind::Overflow,
-            CursorError::UnexpectedEof {
-                expected,
-                remaining,
-            } => ErrorKind::NotEnoughBytes {
-                expected,
-                remaining,
-            },
-            CursorError::BufferTooSmall {
-                expected,
-                remaining,
-            } => ErrorKind::NotEnoughBytes {
-                expected,
-                remaining,
-            },
-        }
-    }
-}
-
 impl From<CursorError> for Error {
     fn from(value: CursorError) -> Self {
-        Self::new(ErrorKind::from(value))
-    }
-}
-
-impl From<BoxSizeError> for ErrorKind {
-    fn from(value: BoxSizeError) -> Self {
-        match value {
-            BoxSizeError::SizeTooSmall { expected: _, found } => Self::InvalidBoxSize {
-                reason: "Box size is too small to be valid",
-                got: found,
+        let kind = match value.kind {
+            CursorErrorKind::Overflow => ErrorKind::Overflow,
+            CursorErrorKind::UnexpectedEof {
+                expected,
+                remaining,
+            } => ErrorKind::NotEnoughBytes {
+                expected,
+                remaining,
             },
-            BoxSizeError::ExtendedSizeMarker => Self::InvalidBoxSize {
-                reason: "Box size indicates extended size, but none was provided",
-                got: BoxSize::MARKER_EXTENDED_SIZE as u64,
+            CursorErrorKind::BufferTooSmall {
+                expected,
+                remaining,
+            } => ErrorKind::NotEnoughBytes {
+                expected,
+                remaining,
             },
-        }
+        };
+
+        Self::at(kind, value.offset as u64)
     }
 }
 
-impl From<BoxSizeError> for Error {
-    fn from(value: BoxSizeError) -> Self {
-        Self::new(ErrorKind::from(value))
-    }
-}
-
-impl From<BoxTypeError> for ErrorKind {
-    fn from(value: BoxTypeError) -> Self {
-        use crate::header::boxtype::UUID;
-
-        match value {
-            BoxTypeError::UuidFourCCNotAllowed => Self::InvalidBoxType {
-                reason: "Cannot create UUID BoxType from FourCC code 'uuid'",
-                got: UUID,
-            },
-        }
-    }
-}
-
-impl From<BoxTypeError> for Error {
-    fn from(value: BoxTypeError) -> Self {
-        Self::new(ErrorKind::from(value))
+#[cfg(feature = "std")]
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        let mut error = Self::new(ErrorKind::Io);
+        error.source = Some(Box::new(value));
+        error
     }
 }

@@ -76,10 +76,22 @@ jobs:
       - name: cargo check (no default features = no_std path)
         run: cargo check --no-default-features
 
+      # alloc feature単体の検証（std無し、alloc有り）
+      - name: cargo test (alloc only, no std)
+        run: cargo test --no-default-features --features alloc --all-targets
+
+      - name: cargo check (alloc only, no std)
+        run: cargo check --no-default-features --features alloc
+
       # 今は default と同値だが、feature追加時にサイレント破壊を防ぐ
       - name: cargo check (--all-features)
         if: runner.os == 'Linux' && matrix.toolchain == 'stable'
         run: cargo check --all-features
+
+      # ベンチマークのコンパイル確認（実行はしない）
+      - name: cargo bench (compile check)
+        if: runner.os == 'Linux' && matrix.toolchain == 'stable'
+        run: cargo bench --no-run
 
   no_std_targets:
     name: no_std target builds
@@ -177,3 +189,7 @@ jobs:
 
       - name: cargo check (no_std)
         run: cargo check --no-default-features
+
+      # alloc feature単体の検証
+      - name: cargo check (alloc only)
+        run: cargo check --no-default-features --features alloc

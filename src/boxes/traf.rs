@@ -1,9 +1,8 @@
-use crate::cursor::ReadCursor;
-
-use crate::BoxIter;
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::BoxView;
 use crate::error::*;
+use crate::iter::BoxIter;
 
 use crate::boxes::SbgpBoxView;
 use crate::boxes::TfdtBox;
@@ -28,8 +27,8 @@ impl<'a> TrafBoxView<'a> {
     pub fn tfhd(&self) -> Result<TfhdBox> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::TFHD {
-                return TfhdBox::try_from(&child);
+            if child.boxtype() == BoxType::TFHD {
+                return TfhdBox::decode(child.into_payload());
             }
         }
 
@@ -45,8 +44,8 @@ impl<'a> TrafBoxView<'a> {
     pub fn tfdt(&self) -> Result<Option<TfdtBox>> {
         for child in self.children() {
             let child = child?;
-            if child.header.boxtype() == BoxType::TFDT {
-                return Ok(Some(TfdtBox::try_from(&child)?));
+            if child.boxtype() == BoxType::TFDT {
+                return Ok(Some(TfdtBox::decode(child.into_payload())?));
             }
         }
 
@@ -56,8 +55,8 @@ impl<'a> TrafBoxView<'a> {
     /// Returns an iterator over the Track Run Boxes (`trun`).
     pub fn truns(&self) -> impl Iterator<Item = Result<TrunBoxView<'a>>> + 'a {
         self.children().filter_map(|result| match result {
-            Ok(box_view) if box_view.header.boxtype() == BoxType::TRUN => {
-                Some(TrunBoxView::try_from(&box_view))
+            Ok(view) if view.boxtype() == BoxType::TRUN => {
+                Some(TrunBoxView::decode(view.into_payload()))
             }
             Ok(_) => None,
             Err(e) => Some(Err(e)),
@@ -67,38 +66,32 @@ impl<'a> TrafBoxView<'a> {
     /// Returns an iterator over the Sample to Group Boxes (`sbgp`).
     pub fn sbgps(&self) -> impl Iterator<Item = Result<SbgpBoxView<'a>>> + 'a {
         self.children().filter_map(|result| match result {
-            Ok(box_view) if box_view.header.boxtype() == BoxType::SBGP => {
-                Some(SbgpBoxView::try_from(&box_view))
+            Ok(view) if view.boxtype() == BoxType::SBGP => {
+                Some(SbgpBoxView::decode(view.into_payload()))
             }
             Ok(_) => None,
             Err(e) => Some(Err(e)),
         })
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<TrafBoxView<'a>> {
-        let payload = cur.take(cur.remaining())?;
-        Ok(TrafBoxView { payload })
-    }
-
-    /// Parses a `TrafBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<TrafBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        TrafBoxView::parse_in(&mut cursor)
+impl BoxCodec for TrafBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::TRAF
     }
 }
 
-impl<'a> TryFrom<&BoxView<'a>> for TrafBoxView<'a> {
+impl<'de> BoxDecode<'de> for TrafBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        Ok(TrafBoxView { payload: bytes })
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for TrafBoxView<'a> {
     type Error = Error;
 
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::TRAF {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::TRAF,
-                found: value.header.boxtype(),
-            }));
-        }
-
-        TrafBoxView::parse(value.payload)
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        TrafBoxView::decode(value)
     }
 }
 
@@ -107,10 +100,17 @@ pub use owned::TrafBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    extern crate alloc;
-    use alloc::vec::Vec;
+    use crate::lib::Vec;
+
+    use crate::cursor::WriteCursor;
+
+    use crate::codec::boxed_len;
+    use crate::codec::write_box_in;
 
     use super::*;
+    use crate::BoxCodec;
+    use crate::BoxDecode;
+    use crate::BoxEncode;
     use crate::boxes::SbgpBox;
     use crate::boxes::TrunBox;
 
@@ -127,22 +127,23 @@ mod owned {
         pub sbgps: Vec<SbgpBox>,
     }
 
-    impl TrafBox {
-        /// Creates a `TrafBox` from a `TrafBoxView`.
-        pub fn from_view(view: &TrafBoxView<'_>) -> Result<TrafBox> {
+    impl TryFrom<&TrafBoxView<'_>> for TrafBox {
+        type Error = Error;
+
+        fn try_from(view: &TrafBoxView<'_>) -> Result<Self> {
             let tfhd = view.tfhd()?;
             let tfdt = view.tfdt()?;
 
             let mut truns = Vec::new();
             for trun_result in view.truns() {
                 let trun_view = trun_result?;
-                truns.push(TrunBox::from_view(&trun_view)?);
+                truns.push(TrunBox::from(&trun_view));
             }
 
             let mut sbgps = Vec::new();
             for sbgp_result in view.sbgps() {
                 let sbgp_view = sbgp_result?;
-                sbgps.push(SbgpBox::from_view(&sbgp_view)?);
+                sbgps.push(SbgpBox::from(&sbgp_view));
             }
 
             Ok(TrafBox {
@@ -152,34 +153,69 @@ mod owned {
                 sbgps,
             })
         }
+    }
 
-        /// Parses a `TrafBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<TrafBox> {
-            let view = TrafBoxView::parse(payload)?;
-            TrafBox::from_view(&view)
+    impl BoxCodec for TrafBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::TRAF
         }
     }
 
-    impl TryFrom<&TrafBoxView<'_>> for TrafBox {
-        type Error = Error;
-
-        fn try_from(value: &TrafBoxView<'_>) -> Result<Self> {
-            TrafBox::from_view(value)
+    impl BoxDecode<'_> for TrafBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = TrafBoxView::decode(bytes)?;
+            TrafBox::try_from(&view)
         }
     }
 
-    impl TryFrom<&BoxView<'_>> for TrafBox {
-        type Error = Error;
+    impl BoxEncode for TrafBox {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            let mut len = 0;
 
-        fn try_from(value: &BoxView<'_>) -> Result<Self> {
-            let view = TrafBoxView::try_from(value)?;
-            TrafBox::from_view(&view)
+            len += boxed_len(&self.tfhd);
+
+            if let Some(ref tfdt) = self.tfdt {
+                len += boxed_len(tfdt);
+            }
+
+            for trun in &self.truns {
+                len += boxed_len(trun);
+            }
+
+            for sbgp in &self.sbgps {
+                len += boxed_len(sbgp);
+            }
+
+            len
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            write_box_in(&mut cur, &self.tfhd)?;
+
+            if let Some(ref tfdt) = self.tfdt {
+                write_box_in(&mut cur, tfdt)?;
+            }
+
+            for trun in &self.truns {
+                write_box_in(&mut cur, trun)?;
+            }
+
+            for sbgp in &self.sbgps {
+                write_box_in(&mut cur, sbgp)?;
+            }
+
+            Ok(cur.position())
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::RawBoxRef;
+
     use super::*;
 
     fn make_box(fourcc: &[u8; 4], payload: &[u8]) -> Vec<u8> {
@@ -222,7 +258,7 @@ mod tests {
         let mut payload = Vec::new();
         payload.extend_from_slice(&tfhd);
 
-        let traf = TrafBoxView::parse(&payload).unwrap();
+        let traf = TrafBoxView::decode(&payload).unwrap();
 
         let tfhd_box = traf.tfhd().unwrap();
         assert_eq!(tfhd_box.track_id, 1);
@@ -240,7 +276,7 @@ mod tests {
         payload.extend_from_slice(&tfhd);
         payload.extend_from_slice(&tfdt);
 
-        let traf = TrafBoxView::parse(&payload).unwrap();
+        let traf = TrafBoxView::decode(&payload).unwrap();
 
         let tfdt_box = traf.tfdt().unwrap().unwrap();
         assert_eq!(tfdt_box.base_media_decode_time, 1000);
@@ -257,7 +293,7 @@ mod tests {
         payload.extend_from_slice(&trun1);
         payload.extend_from_slice(&trun2);
 
-        let traf = TrafBoxView::parse(&payload).unwrap();
+        let traf = TrafBoxView::decode(&payload).unwrap();
 
         let truns: Vec<_> = traf.truns().collect();
         assert_eq!(truns.len(), 2);
@@ -269,7 +305,7 @@ mod tests {
     fn parse_traf_missing_tfhd() {
         let tfdt = make_box(b"tfdt", &make_tfdt_payload_v0(0));
 
-        let traf = TrafBoxView::parse(&tfdt).unwrap();
+        let traf = TrafBoxView::decode(&tfdt).unwrap();
         let result = traf.tfhd();
 
         assert!(result.is_err());
@@ -288,28 +324,10 @@ mod tests {
         box_data.extend_from_slice(b"traf");
         box_data.extend_from_slice(&tfhd);
 
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let traf = TrafBoxView::try_from(&box_view).unwrap();
+        let raw = RawBoxRef::parse(&box_data).unwrap();
+        let traf = TrafBoxView::try_from(raw.payload()).unwrap();
 
         assert_eq!(traf.tfhd().unwrap().track_id, 1);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let tfhd = make_box(b"tfhd", &make_tfhd_payload(1));
-
-        let mut box_data = Vec::new();
-        let size = 8 + tfhd.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"moof");
-        box_data.extend_from_slice(&tfhd);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = TrafBoxView::try_from(&box_view);
-
-        assert!(result.is_err());
     }
 
     #[cfg(feature = "alloc")]
@@ -327,8 +345,8 @@ mod tests {
             payload.extend_from_slice(&tfdt);
             payload.extend_from_slice(&trun);
 
-            let view = TrafBoxView::parse(&payload).unwrap();
-            let owned = TrafBox::from_view(&view).unwrap();
+            let view = TrafBoxView::decode(&payload).unwrap();
+            let owned = TrafBox::try_from(&view).unwrap();
 
             assert_eq!(owned.tfhd.track_id, 5);
             assert_eq!(owned.tfdt.unwrap().base_media_decode_time, 2000);
@@ -340,8 +358,8 @@ mod tests {
         fn traf_box_parse() {
             let tfhd = make_box(b"tfhd", &make_tfhd_payload(10));
 
-            let view = TrafBoxView::parse(&tfhd).unwrap();
-            let owned = TrafBox::from_view(&view).unwrap();
+            let view = TrafBoxView::decode(&tfhd).unwrap();
+            let owned = TrafBox::try_from(&view).unwrap();
 
             assert_eq!(owned.tfhd.track_id, 10);
         }

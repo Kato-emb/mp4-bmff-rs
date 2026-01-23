@@ -23,7 +23,7 @@
 //! # Example
 //!
 //! ```
-//! use mp4_bmff::header::FullBoxFlags;
+//! use mp4_bmff::boxes::FullBoxFlags;
 //!
 //! // Define a marker type for a specific box
 //! struct MyBox;
@@ -65,6 +65,26 @@ impl<T> FullBoxFlags<T> {
             mask: raw_flags & 0x00FF_FFFF,
             _marker: marker::PhantomData,
         }
+    }
+
+    /// Creates a new `FullBoxFlags` from a 3-byte array (big-endian).
+    #[inline]
+    pub const fn from_bytes(bytes: [u8; 3]) -> Self {
+        let mask = ((bytes[0] as u32) << 16) | ((bytes[1] as u32) << 8) | (bytes[2] as u32);
+        Self {
+            mask,
+            _marker: marker::PhantomData,
+        }
+    }
+
+    /// Returns the flags as a 3-byte array (big-endian).
+    #[inline]
+    pub const fn to_bytes(&self) -> [u8; 3] {
+        [
+            ((self.mask >> 16) & 0xFF) as u8,
+            ((self.mask >> 8) & 0xFF) as u8,
+            (self.mask & 0xFF) as u8,
+        ]
     }
 
     /// Creates a `FullBoxFlags` from the given raw bits, truncating to 24 bits.

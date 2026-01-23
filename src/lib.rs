@@ -17,13 +17,19 @@ extern crate alloc;
 mod lib {
     #[cfg(all(feature = "alloc", not(feature = "std")))]
     pub use alloc::{
-        string::String, //
+        format, //
+        string::String,
+        string::ToString,
+        vec,
         vec::Vec,
     };
 
     #[cfg(feature = "std")]
     pub use std::{
-        string::String, //
+        format, //
+        string::String,
+        string::ToString,
+        vec,
         vec::Vec,
     };
 }
@@ -39,36 +45,52 @@ pub(crate) mod cursor;
 pub mod types;
 
 // =============================================================================
-// Layer 1 - ISO BMFF Common types and Box Framing (no_std, no_alloc)
+// Layer 1 - ISO BMFF base structures (no_std)
 // =============================================================================
+pub mod base;
+pub mod codec;
 pub mod error;
-pub mod header;
 pub mod iter;
-pub mod view;
 
-// Re-export for convenience
+// Re-export base structures
+pub use base::header::{
+    BoxHeader, //
+    BoxSize,
+    BoxType,
+};
+pub use base::rawbox::{
+    RawBox, //
+    RawBoxRef,
+};
+
+// Re-export error types
 pub use error::{
     Error, //
     ErrorKind,
     Result,
 };
-pub use header::{
-    BoxHeader, //
-    BoxSize,
-    BoxType,
-    FullBoxFlags,
-    FullBoxHeader,
+
+// Re-export codec traits
+pub use codec::{
+    BoxCodec, //
+    BoxDecode,
+    BoxEncode,
 };
-pub use iter::BoxIter;
-pub use view::BoxView;
+
+// Re-export codec helpers
+pub use codec::read_box;
+pub use codec::write_box;
+pub use iter::iter_boxes;
 
 // =============================================================================
 // Layer 2 - Typed Box Representations (requires alloc)
 // =============================================================================
 pub mod boxes;
 pub mod descriptor;
+
+// Re-export owned box types
 #[cfg(feature = "alloc")]
-pub use view::BoxOwned;
+pub use base::rawbox::RawBoxOwned;
 
 // =============================================================================
 // Layer 3 -  I/O (std)

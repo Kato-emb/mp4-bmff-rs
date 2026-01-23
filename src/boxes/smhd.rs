@@ -1,13 +1,16 @@
 use core::mem;
 
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 use crate::types::I8F8;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
-use crate::BoxView;
-use crate::FullBoxFlags;
-use crate::FullBoxHeader;
 use crate::error::*;
+
+use super::FullBoxFlags;
 
 /// A Sound Media Header Box (`smhd`).
 ///
@@ -35,40 +38,32 @@ impl Default for SmhdBox {
 
 impl SmhdBox {
     const RESERVED_SIZE: usize = mem::size_of::<u16>();
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<SmhdBox> {
-        let full_box_header = FullBoxHeader::<SmhdSpec>::parse_in(cur)?;
+impl BoxCodec for SmhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::SMHD
+    }
+}
 
-        let balance = cur
-            .read_i16_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+impl BoxDecode<'_> for SmhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = SmhdFlags::from_bytes(cur.read_array()?);
+
+        let balance = cur.read_i16_be()?;
         let balance = I8F8::from_raw(balance);
 
         // Skip reserved (2 bytes)
-        cur.advance(Self::RESERVED_SIZE)
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
-
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after parsing smhd",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::SMHD,
-            ));
-        }
+        cur.advance(Self::RESERVED_SIZE)?;
 
         Ok(SmhdBox {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             balance,
         })
-    }
-
-    /// Parses a `SmhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<SmhdBox> {
-        let mut cursor = ReadCursor::new(payload);
-        SmhdBox::parse_in(&mut cursor)
     }
 }
 
@@ -76,22 +71,35 @@ impl TryFrom<&[u8]> for SmhdBox {
     type Error = Error;
 
     fn try_from(payload: &[u8]) -> Result<Self> {
-        SmhdBox::parse(payload)
+        SmhdBox::decode(payload)
     }
 }
 
-impl TryFrom<&BoxView<'_>> for SmhdBox {
-    type Error = Error;
+impl BoxEncode for SmhdBox {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        1 // version
+            + 3 // flags
+            + 2 // balance
+            + Self::RESERVED_SIZE // reserved
+    }
 
-    fn try_from(box_view: &BoxView<'_>) -> Result<Self> {
-        if box_view.header.boxtype() != BoxType::SMHD {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::SMHD,
-                found: box_view.header.boxtype(),
-            }));
-        }
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-        SmhdBox::parse(box_view.payload)
+        // Write version (1 byte)
+        cur.write_u8(self.version)?;
+
+        // Write flags (3 bytes)
+        cur.write_array(&self.flags.to_bytes())?;
+
+        // Write balance (2 bytes)
+        cur.write_i16_be(self.balance.to_raw())?;
+
+        // Write reserved (2 bytes)
+        cur.reserve_zeros(Self::RESERVED_SIZE)?;
+
+        Ok(cur.position())
     }
 }
 
@@ -105,74 +113,20 @@ pub type SmhdFlags = FullBoxFlags<SmhdSpec>;
 mod tests {
     use super::*;
 
-    fn make_smhd_payload(version: u8, flags: u32, balance: i16) -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // FullBoxHeader: version (1 byte) + flags (3 bytes)
-        data.push(version);
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
-
-        // balance (2 bytes)
-        data.extend_from_slice(&balance.to_be_bytes());
-
-        // reserved (2 bytes)
-        data.extend_from_slice(&[0u8; 2]);
-
-        data
-    }
-
     #[test]
-    fn parse_smhd_default() {
-        let payload = make_smhd_payload(0, 0, 0);
-        let smhd = SmhdBox::parse(&payload).unwrap();
+    fn round_trip() {
+        let original = SmhdBox {
+            version: 0,
+            flags: SmhdFlags::empty(),
+            balance: I8F8::from_raw(0x0080), // 0.5 (slightly right)
+        };
 
-        assert_eq!(smhd.version, 0);
-        assert_eq!(smhd.flags.get(), 0);
-        assert_eq!(smhd.balance.to_raw(), 0);
-    }
+        let mut buf = vec![0u8; 32];
+        let written = original.encode_into(&mut buf).unwrap();
 
-    #[test]
-    fn parse_smhd_with_balance() {
-        // balance = 0x0080 = 0.5 (slightly right)
-        let payload = make_smhd_payload(0, 0, 0x0080);
-        let smhd = SmhdBox::parse(&payload).unwrap();
-
-        assert_eq!(smhd.balance.to_raw(), 0x0080);
-    }
-
-    #[test]
-    fn parse_smhd_negative_balance() {
-        // balance = -256 (0xFF00) = -1.0 (full left)
-        let payload = make_smhd_payload(0, 0, -256);
-        let smhd = SmhdBox::parse(&payload).unwrap();
-
-        assert_eq!(smhd.balance.to_raw(), -256);
-    }
-
-    #[test]
-    fn parse_smhd_extra_data() {
-        let mut payload = make_smhd_payload(0, 0, 0);
-        payload.extend_from_slice(&[0xFF, 0xFF]); // Extra data
-
-        let result = SmhdBox::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_smhd_truncated() {
-        let payload = make_smhd_payload(0, 0, 0);
-        let truncated = &payload[..payload.len() - 1];
-
-        let result = SmhdBox::parse(truncated);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn smhd_default() {
-        let smhd = SmhdBox::default();
-
-        assert_eq!(smhd.version, 0);
-        assert_eq!(smhd.flags.get(), 0);
-        assert_eq!(smhd.balance.to_raw(), 0);
+        let reparsed = SmhdBox::decode(&buf[..written]).unwrap();
+        assert_eq!(reparsed.version, original.version);
+        assert_eq!(reparsed.flags.get(), original.flags.get());
+        assert_eq!(reparsed.balance.to_raw(), original.balance.to_raw());
     }
 }

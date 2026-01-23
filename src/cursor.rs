@@ -6,7 +6,7 @@ type Result<T> = core::result::Result<T, Error>;
 
 /// Kinds of errors that can occur while reading or writing with a cursor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Error {
+pub enum ErrorKind {
     /// An integer overflow occurred.
     Overflow,
     /// An unexpected end of file was encountered.
@@ -25,25 +25,37 @@ pub enum Error {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Error {
+    pub kind: ErrorKind,
+    pub offset: usize,
+}
+
+impl Error {
+    fn new(kind: ErrorKind, offset: usize) -> Self {
+        Self { kind, offset }
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Overflow => write!(f, "Integer overflow occurred"),
-            Error::UnexpectedEof {
+        match self.kind {
+            ErrorKind::Overflow => write!(f, "Integer overflow occurred at offset {}", self.offset),
+            ErrorKind::UnexpectedEof {
                 expected,
                 remaining,
             } => write!(
                 f,
-                "Unexpected end of file: needed {} bytes but only {} remaining",
-                expected, remaining
+                "Unexpected end of file: needed {} bytes but only {} remaining at offset {}",
+                expected, remaining, self.offset
             ),
-            Error::BufferTooSmall {
+            ErrorKind::BufferTooSmall {
                 expected,
                 remaining,
             } => write!(
                 f,
-                "Buffer too small: needed {} bytes but only {} remaining",
-                expected, remaining
+                "Buffer too small: needed {} bytes but only {} remaining at offset {}",
+                expected, remaining, self.offset
             ),
         }
     }
@@ -52,7 +64,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {}
 
 /// A cursor for reading from a byte slice.
-pub struct ReadCursor<'a> {
+pub(crate) struct ReadCursor<'a> {
     inner: &'a [u8],
     pos: usize,
 }
@@ -67,6 +79,7 @@ impl<'a> ReadCursor<'a> {
         }
     }
 
+    #[allow(dead_code)]
     /// Returns the total length of the inner byte slice.
     #[inline]
     #[track_caller]
@@ -118,12 +131,16 @@ impl<'a> ReadCursor<'a> {
     #[track_caller]
     pub fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let start = self.pos;
-        let end = start.checked_add(n).ok_or(Error::Overflow)?;
-        let bytes = self.inner.get(start..end).ok_or(Error::UnexpectedEof {
-            expected: n,
-            remaining: self.remaining(),
-        })?;
-
+        let end = start
+            .checked_add(n)
+            .ok_or(Error::new(ErrorKind::Overflow, self.pos))?;
+        let bytes = self.inner.get(start..end).ok_or(Error::new(
+            ErrorKind::UnexpectedEof {
+                expected: n,
+                remaining: self.remaining(),
+            },
+            self.pos,
+        ))?;
         self.pos = end;
         Ok(bytes)
     }
@@ -136,10 +153,13 @@ impl<'a> ReadCursor<'a> {
         let rem = self.remaining_slice();
 
         let Some(i) = rem.iter().position(|&b| b == byte) else {
-            return Err(Error::UnexpectedEof {
-                expected: 1,
-                remaining: self.remaining(),
-            });
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof {
+                    expected: 1,
+                    remaining: self.remaining(),
+                },
+                self.pos,
+            ));
         };
 
         let end = start + i;
@@ -220,7 +240,7 @@ impl<'a> ReadCursor<'a> {
 }
 
 /// A cursor for writing to a byte slice.
-pub struct WriteCursor<'a> {
+pub(crate) struct WriteCursor<'a> {
     inner: &'a mut [u8],
     pos: usize,
 }
@@ -235,6 +255,7 @@ impl<'a> WriteCursor<'a> {
         }
     }
 
+    #[allow(dead_code)]
     /// Returns the total length of the inner byte slice.
     #[inline]
     #[track_caller]
@@ -249,30 +270,35 @@ impl<'a> WriteCursor<'a> {
         self.inner.len() - self.pos
     }
 
+    #[allow(dead_code)]
     /// Returns `true` if there are no bytes left to write.
     #[inline]
     pub const fn is_empty(&self) -> bool {
         self.remaining() == 0
     }
 
+    #[allow(dead_code)]
     /// Returns the entire inner byte slice.
     #[inline]
     pub const fn inner(&self) -> &[u8] {
         self.inner
     }
 
+    #[allow(dead_code)]
     /// Returns the entire inner mutable byte slice.
     #[inline]
     pub fn inner_mut(&mut self) -> &mut [u8] {
         self.inner
     }
 
+    #[allow(dead_code)]
     /// Returns the current position of the cursor.
     #[inline]
     pub const fn position(&self) -> usize {
         self.pos
     }
 
+    #[allow(dead_code)]
     /// Sets the current position of the cursor.
     #[inline]
     pub const fn set_position(&mut self, pos: usize) {
@@ -284,12 +310,17 @@ impl<'a> WriteCursor<'a> {
     #[track_caller]
     pub fn take_mut(&mut self, n: usize) -> Result<&mut [u8]> {
         let start = self.pos;
-        let end = start.checked_add(n).ok_or(Error::Overflow)?;
+        let end = start
+            .checked_add(n)
+            .ok_or(Error::new(ErrorKind::Overflow, self.pos))?;
         if end > self.inner.len() {
-            return Err(Error::BufferTooSmall {
-                expected: n,
-                remaining: self.remaining(),
-            });
+            return Err(Error::new(
+                ErrorKind::BufferTooSmall {
+                    expected: n,
+                    remaining: self.remaining(),
+                },
+                self.pos,
+            ));
         }
 
         self.pos = end;
@@ -307,6 +338,7 @@ impl<'a> WriteCursor<'a> {
     }
 
     /// Writes a slice of bytes to the cursor.
+    #[cfg(feature = "alloc")]
     #[inline]
     #[track_caller]
     pub fn write_slice(&mut self, bytes: &[u8]) -> Result<()> {

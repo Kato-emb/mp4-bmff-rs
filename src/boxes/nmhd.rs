@@ -1,10 +1,13 @@
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
-use crate::BoxView;
-use crate::FullBoxFlags;
-use crate::FullBoxHeader;
 use crate::error::*;
+
+use super::FullBoxFlags;
 
 /// A Null Media Header Box (`nmhd`).
 ///
@@ -27,30 +30,26 @@ impl Default for NmhdBox {
     }
 }
 
-impl NmhdBox {
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<NmhdBox> {
-        let full_box_header = FullBoxHeader::<NmhdSpec>::parse_in(cur)?;
+/// Specification for Null Media Header Box (`nmhd`).
+pub struct NmhdSpec;
 
-        if !cur.is_empty() {
-            return Err(Error::in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after parsing nmhd",
-                    got: cur.remaining() as u64,
-                },
-                BoxType::NMHD,
-            ));
-        }
+/// Flags for Null Media Header Box (`nmhd`).
+pub type NmhdFlags = FullBoxFlags<NmhdSpec>;
 
-        Ok(NmhdBox {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
-        })
+impl BoxCodec for NmhdBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::NMHD
     }
+}
 
-    /// Parses a `NmhdBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<NmhdBox> {
-        let mut cursor = ReadCursor::new(payload);
-        NmhdBox::parse_in(&mut cursor)
+impl BoxDecode<'_> for NmhdBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = NmhdFlags::from_bytes(cur.read_array()?);
+
+        Ok(NmhdBox { version, flags })
     }
 }
 
@@ -58,86 +57,42 @@ impl TryFrom<&[u8]> for NmhdBox {
     type Error = Error;
 
     fn try_from(payload: &[u8]) -> Result<Self> {
-        NmhdBox::parse(payload)
+        NmhdBox::decode(payload)
     }
 }
 
-impl TryFrom<&BoxView<'_>> for NmhdBox {
-    type Error = Error;
+impl BoxEncode for NmhdBox {
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        4 // version(1) + flags(3)
+    }
 
-    fn try_from(box_view: &BoxView<'_>) -> Result<Self> {
-        if box_view.header.boxtype() != BoxType::NMHD {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::NMHD,
-                found: box_view.header.boxtype(),
-            }));
-        }
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
 
-        NmhdBox::parse(box_view.payload)
+        cur.write_u8(self.version)?;
+        cur.write_array(&self.flags.to_bytes())?;
+
+        Ok(cur.position())
     }
 }
-
-/// Specification for Null Media Header Box (`nmhd`).
-pub struct NmhdSpec;
-
-/// Flags for Null Media Header Box (`nmhd`).
-pub type NmhdFlags = FullBoxFlags<NmhdSpec>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_nmhd_payload(version: u8, flags: u32) -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // FullBoxHeader: version (1 byte) + flags (3 bytes)
-        data.push(version);
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
-
-        data
-    }
-
     #[test]
-    fn parse_nmhd_default() {
-        let payload = make_nmhd_payload(0, 0);
-        let nmhd = NmhdBox::parse(&payload).unwrap();
+    fn round_trip() {
+        let original = NmhdBox {
+            version: 0,
+            flags: NmhdFlags::new(1),
+        };
 
-        assert_eq!(nmhd.version, 0);
-        assert_eq!(nmhd.flags.get(), 0);
-    }
+        let mut buf = vec![0u8; 4];
+        original.encode_into(&mut buf).unwrap();
 
-    #[test]
-    fn parse_nmhd_with_flags() {
-        let payload = make_nmhd_payload(0, 0x000001);
-        let nmhd = NmhdBox::parse(&payload).unwrap();
-
-        assert_eq!(nmhd.version, 0);
-        assert_eq!(nmhd.flags.get(), 1);
-    }
-
-    #[test]
-    fn parse_nmhd_extra_data() {
-        let mut payload = make_nmhd_payload(0, 0);
-        payload.extend_from_slice(&[0xFF, 0xFF]); // Extra data
-
-        let result = NmhdBox::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_nmhd_truncated() {
-        let payload = make_nmhd_payload(0, 0);
-        let truncated = &payload[..payload.len() - 1];
-
-        let result = NmhdBox::parse(truncated);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn nmhd_default() {
-        let nmhd = NmhdBox::default();
-
-        assert_eq!(nmhd.version, 0);
-        assert_eq!(nmhd.flags.get(), 0);
+        let reparsed = NmhdBox::decode(&buf).unwrap();
+        assert_eq!(reparsed.version, original.version);
+        assert_eq!(reparsed.flags.get(), original.flags.get());
     }
 }

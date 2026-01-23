@@ -1,8 +1,9 @@
 use crate::cursor::ReadCursor;
 use crate::types::FourCC;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::BoxView;
 use crate::error::*;
 
 /// A reference to a Segment Type Box (`styp`).
@@ -22,18 +23,32 @@ impl<'a> StypBoxView<'a> {
             .chunks_exact(4)
             .map(|chunk| FourCC::new([chunk[0], chunk[1], chunk[2], chunk[3]]))
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StypBoxView<'a>> {
+impl<'a> TryFrom<&'a [u8]> for StypBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        StypBoxView::decode(value)
+    }
+}
+
+impl BoxCodec for StypBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::STYP
+    }
+}
+
+impl<'de> BoxDecode<'de> for StypBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
         // Read major_brand (4 bytes)
-        let major_brand = cur
-            .read_array::<4>()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let major_brand = cur.read_array::<4>()?;
         let major_brand = FourCC::new(major_brand);
 
         // Read minor_version (4 bytes)
-        let minor_version = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let minor_version = cur.read_u32_be()?;
 
         // The remaining bytes are compatible_brands
         let remaining = cur.remaining();
@@ -56,37 +71,6 @@ impl<'a> StypBoxView<'a> {
             compatible_brands,
         })
     }
-
-    /// Parses a `StypBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<StypBoxView<'a>> {
-        let mut cursor = ReadCursor::new(payload);
-        let this = StypBoxView::parse_in(&mut cursor)?;
-
-        Ok(this)
-    }
-}
-
-impl<'a> TryFrom<&'a [u8]> for StypBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &'a [u8]) -> Result<Self> {
-        StypBoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<BoxView<'a>> for StypBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::STYP {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::STYP,
-                found: value.header.boxtype(),
-            }));
-        }
-
-        StypBoxView::parse(value.payload)
-    }
 }
 
 #[cfg(feature = "alloc")]
@@ -95,6 +79,9 @@ pub use owned::StypBox;
 #[cfg(feature = "alloc")]
 mod owned {
     use crate::lib::Vec;
+
+    use crate::BoxEncode;
+    use crate::cursor::WriteCursor;
 
     use super::*;
 
@@ -109,9 +96,8 @@ mod owned {
         pub compatible_brands: Vec<FourCC>,
     }
 
-    impl StypBox {
-        /// Creates a `StypBox` from a `StypBoxView`.
-        pub fn from_view(view: &StypBoxView) -> Self {
+    impl From<StypBoxView<'_>> for StypBox {
+        fn from(view: StypBoxView) -> Self {
             let compatible_brands = view.compatible_brands().collect::<Vec<FourCC>>();
 
             StypBox {
@@ -120,24 +106,44 @@ mod owned {
                 compatible_brands,
             }
         }
+    }
 
-        /// Parses a `StypBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<Self> {
-            let styp_view = StypBoxView::parse(payload)?;
-            Ok(Self::from_view(&styp_view))
+    impl BoxCodec for StypBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::STYP
         }
     }
 
-    impl StypBoxView<'_> {
-        /// Converts this `StypBoxView` into an owned `StypBox`.
-        pub fn to_owned(&self) -> StypBox {
-            StypBox::from_view(self)
+    impl BoxDecode<'_> for StypBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = StypBoxView::decode(bytes)?;
+            Ok(StypBox::from(view))
         }
     }
 
-    impl From<StypBoxView<'_>> for StypBox {
-        fn from(view: StypBoxView) -> Self {
-            Self::from_view(&view)
+    impl BoxEncode for StypBox {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            4 // major_brand
+                + 4 // minor_version
+                + self.compatible_brands.len() * 4 // compatible_brands
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            // Write major_brand (4 bytes)
+            cur.write_array(self.major_brand.as_bytes())?;
+
+            // Write minor_version (4 bytes)
+            cur.write_u32_be(self.minor_version)?;
+
+            // Write compatible_brands
+            for brand in &self.compatible_brands {
+                cur.write_array(brand.as_bytes())?;
+            }
+
+            Ok(cur.position())
         }
     }
 }
@@ -146,29 +152,30 @@ mod owned {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "alloc")]
     #[test]
-    fn test_styp_box_ref_parse() {
-        let data: [u8; 20] = [
-            b'i', b's', b'o', b'm', // major_brand
-            0x00, 0x00, 0x02, 0x00, // minor_version (512)
-            b'i', b's', b'o', b'm', // compatible_brand 1
-            b'i', b's', b'o', b'6', // compatible_brand 2
-            b'm', b's', b'd', b'h', // compatible_brand 3
-        ];
+    fn styp_box_round_trip() {
+        use crate::BoxEncode;
 
-        let styp_view = StypBoxView::parse(&data).unwrap();
-
-        assert_eq!(styp_view.major_brand, FourCC::new(*b"isom"));
-        assert_eq!(styp_view.minor_version, 512);
-
-        let compatible_brands: Vec<FourCC> = styp_view.compatible_brands().collect();
-        assert_eq!(
-            compatible_brands,
-            vec![
+        let original = StypBox {
+            major_brand: FourCC::new(*b"isom"),
+            minor_version: 512,
+            compatible_brands: vec![
                 FourCC::new(*b"isom"),
                 FourCC::new(*b"iso6"),
                 FourCC::new(*b"msdh"),
-            ]
-        );
+            ],
+        };
+
+        // Write
+        let mut buf = vec![0u8; 256];
+        let written = original.encode_into(&mut buf).unwrap();
+
+        // Parse
+        let reparsed = StypBox::decode(&buf[..written]).unwrap();
+
+        assert_eq!(reparsed.major_brand, original.major_brand);
+        assert_eq!(reparsed.minor_version, original.minor_version);
+        assert_eq!(reparsed.compatible_brands, original.compatible_brands);
     }
 }

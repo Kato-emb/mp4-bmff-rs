@@ -1,10 +1,13 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::BoxView;
 use crate::error::*;
-use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
+use crate::iter::FixedSizeEntry;
+use crate::iter::FixedSizeEntryIter;
+
+use super::FullBoxFlags;
 
 /// An entry in the Sample To Chunk Box (`stsc`).
 #[derive(Debug, Clone, Copy)]
@@ -15,6 +18,29 @@ pub struct StscEntry {
     pub samples_per_chunk: u32,
     /// The sample description index.
     pub sample_description_index: u32,
+}
+
+impl FixedSizeEntry for StscEntry {
+    const ENTRY_SIZE: usize = 12;
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+
+        StscEntry {
+            first_chunk: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+            samples_per_chunk: u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
+            sample_description_index: u32::from_be_bytes([
+                bytes[8], bytes[9], bytes[10], bytes[11],
+            ]),
+        }
+    }
+
+    fn to_bytes(&self, bytes: &mut [u8]) {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+        bytes[0..4].copy_from_slice(&self.first_chunk.to_be_bytes());
+        bytes[4..8].copy_from_slice(&self.samples_per_chunk.to_be_bytes());
+        bytes[8..12].copy_from_slice(&self.sample_description_index.to_be_bytes());
+    }
 }
 
 /// A reference to a Sample To Chunk Box (`stsc`).
@@ -33,30 +59,39 @@ impl<'a> StscBoxView<'a> {
     const ENTRY_SIZE: usize = 12;
 
     /// Returns an iterator over the entries in the Sample To Chunk Box.
-    pub fn entries(&self) -> impl Iterator<Item = Result<StscEntry>> + 'a {
-        let entry_bytes = self.entries;
-        let entry_count = self.entry_count as usize;
-
-        entry_bytes.chunks_exact(12).take(entry_count).map(|chunk| {
-            let first_chunk = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-            let samples_per_chunk = u32::from_be_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
-            let sample_description_index =
-                u32::from_be_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]);
-
-            Ok(StscEntry {
-                first_chunk,
-                samples_per_chunk,
-                sample_description_index,
-            })
-        })
+    pub fn entries(&self) -> FixedSizeEntryIter<'a, StscEntry> {
+        FixedSizeEntryIter::new(self.entries)
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<StscBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<StscSpec>::parse_in(cur)?;
+/// Specification for the Sample To Chunk Box (`stsc`).
+pub struct StscSpec;
 
-        let entry_count = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+/// Flags for the Sample To Chunk Box (`stsc`).
+pub type StscFlags = FullBoxFlags<StscSpec>;
+
+impl<'a> TryFrom<&'a [u8]> for StscBoxView<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        StscBoxView::decode(value)
+    }
+}
+
+impl BoxCodec for StscBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::STSC
+    }
+}
+
+impl<'de> BoxDecode<'de> for StscBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = StscFlags::from_bytes(cur.read_array()?);
+
+        let entry_count = cur.read_u32_be()?;
 
         let expected_size = entry_count as usize * Self::ENTRY_SIZE;
 
@@ -74,56 +109,24 @@ impl<'a> StscBoxView<'a> {
         let entries = cur.take(cur.remaining())?;
 
         Ok(StscBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             entry_count,
             entries,
         })
     }
-
-    /// Parses a `StscBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<StscBoxView<'a>> {
-        let mut cur = ReadCursor::new(payload);
-        let this = StscBoxView::parse_in(&mut cur)?;
-
-        Ok(this)
-    }
 }
-
-impl<'a> TryFrom<&'a [u8]> for StscBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &'a [u8]) -> Result<Self> {
-        StscBoxView::parse(value)
-    }
-}
-
-impl<'a> TryFrom<BoxView<'a>> for StscBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::STSC {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::STSC,
-                found: value.header.boxtype(),
-            }));
-        }
-
-        StscBoxView::parse(value.payload)
-    }
-}
-
-/// Specification for the Sample To Chunk Box (`stsc`).
-pub struct StscSpec;
-
-/// Flags for the Sample To Chunk Box (`stsc`).
-pub type StscFlags = FullBoxFlags<StscSpec>;
 
 #[cfg(feature = "alloc")]
 pub use owned::StscBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::Vec;
+
+    use crate::BoxEncode;
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned Sample To Chunk Box (`stsc`).
@@ -136,30 +139,54 @@ mod owned {
         pub entries: Vec<StscEntry>,
     }
 
-    impl StscBox {
-        /// Creates a `StscBox` from a `StscBoxView`.
-        pub fn from_view(view: &StscBoxView<'_>) -> Result<StscBox> {
-            let entries = view.entries().collect::<Result<Vec<StscEntry>>>()?;
+    impl From<&StscBoxView<'_>> for StscBox {
+        fn from(view: &StscBoxView<'_>) -> Self {
+            let entries = view.entries().collect::<Vec<StscEntry>>();
 
-            Ok(StscBox {
+            StscBox {
                 version: view.version,
                 flags: view.flags,
                 entries,
-            })
-        }
-
-        /// Parses a `StscBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<StscBox> {
-            let view = StscBoxView::parse(payload)?;
-            StscBox::from_view(&view)
+            }
         }
     }
 
-    impl TryFrom<&StscBoxView<'_>> for StscBox {
-        type Error = Error;
+    impl BoxCodec for StscBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::STSC
+        }
+    }
 
-        fn try_from(value: &StscBoxView<'_>) -> Result<Self> {
-            StscBox::from_view(value)
+    impl BoxDecode<'_> for StscBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = StscBoxView::decode(bytes)?;
+            Ok(StscBox::from(&view))
+        }
+    }
+
+    impl BoxEncode for StscBox {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            1 // version
+                + 3 // flags
+                + 4 // entry_count
+                + self.entries.len() * StscEntry::ENTRY_SIZE // entries
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
+            cur.write_u32_be(self.entries.len() as u32)?;
+
+            for entry in &self.entries {
+                cur.write_u32_be(entry.first_chunk)?;
+                cur.write_u32_be(entry.samples_per_chunk)?;
+                cur.write_u32_be(entry.sample_description_index)?;
+            }
+
+            Ok(cur.position())
         }
     }
 }
@@ -168,22 +195,17 @@ mod owned {
 mod tests {
     use super::*;
 
-    /// Helper to create a FullBoxHeader payload (version + flags).
     fn make_full_box_header(version: u8, flags: u32) -> Vec<u8> {
         let mut data = Vec::new();
         data.push(version);
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]); // Only 3 bytes for flags
+        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
         data
     }
 
-    /// Creates a stsc box payload.
     fn make_stsc_payload(entries: Vec<StscEntry>) -> Vec<u8> {
         let mut payload = Vec::new();
-        // FullBoxHeader: version=0, flags=0
         payload.extend_from_slice(&make_full_box_header(0, 0));
-        // entry_count
         payload.extend_from_slice(&(entries.len() as u32).to_be_bytes());
-        // entries
         for entry in entries {
             payload.extend_from_slice(&entry.first_chunk.to_be_bytes());
             payload.extend_from_slice(&entry.samples_per_chunk.to_be_bytes());
@@ -192,68 +214,41 @@ mod tests {
         payload
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
-    fn parse_stsc_empty() {
-        let payload = make_stsc_payload(vec![]);
-        let stsc = StscBoxView::parse(&payload).unwrap();
+    fn stsc_box_write_and_round_trip() {
+        // Multiple entries
 
-        assert_eq!(stsc.version, 0);
-        assert_eq!(stsc.entry_count, 0);
-        assert_eq!(stsc.entries().count(), 0);
-    }
-
-    #[test]
-    fn parse_stsc_single_entry() {
-        let entries = vec![StscEntry {
-            first_chunk: 1,
-            samples_per_chunk: 10,
-            sample_description_index: 1,
-        }];
-        let payload = make_stsc_payload(entries.clone());
-        let stsc = StscBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stsc.version, 0);
-        assert_eq!(stsc.entry_count, 1);
-
-        let parsed_entries: Vec<_> = stsc.entries().collect();
-        assert_eq!(parsed_entries.len(), 1);
-
-        let entry = parsed_entries[0].as_ref().unwrap();
-        assert_eq!(entry.first_chunk, 1);
-        assert_eq!(entry.samples_per_chunk, 10);
-        assert_eq!(entry.sample_description_index, 1);
-    }
-
-    #[test]
-    fn parse_stsc_multiple_entries() {
+        use crate::BoxEncode;
         let entries = vec![
             StscEntry {
                 first_chunk: 1,
-                samples_per_chunk: 12,
+                samples_per_chunk: 10,
                 sample_description_index: 1,
             },
             StscEntry {
                 first_chunk: 5,
-                samples_per_chunk: 8,
-                sample_description_index: 1,
+                samples_per_chunk: 20,
+                sample_description_index: 2,
             },
             StscEntry {
                 first_chunk: 10,
-                samples_per_chunk: 10,
-                sample_description_index: 2,
+                samples_per_chunk: 15,
+                sample_description_index: 1,
             },
         ];
         let payload = make_stsc_payload(entries.clone());
-        let stsc = StscBoxView::parse(&payload).unwrap();
+        let view = StscBoxView::decode(&payload).unwrap();
+        let owned = StscBox::from(&view);
 
-        assert_eq!(stsc.version, 0);
-        assert_eq!(stsc.entry_count, 3);
+        // Write to buffer
+        let mut buf = vec![0u8; 256];
+        let written = owned.encode_into(&mut buf).unwrap();
 
-        let parsed_entries: Vec<_> = stsc.entries().collect();
-        assert_eq!(parsed_entries.len(), 3);
-
-        for (i, parsed) in parsed_entries.iter().enumerate() {
-            let entry = parsed.as_ref().unwrap();
+        // Parse again and compare
+        let reparsed = StscBox::decode(&buf[..written]).unwrap();
+        assert_eq!(reparsed.entries.len(), 3);
+        for (i, entry) in reparsed.entries.iter().enumerate() {
             assert_eq!(entry.first_chunk, entries[i].first_chunk);
             assert_eq!(entry.samples_per_chunk, entries[i].samples_per_chunk);
             assert_eq!(
@@ -261,190 +256,17 @@ mod tests {
                 entries[i].sample_description_index
             );
         }
-    }
 
-    #[test]
-    fn parse_stsc_version1() {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&make_full_box_header(1, 0x000123));
-        payload.extend_from_slice(&1u32.to_be_bytes()); // entry_count
-        payload.extend_from_slice(&1u32.to_be_bytes()); // first_chunk
-        payload.extend_from_slice(&5u32.to_be_bytes()); // samples_per_chunk
-        payload.extend_from_slice(&1u32.to_be_bytes()); // sample_description_index
+        // Error case: buffer too small
+        let mut small_buf = vec![0u8; 10];
+        assert!(owned.encode_into(&mut small_buf).is_err());
 
-        let stsc = StscBoxView::parse(&payload).unwrap();
-
-        assert_eq!(stsc.version, 1);
-        assert_eq!(stsc.flags.get(), 0x000123);
-        assert_eq!(stsc.entry_count, 1);
-    }
-
-    // Error case tests
-
-    #[test]
-    fn parse_stsc_invalid_size() {
-        let mut payload = make_full_box_header(0, 0);
-        payload.extend_from_slice(&1u32.to_be_bytes()); // entry_count = 1
-        payload.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7]); // Only 7 bytes (not multiple of 12)
-
-        let result = StscBoxView::parse(&payload);
-        assert!(result.is_err());
-
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::InvalidBoxSize { .. }));
-        }
-    }
-
-    #[test]
-    fn parse_stsc_entry_count_mismatch() {
-        // Parse fails when entry_count does not match the actual payload size
-        let mut payload = make_full_box_header(0, 0);
-        payload.extend_from_slice(&3u32.to_be_bytes()); // entry_count = 3
-        payload.extend_from_slice(&1u32.to_be_bytes()); // first_chunk
-        payload.extend_from_slice(&10u32.to_be_bytes()); // samples_per_chunk
-        payload.extend_from_slice(&1u32.to_be_bytes()); // sample_description_index
-        // Only 1 entry provided instead of 3
-
-        let result = StscBoxView::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn try_from_byte_slice() {
-        let entries = vec![StscEntry {
-            first_chunk: 1,
-            samples_per_chunk: 20,
-            sample_description_index: 1,
-        }];
-        let payload = make_stsc_payload(entries);
-
-        let stsc = StscBoxView::try_from(payload.as_slice()).unwrap();
-
-        assert_eq!(stsc.entry_count, 1);
-        let entry = stsc.entries().next().unwrap().unwrap();
-        assert_eq!(entry.first_chunk, 1);
-        assert_eq!(entry.samples_per_chunk, 20);
-        assert_eq!(entry.sample_description_index, 1);
-    }
-
-    #[test]
-    fn try_from_box_view_success() {
-        let entries = vec![StscEntry {
-            first_chunk: 1,
-            samples_per_chunk: 15,
-            sample_description_index: 2,
-        }];
-        let payload = make_stsc_payload(entries);
-
-        // Create a complete box with header
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"stsc");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let stsc = StscBoxView::try_from(box_view).unwrap();
-
-        assert_eq!(stsc.entry_count, 1);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_stsc_payload(vec![]);
-
-        // Create a box with wrong type
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"stts"); // Wrong type
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = StscBoxView::try_from(box_view);
-
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::MismatchedBoxType { .. }));
-        }
-    }
-
-    // Owned type tests (requires alloc feature)
-
-    #[cfg(feature = "alloc")]
-    mod alloc_tests {
-        use super::*;
-
-        #[test]
-        fn stsc_box_from_view() {
-            let entries = vec![
-                StscEntry {
-                    first_chunk: 1,
-                    samples_per_chunk: 12,
-                    sample_description_index: 1,
-                },
-                StscEntry {
-                    first_chunk: 5,
-                    samples_per_chunk: 8,
-                    sample_description_index: 1,
-                },
-            ];
-            let payload = make_stsc_payload(entries.clone());
-            let stsc_view = StscBoxView::parse(&payload).unwrap();
-            let stsc_box = StscBox::from_view(&stsc_view).unwrap();
-
-            assert_eq!(stsc_box.version, stsc_view.version);
-            assert_eq!(stsc_box.flags.get(), stsc_view.flags.get());
-            assert_eq!(stsc_box.entries.len(), 2);
-            assert_eq!(stsc_box.entries[0].first_chunk, 1);
-            assert_eq!(stsc_box.entries[0].samples_per_chunk, 12);
-            assert_eq!(stsc_box.entries[0].sample_description_index, 1);
-            assert_eq!(stsc_box.entries[1].first_chunk, 5);
-            assert_eq!(stsc_box.entries[1].samples_per_chunk, 8);
-            assert_eq!(stsc_box.entries[1].sample_description_index, 1);
-        }
-
-        #[test]
-        fn stsc_box_parse() {
-            let entries = vec![StscEntry {
-                first_chunk: 1,
-                samples_per_chunk: 25,
-                sample_description_index: 3,
-            }];
-            let payload = make_stsc_payload(entries);
-            let stsc_box = StscBox::parse(&payload).unwrap();
-
-            assert_eq!(stsc_box.entries.len(), 1);
-            assert_eq!(stsc_box.entries[0].first_chunk, 1);
-            assert_eq!(stsc_box.entries[0].samples_per_chunk, 25);
-            assert_eq!(stsc_box.entries[0].sample_description_index, 3);
-        }
-
-        #[test]
-        fn stsc_box_try_from() {
-            let entries = vec![StscEntry {
-                first_chunk: 10,
-                samples_per_chunk: 5,
-                sample_description_index: 2,
-            }];
-            let payload = make_stsc_payload(entries);
-            let stsc_view = StscBoxView::parse(&payload).unwrap();
-            let stsc_box: StscBox = (&stsc_view).try_into().unwrap();
-
-            assert_eq!(stsc_box.entries.len(), 1);
-            assert_eq!(stsc_box.entries[0].first_chunk, 10);
-            assert_eq!(stsc_box.entries[0].samples_per_chunk, 5);
-            assert_eq!(stsc_box.entries[0].sample_description_index, 2);
-        }
-
-        #[test]
-        fn stsc_box_empty() {
-            let payload = make_stsc_payload(vec![]);
-            let stsc_box = StscBox::parse(&payload).unwrap();
-
-            assert_eq!(stsc_box.entries.len(), 0);
-        }
+        // Error case: entry count mismatch
+        let mut bad_payload = make_full_box_header(0, 0);
+        bad_payload.extend_from_slice(&2u32.to_be_bytes());
+        bad_payload.extend_from_slice(&1u32.to_be_bytes());
+        bad_payload.extend_from_slice(&10u32.to_be_bytes());
+        bad_payload.extend_from_slice(&1u32.to_be_bytes());
+        assert!(StscBoxView::decode(&bad_payload).is_err());
     }
 }

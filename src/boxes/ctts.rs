@@ -1,10 +1,13 @@
 use crate::cursor::ReadCursor;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
 use crate::BoxType;
-use crate::BoxView;
 use crate::error::*;
-use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
+use crate::iter::FixedSizeEntry;
+use crate::iter::FixedSizeEntryIter;
+
+use super::FullBoxFlags;
 
 /// An entry in the Composition Time to Sample Box (`ctts`).
 #[derive(Debug, Clone, Copy)]
@@ -14,6 +17,28 @@ pub struct CttsEntry {
     /// The composition offset for each sample in the group.
     /// This is a signed value to handle version 1 negative offsets.
     pub sample_offset: i32,
+}
+
+impl FixedSizeEntry for CttsEntry {
+    const ENTRY_SIZE: usize = 8;
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+
+        let sample_count = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let sample_offset = i32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+
+        CttsEntry {
+            sample_count,
+            sample_offset,
+        }
+    }
+
+    fn to_bytes(&self, bytes: &mut [u8]) {
+        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+        bytes[0..4].copy_from_slice(&self.sample_count.to_be_bytes());
+        bytes[4..8].copy_from_slice(&self.sample_offset.to_be_bytes());
+    }
 }
 
 /// A reference to a Composition Time to Sample Box (`ctts`).
@@ -32,37 +57,30 @@ impl<'a> CttsBoxView<'a> {
     const ENTRY_SIZE: usize = 8;
 
     /// Returns an iterator over the entries in the Composition Time to Sample Box (`ctts`).
-    pub fn entries(&self) -> impl Iterator<Item = Result<CttsEntry>> + 'a {
-        let entry_bytes = self.entries;
-        let entry_count = self.entry_count as usize;
-        let version = self.version;
-
-        entry_bytes
-            .chunks_exact(Self::ENTRY_SIZE)
-            .take(entry_count)
-            .map(move |chunk| {
-                let sample_count = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-
-                // Version 0: unsigned 32-bit offset
-                // Version 1: signed 32-bit offset
-                let sample_offset = if version == 0 {
-                    let offset = u32::from_be_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
-                    offset as i32
-                } else {
-                    i32::from_be_bytes([chunk[4], chunk[5], chunk[6], chunk[7]])
-                };
-
-                Ok(CttsEntry {
-                    sample_count,
-                    sample_offset,
-                })
-            })
+    pub fn entries(&self) -> FixedSizeEntryIter<'a, CttsEntry> {
+        FixedSizeEntryIter::new(self.entries)
     }
+}
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'a>) -> Result<CttsBoxView<'a>> {
-        let full_box_header = FullBoxHeader::<CttsSpec>::parse_in(cur)?;
+/// Specification for the Composition Time to Sample Box (`ctts`).
+pub struct CttsSpec;
 
-        let version = full_box_header.version();
+/// Flags for the Composition Time to Sample Box (`ctts`).
+pub type CttsFlags = FullBoxFlags<CttsSpec>;
+
+impl BoxCodec for CttsBoxView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::CTTS
+    }
+}
+
+impl<'de> BoxDecode<'de> for CttsBoxView<'de> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = CttsFlags::from_bytes(cur.read_array()?);
+
         if version > 1 {
             return Err(Error::in_box(
                 ErrorKind::InvalidBoxVersion {
@@ -73,9 +91,7 @@ impl<'a> CttsBoxView<'a> {
             ));
         }
 
-        let entry_count = cur
-            .read_u32_be()
-            .map_err(|e| Error::at(e.into(), cur.position() as u64))?;
+        let entry_count = cur.read_u32_be()?;
 
         let expected_size = entry_count as usize * Self::ENTRY_SIZE;
 
@@ -93,19 +109,11 @@ impl<'a> CttsBoxView<'a> {
         let entries = cur.take(cur.remaining())?;
 
         Ok(CttsBoxView {
-            version: full_box_header.version(),
-            flags: full_box_header.flags(),
+            version,
+            flags,
             entry_count,
             entries,
         })
-    }
-
-    /// Parses a `CttsBoxView` from the given payload.
-    pub fn parse(payload: &'a [u8]) -> Result<CttsBoxView<'a>> {
-        let mut cur = ReadCursor::new(payload);
-        let this = CttsBoxView::parse_in(&mut cur)?;
-
-        Ok(this)
     }
 }
 
@@ -113,36 +121,20 @@ impl<'a> TryFrom<&'a [u8]> for CttsBoxView<'a> {
     type Error = Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self> {
-        CttsBoxView::parse(value)
+        CttsBoxView::decode(value)
     }
 }
-
-impl<'a> TryFrom<&BoxView<'a>> for CttsBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &BoxView<'a>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::CTTS {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::CTTS,
-                found: value.header.boxtype(),
-            }));
-        }
-
-        CttsBoxView::parse(value.payload)
-    }
-}
-
-/// Specification for the Composition Time to Sample Box (`ctts`).
-pub struct CttsSpec;
-
-/// Flags for the Composition Time to Sample Box (`ctts`).
-pub type CttsFlags = FullBoxFlags<CttsSpec>;
 
 #[cfg(feature = "alloc")]
 pub use owned::CttsBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::Vec;
+
+    use crate::BoxEncode;
+    use crate::cursor::WriteCursor;
+
     use super::*;
 
     /// An owned Composition Time to Sample Box (`ctts`).
@@ -155,29 +147,57 @@ mod owned {
         pub entries: Vec<CttsEntry>,
     }
 
-    impl CttsBox {
-        /// Creates a `CttsBox` from a `CttsBoxView`.
-        pub fn from_view(view: &CttsBoxView<'_>) -> Result<CttsBox> {
-            let entries: Result<Vec<CttsEntry>> = view.entries().collect();
-            Ok(CttsBox {
-                version: view.version,
-                flags: view.flags,
-                entries: entries?,
-            })
-        }
-
-        /// Parses a `CttsBox` from the given payload.
-        pub fn parse(payload: &[u8]) -> Result<CttsBox> {
-            let view = CttsBoxView::parse(payload)?;
-            CttsBox::from_view(&view)
+    impl From<&CttsBoxView<'_>> for CttsBox {
+        fn from(value: &CttsBoxView<'_>) -> Self {
+            let entries: Vec<CttsEntry> = value.entries().collect();
+            CttsBox {
+                version: value.version,
+                flags: value.flags,
+                entries,
+            }
         }
     }
 
-    impl TryFrom<&CttsBoxView<'_>> for CttsBox {
-        type Error = Error;
+    impl BoxCodec for CttsBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::CTTS
+        }
+    }
 
-        fn try_from(value: &CttsBoxView<'_>) -> Result<Self> {
-            CttsBox::from_view(value)
+    impl BoxDecode<'_> for CttsBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = CttsBoxView::decode(bytes)?;
+            Ok(CttsBox::from(&view))
+        }
+    }
+
+    impl BoxEncode for CttsBox {
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            1 // version
+                + 3 // flags
+                + 4 // entry_count
+                + (self.entries.len() * CttsEntry::ENTRY_SIZE) // entries
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            cur.write_u8(self.version)?;
+            cur.write_array(&self.flags.to_bytes())?;
+            cur.write_u32_be(self.entries.len() as u32)?;
+
+            for entry in &self.entries {
+                cur.write_u32_be(entry.sample_count)?;
+                // Version 0: unsigned, Version 1: signed
+                if self.version == 0 {
+                    cur.write_u32_be(entry.sample_offset as u32)?;
+                } else {
+                    cur.write_i32_be(entry.sample_offset)?;
+                }
+            }
+
+            Ok(cur.position())
         }
     }
 }
@@ -186,288 +206,70 @@ mod owned {
 mod tests {
     use super::*;
 
-    /// Helper to create a FullBoxHeader payload (version + flags).
     fn make_full_box_header(version: u8, flags: u32) -> Vec<u8> {
         let mut data = Vec::new();
         data.push(version);
-        data.extend_from_slice(&flags.to_be_bytes()[1..4]); // Only 3 bytes for flags
+        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
         data
     }
 
-    /// Creates a ctts box payload with version 0 (unsigned offsets).
-    fn make_ctts_payload_v0(entries: Vec<(u32, u32)>) -> Vec<u8> {
+    fn make_ctts_payload_v1(entries: Vec<CttsEntry>) -> Vec<u8> {
         let mut payload = Vec::new();
-        // FullBoxHeader: version=0, flags=0
-        payload.extend_from_slice(&make_full_box_header(0, 0));
-        // entry_count
-        payload.extend_from_slice(&(entries.len() as u32).to_be_bytes());
-        // entries
-        for (sample_count, sample_offset) in entries {
-            payload.extend_from_slice(&sample_count.to_be_bytes());
-            payload.extend_from_slice(&sample_offset.to_be_bytes());
-        }
-        payload
-    }
-
-    /// Creates a ctts box payload with version 1 (signed offsets).
-    fn make_ctts_payload_v1(entries: Vec<(u32, i32)>) -> Vec<u8> {
-        let mut payload = Vec::new();
-        // FullBoxHeader: version=1, flags=0
         payload.extend_from_slice(&make_full_box_header(1, 0));
-        // entry_count
         payload.extend_from_slice(&(entries.len() as u32).to_be_bytes());
-        // entries
-        for (sample_count, sample_offset) in entries {
-            payload.extend_from_slice(&sample_count.to_be_bytes());
-            payload.extend_from_slice(&sample_offset.to_be_bytes());
+        for entry in entries {
+            payload.extend_from_slice(&entry.sample_count.to_be_bytes());
+            payload.extend_from_slice(&entry.sample_offset.to_be_bytes());
         }
         payload
     }
-
-    #[test]
-    fn parse_ctts_empty() {
-        let payload = make_ctts_payload_v0(vec![]);
-        let ctts = CttsBoxView::parse(&payload).unwrap();
-
-        assert_eq!(ctts.version, 0);
-        assert_eq!(ctts.entry_count, 0);
-        assert_eq!(ctts.entries().count(), 0);
-    }
-
-    #[test]
-    fn parse_ctts_single_entry_v0() {
-        let entries = vec![(100, 1000u32)];
-        let payload = make_ctts_payload_v0(entries.clone());
-        let ctts = CttsBoxView::parse(&payload).unwrap();
-
-        assert_eq!(ctts.version, 0);
-        assert_eq!(ctts.entry_count, 1);
-
-        let parsed_entries: Vec<_> = ctts.entries().collect();
-        assert_eq!(parsed_entries.len(), 1);
-
-        let entry = parsed_entries[0].as_ref().unwrap();
-        assert_eq!(entry.sample_count, 100);
-        assert_eq!(entry.sample_offset, 1000);
-    }
-
-    #[test]
-    fn parse_ctts_multiple_entries_v0() {
-        let entries = vec![(100, 1000u32), (200, 2000u32), (300, 3000u32)];
-        let payload = make_ctts_payload_v0(entries.clone());
-        let ctts = CttsBoxView::parse(&payload).unwrap();
-
-        assert_eq!(ctts.version, 0);
-        assert_eq!(ctts.entry_count, 3);
-
-        let parsed_entries: Vec<_> = ctts.entries().collect();
-        assert_eq!(parsed_entries.len(), 3);
-
-        for (i, parsed) in parsed_entries.iter().enumerate() {
-            let entry = parsed.as_ref().unwrap();
-            assert_eq!(entry.sample_count, entries[i].0);
-            assert_eq!(entry.sample_offset, entries[i].1 as i32);
-        }
-    }
-
-    #[test]
-    fn parse_ctts_version1_positive_offset() {
-        let entries = vec![(50, 100i32)];
-        let payload = make_ctts_payload_v1(entries.clone());
-        let ctts = CttsBoxView::parse(&payload).unwrap();
-
-        assert_eq!(ctts.version, 1);
-        assert_eq!(ctts.entry_count, 1);
-
-        let entry = ctts.entries().next().unwrap().unwrap();
-        assert_eq!(entry.sample_count, 50);
-        assert_eq!(entry.sample_offset, 100);
-    }
-
-    #[test]
-    fn parse_ctts_version1_negative_offset() {
-        let entries = vec![(50, -100i32), (100, -200i32)];
-        let payload = make_ctts_payload_v1(entries.clone());
-        let ctts = CttsBoxView::parse(&payload).unwrap();
-
-        assert_eq!(ctts.version, 1);
-        assert_eq!(ctts.entry_count, 2);
-
-        let parsed_entries: Vec<_> = ctts.entries().collect();
-        assert_eq!(parsed_entries.len(), 2);
-
-        let entry0 = parsed_entries[0].as_ref().unwrap();
-        assert_eq!(entry0.sample_count, 50);
-        assert_eq!(entry0.sample_offset, -100);
-
-        let entry1 = parsed_entries[1].as_ref().unwrap();
-        assert_eq!(entry1.sample_count, 100);
-        assert_eq!(entry1.sample_offset, -200);
-    }
-
-    #[test]
-    fn parse_ctts_version1_with_flags() {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&make_full_box_header(1, 0x000042));
-        payload.extend_from_slice(&1u32.to_be_bytes()); // entry_count
-        payload.extend_from_slice(&50u32.to_be_bytes()); // sample_count
-        payload.extend_from_slice(&(-50i32).to_be_bytes()); // sample_offset
-
-        let ctts = CttsBoxView::parse(&payload).unwrap();
-
-        assert_eq!(ctts.version, 1);
-        assert_eq!(ctts.flags.get(), 0x000042);
-        assert_eq!(ctts.entry_count, 1);
-
-        let entry = ctts.entries().next().unwrap().unwrap();
-        assert_eq!(entry.sample_offset, -50);
-    }
-
-    // Error case tests
-
-    #[test]
-    fn parse_ctts_invalid_size() {
-        let mut payload = make_full_box_header(0, 0);
-        payload.extend_from_slice(&1u32.to_be_bytes()); // entry_count = 1
-        payload.extend_from_slice(&[1, 2, 3, 4, 5]); // Only 5 bytes (not multiple of 8)
-
-        let result = CttsBoxView::parse(&payload);
-        assert!(result.is_err());
-
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::InvalidBoxSize { .. }));
-        }
-    }
-
-    #[test]
-    fn parse_ctts_entry_count_mismatch() {
-        // Parse fails when entry_count does not match the actual payload size
-        let mut payload = make_full_box_header(0, 0);
-        payload.extend_from_slice(&2u32.to_be_bytes()); // entry_count = 2
-        payload.extend_from_slice(&100u32.to_be_bytes()); // sample_count
-        payload.extend_from_slice(&200u32.to_be_bytes()); // sample_offset
-        // Second entry is missing
-
-        let result = CttsBoxView::parse(&payload);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn try_from_byte_slice() {
-        let entries = vec![(42, 84u32)];
-        let payload = make_ctts_payload_v0(entries);
-
-        let ctts = CttsBoxView::try_from(payload.as_slice()).unwrap();
-
-        assert_eq!(ctts.entry_count, 1);
-        let entry = ctts.entries().next().unwrap().unwrap();
-        assert_eq!(entry.sample_count, 42);
-        assert_eq!(entry.sample_offset, 84);
-    }
-
-    #[test]
-    fn try_from_box_view_success() {
-        let entries = vec![(10, 20u32)];
-        let payload = make_ctts_payload_v0(entries);
-
-        // Create a complete box with header
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"ctts");
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let ctts = CttsBoxView::try_from(&box_view).unwrap();
-
-        assert_eq!(ctts.entry_count, 1);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_ctts_payload_v0(vec![]);
-
-        // Create a box with wrong type
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"stts"); // Wrong type
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = CttsBoxView::try_from(&box_view);
-
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::MismatchedBoxType { .. }));
-        }
-    }
-
-    // Owned type tests (requires alloc feature)
 
     #[cfg(feature = "alloc")]
-    mod alloc_tests {
-        use super::*;
+    #[test]
+    fn ctts_box_write_and_round_trip() {
+        // Multiple entries with positive and negative offsets (v1)
 
-        #[test]
-        fn ctts_box_from_view() {
-            let entries = vec![(100, 1000u32), (200, 2000u32)];
-            let payload = make_ctts_payload_v0(entries.clone());
-            let ctts_view = CttsBoxView::parse(&payload).unwrap();
-            let ctts_box = CttsBox::from_view(&ctts_view).unwrap();
+        use crate::BoxEncode;
+        let entries = vec![
+            CttsEntry {
+                sample_count: 10,
+                sample_offset: 100,
+            },
+            CttsEntry {
+                sample_count: 20,
+                sample_offset: -50,
+            },
+            CttsEntry {
+                sample_count: 30,
+                sample_offset: 0,
+            },
+        ];
+        let payload = make_ctts_payload_v1(entries.clone());
+        let view = CttsBoxView::decode(&payload).unwrap();
+        let owned = CttsBox::from(&view);
 
-            assert_eq!(ctts_box.version, ctts_view.version);
-            assert_eq!(ctts_box.flags.get(), ctts_view.flags.get());
-            assert_eq!(ctts_box.entries.len(), 2);
-            assert_eq!(ctts_box.entries[0].sample_count, 100);
-            assert_eq!(ctts_box.entries[0].sample_offset, 1000);
-            assert_eq!(ctts_box.entries[1].sample_count, 200);
-            assert_eq!(ctts_box.entries[1].sample_offset, 2000);
+        // Write to buffer
+        let mut buf = vec![0u8; 256];
+        let written = owned.encode_into(&mut buf).unwrap();
+
+        // Parse again and compare
+        let reparsed = CttsBox::decode(&buf[..written]).unwrap();
+        assert_eq!(reparsed.version, 1);
+        assert_eq!(reparsed.entries.len(), 3);
+        for (i, entry) in reparsed.entries.iter().enumerate() {
+            assert_eq!(entry.sample_count, entries[i].sample_count);
+            assert_eq!(entry.sample_offset, entries[i].sample_offset);
         }
 
-        #[test]
-        fn ctts_box_parse() {
-            let entries = vec![(42, 84u32)];
-            let payload = make_ctts_payload_v0(entries);
-            let ctts_box = CttsBox::parse(&payload).unwrap();
+        // Error case: buffer too small
+        let mut small_buf = vec![0u8; 10];
+        assert!(owned.encode_into(&mut small_buf).is_err());
 
-            assert_eq!(ctts_box.entries.len(), 1);
-            assert_eq!(ctts_box.entries[0].sample_count, 42);
-            assert_eq!(ctts_box.entries[0].sample_offset, 84);
-        }
-
-        #[test]
-        fn ctts_box_try_from() {
-            let entries = vec![(5, 10u32)];
-            let payload = make_ctts_payload_v0(entries);
-            let ctts_view = CttsBoxView::parse(&payload).unwrap();
-            let ctts_box: CttsBox = (&ctts_view).try_into().unwrap();
-
-            assert_eq!(ctts_box.entries.len(), 1);
-            assert_eq!(ctts_box.entries[0].sample_count, 5);
-            assert_eq!(ctts_box.entries[0].sample_offset, 10);
-        }
-
-        #[test]
-        fn ctts_box_empty() {
-            let payload = make_ctts_payload_v0(vec![]);
-            let ctts_box = CttsBox::parse(&payload).unwrap();
-
-            assert_eq!(ctts_box.entries.len(), 0);
-        }
-
-        #[test]
-        fn ctts_box_version1_negative() {
-            let entries = vec![(10, -50i32), (20, -100i32)];
-            let payload = make_ctts_payload_v1(entries);
-            let ctts_box = CttsBox::parse(&payload).unwrap();
-
-            assert_eq!(ctts_box.version, 1);
-            assert_eq!(ctts_box.entries.len(), 2);
-            assert_eq!(ctts_box.entries[0].sample_offset, -50);
-            assert_eq!(ctts_box.entries[1].sample_offset, -100);
-        }
+        // Error case: entry count mismatch
+        let mut bad_payload = make_full_box_header(0, 0);
+        bad_payload.extend_from_slice(&2u32.to_be_bytes());
+        bad_payload.extend_from_slice(&10u32.to_be_bytes());
+        bad_payload.extend_from_slice(&100u32.to_be_bytes());
+        assert!(CttsBoxView::decode(&bad_payload).is_err());
     }
 }

@@ -1,10 +1,13 @@
 use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
+use crate::BoxCodec;
+use crate::BoxDecode;
+use crate::BoxEncode;
 use crate::BoxType;
-use crate::BoxView;
 use crate::error::*;
-use crate::header::FullBoxFlags;
-use crate::header::FullBoxHeader;
+
+use super::FullBoxFlags;
 
 /// Composition to Decode Timeline Mapping Box (`cslg`).
 ///
@@ -27,10 +30,18 @@ pub struct CslgBox {
     pub composition_end_time: i64,
 }
 
-impl CslgBox {
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
-        let full_box_header = FullBoxHeader::<CslgSpec>::parse_in(cur)?;
-        let version = full_box_header.version();
+impl BoxCodec for CslgBox {
+    fn boxtype(&self) -> BoxType {
+        BoxType::CSLG
+    }
+}
+
+impl BoxDecode<'_> for CslgBox {
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+
+        let version = cur.read_u8()?;
+        let flags = CslgFlags::from_bytes(cur.read_array()?);
 
         let (
             composition_to_dts_shift,
@@ -40,33 +51,18 @@ impl CslgBox {
             composition_end_time,
         ) = match version {
             0 => (
-                cur.read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as i64,
-                cur.read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as i64,
-                cur.read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as i64,
-                cur.read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as i64,
-                cur.read_i32_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?
-                    as i64,
+                cur.read_i32_be()? as i64,
+                cur.read_i32_be()? as i64,
+                cur.read_i32_be()? as i64,
+                cur.read_i32_be()? as i64,
+                cur.read_i32_be()? as i64,
             ),
             1 => (
-                cur.read_i64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-                cur.read_i64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-                cur.read_i64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-                cur.read_i64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
-                cur.read_i64_be()
-                    .map_err(|e| Error::at(e.into(), cur.position() as u64))?,
+                cur.read_i64_be()?,
+                cur.read_i64_be()?,
+                cur.read_i64_be()?,
+                cur.read_i64_be()?,
+                cur.read_i64_be()?,
             ),
             v => {
                 return Err(Error::in_box(
@@ -79,20 +75,9 @@ impl CslgBox {
             }
         };
 
-        if !cur.is_empty() {
-            return Err(Error::at_in_box(
-                ErrorKind::InvalidBoxSize {
-                    reason: "Extra data after cslg fields",
-                    got: cur.remaining() as u64,
-                },
-                cur.position() as u64,
-                BoxType::CSLG,
-            ));
-        }
-
         Ok(CslgBox {
             version,
-            flags: full_box_header.flags(),
+            flags,
             composition_to_dts_shift,
             least_decode_to_display_delta,
             greatest_decode_to_display_delta,
@@ -100,34 +85,51 @@ impl CslgBox {
             composition_end_time,
         })
     }
-
-    /// Parses a `CslgBox` from the given payload.
-    pub fn parse(payload: &[u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(payload);
-        Self::parse_in(&mut cur)
-    }
 }
 
 impl TryFrom<&[u8]> for CslgBox {
     type Error = Error;
 
     fn try_from(value: &[u8]) -> Result<Self> {
-        CslgBox::parse(value)
+        CslgBox::decode(value)
     }
 }
 
-impl TryFrom<&BoxView<'_>> for CslgBox {
-    type Error = Error;
+impl BoxEncode for CslgBox {
+    fn encoded_len(&self) -> usize {
+        let mut size = 1 // version
+            + 3; // flags
 
-    fn try_from(value: &BoxView<'_>) -> Result<Self> {
-        if value.header.boxtype() != BoxType::CSLG {
-            return Err(Error::new(ErrorKind::MismatchedBoxType {
-                expected: BoxType::CSLG,
-                found: value.header.boxtype(),
-            }));
+        size += if self.version == 0 {
+            5 * 4 // five 32-bit fields
+        } else {
+            5 * 8 // five 64-bit fields
+        };
+
+        size
+    }
+
+    fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+        let mut cur = WriteCursor::new(bytes);
+
+        cur.write_u8(self.version)?;
+        cur.write_array(&self.flags.to_bytes())?;
+
+        if self.version == 0 {
+            cur.write_i32_be(self.composition_to_dts_shift as i32)?;
+            cur.write_i32_be(self.least_decode_to_display_delta as i32)?;
+            cur.write_i32_be(self.greatest_decode_to_display_delta as i32)?;
+            cur.write_i32_be(self.composition_start_time as i32)?;
+            cur.write_i32_be(self.composition_end_time as i32)?;
+        } else {
+            cur.write_u64_be(self.composition_to_dts_shift as u64)?;
+            cur.write_u64_be(self.least_decode_to_display_delta as u64)?;
+            cur.write_u64_be(self.greatest_decode_to_display_delta as u64)?;
+            cur.write_u64_be(self.composition_start_time as u64)?;
+            cur.write_u64_be(self.composition_end_time as u64)?;
         }
 
-        CslgBox::parse(value.payload)
+        Ok(cur.position())
     }
 }
 
@@ -139,6 +141,8 @@ pub type CslgFlags = FullBoxFlags<CslgSpec>;
 
 #[cfg(test)]
 mod tests {
+    use crate::RawBoxRef;
+
     use super::*;
 
     fn make_full_box_header(version: u8, flags: u32) -> Vec<u8> {
@@ -185,7 +189,7 @@ mod tests {
     #[test]
     fn parse_cslg_v0() {
         let payload = make_cslg_payload_v0(100, -50, 200, 0, 10000);
-        let cslg = CslgBox::parse(&payload).unwrap();
+        let cslg = CslgBox::decode(&payload).unwrap();
 
         assert_eq!(cslg.version, 0);
         assert_eq!(cslg.composition_to_dts_shift, 100);
@@ -198,7 +202,7 @@ mod tests {
     #[test]
     fn parse_cslg_v0_negative_values() {
         let payload = make_cslg_payload_v0(-100, -200, -50, -1000, 5000);
-        let cslg = CslgBox::parse(&payload).unwrap();
+        let cslg = CslgBox::decode(&payload).unwrap();
 
         assert_eq!(cslg.version, 0);
         assert_eq!(cslg.composition_to_dts_shift, -100);
@@ -217,7 +221,7 @@ mod tests {
             0,
             0x3_0000_0000,
         );
-        let cslg = CslgBox::parse(&payload).unwrap();
+        let cslg = CslgBox::decode(&payload).unwrap();
 
         assert_eq!(cslg.version, 1);
         assert_eq!(cslg.composition_to_dts_shift, 0x1_0000_0000);
@@ -228,24 +232,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_cslg_v0_extra_data() {
-        let mut payload = make_cslg_payload_v0(0, 0, 0, 0, 0);
-        payload.extend_from_slice(&[0, 0, 0, 0]); // Extra data
-
-        let result = CslgBox::parse(&payload);
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::InvalidBoxSize { .. }));
-        }
-    }
-
-    #[test]
     fn parse_cslg_v0_truncated() {
         let mut payload = make_full_box_header(0, 0);
         payload.extend_from_slice(&100i32.to_be_bytes());
         // Missing other fields
 
-        let result = CslgBox::parse(&payload);
+        let result = CslgBox::decode(&payload);
         assert!(result.is_err());
     }
 
@@ -267,30 +259,9 @@ mod tests {
         box_data.extend_from_slice(b"cslg");
         box_data.extend_from_slice(&payload);
 
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let cslg = CslgBox::try_from(&box_view).unwrap();
+        let raw = RawBoxRef::parse(&box_data).unwrap();
+        let cslg = CslgBox::decode(raw.payload()).unwrap();
 
         assert_eq!(cslg.composition_to_dts_shift, 50);
-    }
-
-    #[test]
-    fn try_from_box_view_wrong_type() {
-        let payload = make_cslg_payload_v0(0, 0, 0, 0, 0);
-
-        let mut box_data = Vec::new();
-        let size = 8 + payload.len() as u32;
-        box_data.extend_from_slice(&size.to_be_bytes());
-        box_data.extend_from_slice(b"stts"); // Wrong type
-        box_data.extend_from_slice(&payload);
-
-        let mut cursor = ReadCursor::new(&box_data);
-        let box_view = BoxView::parse_in(&mut cursor).unwrap();
-        let result = CslgBox::try_from(&box_view);
-
-        assert!(result.is_err());
-        if let Err(err) = result {
-            assert!(matches!(err.kind(), ErrorKind::MismatchedBoxType { .. }));
-        }
     }
 }
