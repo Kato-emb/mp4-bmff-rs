@@ -321,6 +321,20 @@ mod owned {
 
             let mut cur = WriteCursor::new(bytes);
 
+            // media header (vmhd, smhd, hmhd, or nmhd)
+            if let Some(vmhd) = &self.vmhd {
+                write_box_in(&mut cur, vmhd)?;
+            }
+            if let Some(smhd) = &self.smhd {
+                write_box_in(&mut cur, smhd)?;
+            }
+            if let Some(hmhd) = &self.hmhd {
+                write_box_in(&mut cur, hmhd)?;
+            }
+            if let Some(nmhd) = &self.nmhd {
+                write_box_in(&mut cur, nmhd)?;
+            }
+
             // dinf
             write_box_in(&mut cur, &self.dinf)?;
             // stbl
