@@ -15,7 +15,16 @@ std = ["alloc"]
 
 [dev-dependencies]
 clap = { version = "4", default-features = false, features = ["std", "derive"] }
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "codec"
+harness = false
 
 [[example]]
 name = "dump"
 path = "./examples/dump.rs"
+
+[[example]]
+name = "remux"
+path = "./examples/remux.rs"
