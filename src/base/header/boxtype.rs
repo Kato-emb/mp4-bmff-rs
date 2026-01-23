@@ -258,10 +258,12 @@ define_box_types! {
     // ISO 14496-15 (AVC/HEVC file format)
     // =========================================================================
 
-    /// AVC Sample Entry Box
-    AVC1 = b"avc1",
     /// AVC Configuration Box
     AVCC = b"avcC",
+    /// AVC Sample Entry Box
+    AVC1 = b"avc1",
+    /// AVC3 Sample Entry Box
+    AVC3 = b"avc3",
 
     // =========================================================================
     // ISO 14496-14 (MP4 file format)

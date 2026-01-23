@@ -9,8 +9,9 @@ use crate::iter::BoxIter;
 
 use super::FullBoxFlags;
 
-use super::Avc1BoxView;
-use super::Mp4aBoxView;
+use crate::boxes::Avc1BoxView;
+use crate::boxes::Avc3BoxView;
+use crate::boxes::Mp4aBoxView;
 
 /// An enum representing the different types of entries in a Sample Description Box (`stsd`).
 #[derive(Debug)]
@@ -19,6 +20,8 @@ pub enum StsdEntryView<'a> {
     Mp4a(Mp4aBoxView<'a>),
     /// An Avc1 Box entry.
     Avc1(Avc1BoxView<'a>),
+    /// An Avc3 Box entry.
+    Avc3(Avc3BoxView<'a>),
     /// An unrecognized box entry.
     Other(RawBoxRef<'a>),
 }
@@ -43,6 +46,7 @@ impl<'a> StsdBoxView<'a> {
             let view = box_result?;
             match view.boxtype() {
                 BoxType::AVC1 => Avc1BoxView::decode(view.into_payload()).map(StsdEntryView::Avc1),
+                BoxType::AVC3 => Avc3BoxView::decode(view.into_payload()).map(StsdEntryView::Avc3),
                 BoxType::MP4A => Mp4aBoxView::decode(view.into_payload()).map(StsdEntryView::Mp4a),
                 _ => Ok(StsdEntryView::Other(view)),
             }
@@ -116,6 +120,7 @@ mod owned {
 
     use super::*;
     use crate::boxes::Avc1Box;
+    use crate::boxes::Avc3Box;
     use crate::boxes::Mp4aBox;
 
     /// An enum representing the different types of entries in a Sample Description Box (`stsd`).
@@ -125,6 +130,8 @@ mod owned {
         Mp4a(Mp4aBox),
         /// An Avc1 Box entry.
         Avc1(Avc1Box),
+        /// An Avc3 Box entry.
+        Avc3(Avc3Box),
         /// An unrecognized box entry.
         Other {
             /// The box type.
@@ -141,6 +148,7 @@ mod owned {
             match value {
                 StsdEntryView::Mp4a(view) => Ok(StsdEntry::Mp4a(Mp4aBox::try_from(view)?)),
                 StsdEntryView::Avc1(view) => Ok(StsdEntry::Avc1(Avc1Box::try_from(view)?)),
+                StsdEntryView::Avc3(view) => Ok(StsdEntry::Avc3(Avc3Box::try_from(view)?)),
                 StsdEntryView::Other(view) => Ok(StsdEntry::Other {
                     boxtype: view.boxtype(),
                     payload: view.payload().to_vec(),
@@ -155,6 +163,7 @@ mod owned {
             match self {
                 StsdEntry::Mp4a(_) => BoxType::MP4A,
                 StsdEntry::Avc1(_) => BoxType::AVC1,
+                StsdEntry::Avc3(_) => BoxType::AVC3,
                 StsdEntry::Other { boxtype, .. } => *boxtype,
             }
         }
@@ -171,6 +180,17 @@ mod owned {
         pub entry_count: u32,
         /// The entries in this Sample Description Box.
         pub entries: Vec<StsdEntry>,
+    }
+
+    impl Default for StsdBox {
+        fn default() -> Self {
+            StsdBox {
+                version: 0,
+                flags: StsdFlags::empty(),
+                entry_count: 0,
+                entries: Vec::new(),
+            }
+        }
     }
 
     impl TryFrom<&StsdBoxView<'_>> for StsdBox {
@@ -221,6 +241,9 @@ mod owned {
                     StsdEntry::Avc1(box_) => {
                         len += boxed_len(box_);
                     }
+                    StsdEntry::Avc3(box_) => {
+                        len += boxed_len(box_);
+                    }
                     StsdEntry::Other {
                         boxtype: _,
                         payload,
@@ -246,6 +269,7 @@ mod owned {
                 match entry {
                     StsdEntry::Mp4a(box_) => write_box_in(&mut cur, box_)?,
                     StsdEntry::Avc1(box_) => write_box_in(&mut cur, box_)?,
+                    StsdEntry::Avc3(box_) => write_box_in(&mut cur, box_)?,
                     StsdEntry::Other {
                         boxtype,
                         payload: _,
