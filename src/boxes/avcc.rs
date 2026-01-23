@@ -19,7 +19,7 @@ pub struct AvcCBoxView<'a> {
     /// AVC Profile Indication
     pub avc_profile_indication: u8,
     /// Profile Compatibility
-    pub avc_profile_compatibility: u8,
+    pub profile_compatibility: u8,
     /// AVC Level Indication
     pub avc_level_indication: u8,
     /// Length Size Minus One
@@ -30,19 +30,30 @@ pub struct AvcCBoxView<'a> {
     /// Number of PPS NAL units
     pub nb_pps_nalus: u8,
     pps: &'a [u8],
-    /// Extensions (optional)
-    pub ext: Option<&'a [u8]>,
+    /// Chroma Format IDC (ISO/IEC 14496-10)
+    pub chroma_format_idc: Option<u8>,
+    /// Bit Depth Luma Minus8
+    pub bit_depth_luma_minus8: Option<u8>,
+    /// Bit Depth Chroma Minus8
+    pub bit_depth_chroma_minus8: Option<u8>,
+    /// SPS extension NAL units (ISO/IEC 14496-10)
+    sps_ext: Option<&'a [u8]>,
 }
 
 impl<'a> AvcCBoxView<'a> {
     /// Returns an iterator over the SPS NAL units
-    pub fn sps(&self) -> impl Iterator<Item = &'a [u8]> {
+    pub fn sps(&self) -> NalUnitIter<'_> {
         NalUnitIter { data: self.sps }
     }
 
     /// Returns an iterator over the PPS NAL units
-    pub fn pps(&self) -> impl Iterator<Item = &'a [u8]> {
+    pub fn pps(&self) -> NalUnitIter<'_> {
         NalUnitIter { data: self.pps }
+    }
+
+    /// Returns an iterator over the SPS extension NAL units, if present
+    pub fn sps_ext(&self) -> Option<NalUnitIter<'_>> {
+        self.sps_ext.map(|data| NalUnitIter { data })
     }
 }
 
@@ -60,13 +71,16 @@ impl<'de> BoxDecode<'de> for AvcCBoxView<'de> {
         let avc_profile_indication = cur.read_u8()?;
         let avc_profile_compatibility = cur.read_u8()?;
         let avc_level_indication = cur.read_u8()?;
+        // reserved (6 bits) | lengthSizeMinusOne (2 bits)
         let length_size_minus_one = cur.read_u8()? & 0x03;
 
         // SPS NAL units
+        // reserved (3 bits) | numOfSequenceParameterSets (5 bits)
         let nb_sps_nalus = cur.read_u8()? & 0x1f;
         let sps_start = cur.position();
         for _ in 0..nb_sps_nalus {
             let sps_length = cur.read_u16_be()? as usize;
+            // bit(8) * sps_length
             cur.advance(sps_length)?;
         }
         let sps = &cur.inner()[sps_start..cur.position()];
@@ -76,28 +90,62 @@ impl<'de> BoxDecode<'de> for AvcCBoxView<'de> {
         let pps_start = cur.position();
         for _ in 0..nb_pps_nalus {
             let pps_length = cur.read_u16_be()? as usize;
+            // bit(8) * pps_length
             cur.advance(pps_length)?;
         }
         let pps = &cur.inner()[pps_start..cur.position()];
 
-        // Extensions (optional)
-        let ext = if !cur.is_empty() {
-            Some(cur.take(cur.remaining())?)
-        } else {
-            None
-        };
+        // Chroma Format IDC and Bit Depths (ISO/IEC 14496-15)
+        let (chroma_format_idc, bit_depth_luma_minus8, bit_depth_chroma_minus8, sps_ext) =
+            if avc_profile_indication == 100
+                || avc_profile_indication == 110
+                || avc_profile_indication == 122
+                || avc_profile_indication == 244
+            {
+                // reserved (6 bits) | chroma_format_idc (2 bits)
+                let chroma_format_idc = cur.read_u8()? & 0x03;
+                // reserved (5 bits) | bit_depth_luma_minus8 (3 bits)
+                let bit_depth_luma_minus8 = cur.read_u8()? & 0x07;
+                // reserved (5 bits) | bit_depth_chroma_minus8 (3 bits)
+                let bit_depth_chroma_minus8 = cur.read_u8()? & 0x07;
+
+                // SPS extension NAL units
+                let sps_ext = if !cur.is_empty() {
+                    let nb_sps_ext = cur.read_u8()?;
+                    let sps_ext_start = cur.position();
+                    for _ in 0..nb_sps_ext {
+                        let len = cur.read_u16_be()? as usize;
+                        cur.advance(len)?;
+                    }
+                    Some(&cur.inner()[sps_ext_start..cur.position()])
+                } else {
+                    None
+                };
+
+                (
+                    Some(chroma_format_idc),
+                    Some(bit_depth_luma_minus8),
+                    Some(bit_depth_chroma_minus8),
+                    sps_ext,
+                )
+            } else {
+                (None, None, None, None)
+            };
 
         Ok(AvcCBoxView {
             configuration_version,
             avc_profile_indication,
-            avc_profile_compatibility,
+            profile_compatibility: avc_profile_compatibility,
             avc_level_indication,
             length_size_minus_one,
             nb_sps_nalus,
             sps,
             nb_pps_nalus,
             pps,
-            ext,
+            chroma_format_idc,
+            bit_depth_luma_minus8,
+            bit_depth_chroma_minus8,
+            sps_ext,
         })
     }
 }
@@ -252,7 +300,7 @@ mod owned {
         /// AVC Profile Indication
         pub avc_profile_indication: u8,
         /// Profile Compatibility
-        pub avc_profile_compatibility: u8,
+        pub profile_compatibility: u8,
         /// AVC Level Indication
         pub avc_level_indication: u8,
         /// Length Size Minus One
@@ -261,25 +309,36 @@ mod owned {
         pub sps: Vec<Vec<u8>>,
         /// Number of PPS NAL units
         pub pps: Vec<Vec<u8>>,
-        /// Extensions (optional)
-        pub ext: Option<Vec<u8>>,
+        /// Chroma Format IDC (ISO/IEC 14496-10)
+        pub chroma_format_idc: Option<u8>,
+        /// Bit Depth Luma Minus8
+        pub bit_depth_luma_minus8: Option<u8>,
+        /// Bit Depth Chroma Minus8
+        pub bit_depth_chroma_minus8: Option<u8>,
+        /// SPS extension NAL units (ISO/IEC 14496-10)
+        pub sps_ext: Option<Vec<Vec<u8>>>,
     }
 
     impl From<&AvcCBoxView<'_>> for AvcCBox {
         fn from(view: &AvcCBoxView<'_>) -> Self {
             let sps = view.sps().map(|nalu| nalu.to_vec()).collect();
             let pps = view.pps().map(|nalu| nalu.to_vec()).collect();
-            let ext = view.ext.map(|e| e.to_vec());
+            let sps_ext = view
+                .sps_ext()
+                .map(|iter| iter.map(|nalu| nalu.to_vec()).collect());
 
             AvcCBox {
                 configuration_version: view.configuration_version,
                 avc_profile_indication: view.avc_profile_indication,
-                avc_profile_compatibility: view.avc_profile_compatibility,
+                profile_compatibility: view.profile_compatibility,
                 avc_level_indication: view.avc_level_indication,
                 length_size_minus_one: view.length_size_minus_one,
                 sps,
                 pps,
-                ext,
+                chroma_format_idc: view.chroma_format_idc,
+                bit_depth_luma_minus8: view.bit_depth_luma_minus8,
+                bit_depth_chroma_minus8: view.bit_depth_chroma_minus8,
+                sps_ext,
             }
         }
     }
@@ -317,9 +376,28 @@ mod owned {
                 len += pps.len();
             }
 
-            // Extensions (optional)
-            if let Some(ext) = &self.ext {
-                len += ext.len();
+            // chroma_format_idc
+            if self.chroma_format_idc.is_some() {
+                len += 1;
+            }
+
+            // bit_depth_luma_minus8
+            if self.bit_depth_luma_minus8.is_some() {
+                len += 1;
+            }
+
+            // bit_depth_chroma_minus8
+            if self.bit_depth_chroma_minus8.is_some() {
+                len += 1;
+            }
+
+            // SPS extension NAL units
+            if let Some(sps_ext) = &self.sps_ext {
+                len += 1; // numOfSequenceParameterSetExt
+                for ext in sps_ext {
+                    len += 2; // length field
+                    len += ext.len();
+                }
             }
 
             len
@@ -330,7 +408,7 @@ mod owned {
 
             cur.write_u8(self.configuration_version)?;
             cur.write_u8(self.avc_profile_indication)?;
-            cur.write_u8(self.avc_profile_compatibility)?;
+            cur.write_u8(self.profile_compatibility)?;
             cur.write_u8(self.avc_level_indication)?;
 
             // reserved (6 bits) | lengthSizeMinusOne (2 bits)
@@ -353,9 +431,31 @@ mod owned {
                 cur.write_slice(pps)?;
             }
 
-            // Extensions (optional)
-            if let Some(ext) = &self.ext {
-                cur.write_slice(ext)?;
+            // Chroma Format IDC and Bit Depths (ISO/IEC 14496-10)
+            if let Some(chroma_format_idc) = self.chroma_format_idc {
+                // reserved (6 bits) | chroma_format_idc (2 bits)
+                cur.write_u8(0xFC | (chroma_format_idc & 0x03))?;
+            }
+
+            if let Some(bit_depth_luma_minus8) = self.bit_depth_luma_minus8 {
+                // reserved (5 bits) | bit_depth_luma_minus8 (3 bits)
+                cur.write_u8(0xF8 | (bit_depth_luma_minus8 & 0x07))?;
+            }
+
+            if let Some(bit_depth_chroma_minus8) = self.bit_depth_chroma_minus8 {
+                // reserved (5 bits) | bit_depth_chroma_minus8 (3 bits)
+                cur.write_u8(0xF8 | (bit_depth_chroma_minus8 & 0x07))?;
+            }
+
+            // SPS extension NAL units
+            if let Some(sps_ext) = &self.sps_ext {
+                // numOfSequenceParameterSetExtLength
+                cur.write_u8(sps_ext.len() as u8)?;
+
+                for ext in sps_ext {
+                    cur.write_u16_be(ext.len() as u16)?;
+                    cur.write_slice(ext)?;
+                }
             }
 
             Ok(cur.position())
@@ -385,7 +485,7 @@ mod owned {
             format!(
                 "avc1.{:02X}{:02X}{:02X}",
                 self.avcc.avc_profile_indication,
-                self.avcc.avc_profile_compatibility,
+                self.avcc.profile_compatibility,
                 self.avcc.avc_level_indication
             )
         }
@@ -397,7 +497,7 @@ mod owned {
             format!(
                 "avc3.{:02X}{:02X}{:02X}",
                 self.avcc.avc_profile_indication,
-                self.avcc.avc_profile_compatibility,
+                self.avcc.profile_compatibility,
                 self.avcc.avc_level_indication
             )
         }
@@ -483,12 +583,20 @@ mod tests {
         result
     }
 
+    struct AvccExt {
+        chroma_format_idc: u8,
+        bit_depth_luma_minus8: u8,
+        bit_depth_chroma_minus8: u8,
+        sps_ext: Vec<Vec<u8>>,
+    }
+
     fn make_avcc_payload(
         profile: u8,
         compatibility: u8,
         level: u8,
         sps_list: &[&[u8]],
         pps_list: &[&[u8]],
+        ext: Option<AvccExt>,
     ) -> Vec<u8> {
         let mut data = vec![
             1,                                    // configurationVersion
@@ -507,6 +615,17 @@ mod tests {
 
         for pps in pps_list {
             data.extend_from_slice(&make_nalu(pps));
+        }
+
+        // Extension fields for High profiles (100, 110, 122, 244)
+        if let Some(ext) = ext {
+            data.push(0xFC | (ext.chroma_format_idc & 0x03));
+            data.push(0xF8 | (ext.bit_depth_luma_minus8 & 0x07));
+            data.push(0xF8 | (ext.bit_depth_chroma_minus8 & 0x07));
+            data.push(ext.sps_ext.len() as u8);
+            for sps_ext in &ext.sps_ext {
+                data.extend_from_slice(&make_nalu(sps_ext));
+            }
         }
 
         data
@@ -550,10 +669,11 @@ mod tests {
         let pps1 = b"pps_one";
         let pps2 = b"pps_two";
 
-        let payload = make_avcc_payload(100, 0, 31, &[sps1, sps2], &[pps1, pps2]);
+        // Use Baseline profile (66) which doesn't require extension fields
+        let payload = make_avcc_payload(66, 0, 31, &[sps1, sps2], &[pps1, pps2], None);
         let avcc = AvcCBoxView::decode(&payload).unwrap();
 
-        assert_eq!(avcc.avc_profile_indication, 100);
+        assert_eq!(avcc.avc_profile_indication, 66);
         assert_eq!(avcc.avc_level_indication, 31);
 
         let sps_list: Vec<_> = avcc.sps().collect();
@@ -561,6 +681,34 @@ mod tests {
 
         let pps_list: Vec<_> = avcc.pps().collect();
         assert_eq!(pps_list, vec![&b"pps_one"[..], &b"pps_two"[..]]);
+
+        assert!(avcc.chroma_format_idc.is_none());
+        assert!(avcc.sps_ext.is_none());
+    }
+
+    #[test]
+    fn avcc_parse_high_profile_with_extensions() {
+        let sps = b"sps_data";
+        let pps = b"pps_data";
+        let sps_ext_data = b"sps_ext";
+
+        let ext = AvccExt {
+            chroma_format_idc: 1,
+            bit_depth_luma_minus8: 0,
+            bit_depth_chroma_minus8: 0,
+            sps_ext: vec![sps_ext_data.to_vec()],
+        };
+
+        let payload = make_avcc_payload(100, 0, 40, &[sps], &[pps], Some(ext));
+        let avcc = AvcCBoxView::decode(&payload).unwrap();
+
+        assert_eq!(avcc.avc_profile_indication, 100);
+        assert_eq!(avcc.chroma_format_idc, Some(1));
+        assert_eq!(avcc.bit_depth_luma_minus8, Some(0));
+        assert_eq!(avcc.bit_depth_chroma_minus8, Some(0));
+
+        let sps_ext_list: Vec<_> = avcc.sps_ext().unwrap().collect();
+        assert_eq!(sps_ext_list, vec![&b"sps_ext"[..]]);
     }
 
     #[test]
@@ -573,7 +721,13 @@ mod tests {
     fn avc1_parse_with_avcc() {
         let sps = b"\x67\x64\x00\x1f";
         let pps = b"\x68\xeb\xe3\xcb";
-        let avcc_payload = make_avcc_payload(100, 0, 31, &[sps], &[pps]);
+        let ext = AvccExt {
+            chroma_format_idc: 1,
+            bit_depth_luma_minus8: 0,
+            bit_depth_chroma_minus8: 0,
+            sps_ext: vec![],
+        };
+        let avcc_payload = make_avcc_payload(100, 0, 31, &[sps], &[pps], Some(ext));
 
         let avcc_size = 8 + avcc_payload.len() as u32;
         let mut avcc_box = make_box_header(avcc_size, b"avcC");
@@ -603,7 +757,13 @@ mod tests {
     fn avc1_box_codec_string() {
         let sps = b"sps";
         let pps = b"pps";
-        let avcc_payload = make_avcc_payload(100, 0, 31, &[sps], &[pps]);
+        let ext = AvccExt {
+            chroma_format_idc: 1,
+            bit_depth_luma_minus8: 0,
+            bit_depth_chroma_minus8: 0,
+            sps_ext: vec![],
+        };
+        let avcc_payload = make_avcc_payload(100, 0, 31, &[sps], &[pps], Some(ext));
 
         let avcc_size = 8 + avcc_payload.len() as u32;
         let mut avcc_box = make_box_header(avcc_size, b"avcC");
@@ -623,7 +783,13 @@ mod tests {
 
         let sps = b"\x67\x64\x00\x1f";
         let pps = b"\x68\xeb\xe3\xcb";
-        let avcc_payload = make_avcc_payload(100, 0, 31, &[sps], &[pps]);
+        let ext = AvccExt {
+            chroma_format_idc: 1,
+            bit_depth_luma_minus8: 0,
+            bit_depth_chroma_minus8: 0,
+            sps_ext: vec![],
+        };
+        let avcc_payload = make_avcc_payload(100, 0, 31, &[sps], &[pps], Some(ext));
 
         let avcc_size = 8 + avcc_payload.len() as u32;
         let mut avcc_box = make_box_header(avcc_size, b"avcC");
@@ -650,5 +816,9 @@ mod tests {
         );
         assert_eq!(reparsed.avcc.sps, original.avcc.sps);
         assert_eq!(reparsed.avcc.pps, original.avcc.pps);
+        assert_eq!(
+            reparsed.avcc.chroma_format_idc,
+            original.avcc.chroma_format_idc
+        );
     }
 }
