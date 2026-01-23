@@ -82,7 +82,7 @@ pub use iter::iter_boxes;
 pub mod boxes;
 pub mod descriptor;
 
-// Re-export owned box types for convenience
+// Re-export owned box types
 #[cfg(feature = "alloc")]
 pub use base::rawbox::RawBoxOwned;
 
