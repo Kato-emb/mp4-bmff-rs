@@ -139,7 +139,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Sync Sample Box (`stss`).
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct StssBox {
         /// The version of the box.
         pub version: u8,
@@ -147,16 +147,6 @@ mod owned {
         pub flags: StssFlags,
         /// The sync sample entries.
         pub entries: Vec<StssEntry>,
-    }
-
-    impl Default for StssBox {
-        fn default() -> Self {
-            StssBox {
-                version: 0,
-                flags: StssFlags::default(),
-                entries: Vec::new(),
-            }
-        }
     }
 
     impl From<&StssBoxView<'_>> for StssBox {

@@ -13,21 +13,12 @@ use super::FullBoxFlags;
 ///
 /// This box is used for tracks that do not otherwise have a specific media header
 /// (neither `vmhd`, `smhd`, nor `hmhd`). This includes some metadata tracks.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct NmhdBox {
     /// Box version (should be 0).
     pub version: u8,
     /// Box flags (should be 0).
     pub flags: NmhdFlags,
-}
-
-impl Default for NmhdBox {
-    fn default() -> Self {
-        NmhdBox {
-            version: 0,
-            flags: NmhdFlags::empty(),
-        }
-    }
 }
 
 /// Specification for Null Media Header Box (`nmhd`).

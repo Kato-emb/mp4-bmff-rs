@@ -120,7 +120,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Chunk Offset Box (`stco`).
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct StcoBox {
         /// The version of the box.
         pub version: u8,
@@ -128,16 +128,6 @@ mod owned {
         pub flags: StcoFlags,
         /// The entries in the box.
         pub entries: Vec<StcoEntry>,
-    }
-
-    impl Default for StcoBox {
-        fn default() -> Self {
-            StcoBox {
-                version: 0,
-                flags: StcoFlags::default(),
-                entries: Vec::new(),
-            }
-        }
     }
 
     impl From<&StcoBoxView<'_>> for StcoBox {

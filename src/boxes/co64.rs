@@ -116,7 +116,7 @@ mod owned {
     use crate::lib::Vec;
 
     /// An owned 64-bit Chunk Offset Box (`co64`).
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct Co64Box {
         /// The version of this box.
         pub version: u8,
@@ -124,16 +124,6 @@ mod owned {
         pub flags: Co64Flags,
         /// The entries of this box.
         pub entries: Vec<Co64Entry>,
-    }
-
-    impl Default for Co64Box {
-        fn default() -> Self {
-            Co64Box {
-                version: 0,
-                flags: Co64Flags::default(),
-                entries: Vec::new(),
-            }
-        }
     }
 
     impl From<&Co64BoxView<'_>> for Co64Box {

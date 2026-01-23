@@ -170,7 +170,7 @@ mod owned {
     }
 
     /// An owned Sample Description Box (`stsd`).
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct StsdBox {
         /// The version of this Sample Description Box.
         pub version: u8,
@@ -180,17 +180,6 @@ mod owned {
         pub entry_count: u32,
         /// The entries in this Sample Description Box.
         pub entries: Vec<StsdEntry>,
-    }
-
-    impl Default for StsdBox {
-        fn default() -> Self {
-            StsdBox {
-                version: 0,
-                flags: StsdFlags::empty(),
-                entry_count: 0,
-                entries: Vec::new(),
-            }
-        }
     }
 
     impl TryFrom<&StsdBoxView<'_>> for StsdBox {

@@ -130,7 +130,7 @@ mod owned {
     use super::*;
 
     /// An owned Sample To Chunk Box (`stsc`).
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct StscBox {
         /// The version of the Sample To Chunk Box.
         pub version: u8,
@@ -138,16 +138,6 @@ mod owned {
         pub flags: StscFlags,
         /// The entries in the Sample To Chunk Box.
         pub entries: Vec<StscEntry>,
-    }
-
-    impl Default for StscBox {
-        fn default() -> Self {
-            StscBox {
-                version: 0,
-                flags: StscFlags::default(),
-                entries: Vec::new(),
-            }
-        }
     }
 
     impl From<&StscBoxView<'_>> for StscBox {

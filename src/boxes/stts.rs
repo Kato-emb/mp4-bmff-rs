@@ -122,7 +122,7 @@ mod owned {
     use super::*;
 
     /// An owned Decoding Time to Sample Box (`stts`).
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct SttsBox {
         /// The version of the box.
         pub version: u8,
@@ -130,16 +130,6 @@ mod owned {
         pub flags: SttsFlags,
         /// The entries in the box.
         pub entries: Vec<SttsEntry>,
-    }
-
-    impl Default for SttsBox {
-        fn default() -> Self {
-            SttsBox {
-                version: 0,
-                flags: SttsFlags::default(),
-                entries: Vec::new(),
-            }
-        }
     }
 
     impl From<&SttsBoxView<'_>> for SttsBox {

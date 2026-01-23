@@ -16,7 +16,7 @@ use super::FullBoxFlags;
 /// This box contains general information, independent of the protocol,
 /// for hint tracks. A hint track should contain either an `hmhd` box or
 /// an `nmhd` box within its Media Information Box.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct HmhdBox {
     /// Box version (should be 0).
     pub version: u8,
@@ -30,19 +30,6 @@ pub struct HmhdBox {
     pub max_bitrate: u32,
     /// Average bitrate in bits per second.
     pub avg_bitrate: u32,
-}
-
-impl Default for HmhdBox {
-    fn default() -> Self {
-        HmhdBox {
-            version: 0,
-            flags: HmhdFlags::empty(),
-            max_pdu_size: 0,
-            avg_pdu_size: 0,
-            max_bitrate: 0,
-            avg_bitrate: 0,
-        }
-    }
 }
 
 impl HmhdBox {
