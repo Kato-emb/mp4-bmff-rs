@@ -126,6 +126,16 @@ mod owned {
         pub entries: Vec<Co64Entry>,
     }
 
+    impl Default for Co64Box {
+        fn default() -> Self {
+            Co64Box {
+                version: 0,
+                flags: Co64Flags::default(),
+                entries: Vec::new(),
+            }
+        }
+    }
+
     impl From<&Co64BoxView<'_>> for Co64Box {
         fn from(view: &Co64BoxView<'_>) -> Self {
             let entries = view.entries().collect::<Vec<_>>();

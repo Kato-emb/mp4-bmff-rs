@@ -14,15 +14,6 @@ use crate::boxes::StssBoxView;
 use crate::boxes::StszBoxView;
 use crate::boxes::SttsBoxView;
 
-/// An enum representing either a `stco` or `co64` chunk offsets box.
-#[derive(Debug)]
-pub enum ChunkOffsetsView<'a> {
-    /// A 32-bit Chunk Offset Box (`stco`).
-    Stco(StcoBoxView<'a>),
-    /// A 64-bit Chunk Offset Box (`co64`).
-    Co64(Co64BoxView<'a>),
-}
-
 /// A reference to a Sample Table Box (`stbl`).
 #[derive(Debug)]
 pub struct StblBoxView<'a> {
@@ -166,41 +157,6 @@ impl<'a> StblBoxView<'a> {
 
         Ok(None)
     }
-
-    /// Returns the Chunk Offsets Box (`stco` or `co64`) if present.
-    pub fn chunk_offsets(&self) -> Result<ChunkOffsetsView<'a>> {
-        let mut chunk_offsets = None;
-
-        for child in self.children() {
-            let child = child?;
-            match child.boxtype() {
-                BoxType::STCO if chunk_offsets.is_none() => {
-                    let stco = StcoBoxView::decode(child.into_payload())?;
-                    chunk_offsets = Some(ChunkOffsetsView::Stco(stco));
-                }
-                BoxType::CO64 if chunk_offsets.is_none() => {
-                    let co64 = Co64BoxView::decode(child.into_payload())?;
-                    chunk_offsets = Some(ChunkOffsetsView::Co64(co64));
-                }
-                BoxType::STCO | BoxType::CO64 => {
-                    return Err(Error::new(ErrorKind::InvalidBoxField {
-                        field: "Chunk offsets",
-                        reason: "multiple chunk offset boxes found",
-                    })
-                    .with_box_type(BoxType::STBL));
-                }
-                _ => continue,
-            }
-        }
-
-        chunk_offsets.ok_or_else(|| {
-            Error::new(ErrorKind::InvalidBoxField {
-                field: "Chunk offsets",
-                reason: "no chunk offset box found",
-            })
-            .with_box_type(BoxType::STBL)
-        })
-    }
 }
 
 impl BoxCodec for StblBoxView<'_> {
@@ -246,23 +202,8 @@ mod owned {
     use crate::boxes::StszBox;
     use crate::boxes::SttsBox;
 
-    #[derive(Debug, Clone)]
-    pub enum ChunkOffsets {
-        Stco(StcoBox),
-        Co64(Co64Box),
-    }
-
-    impl ChunkOffsets {
-        /// Returns the box type for this chunk offsets box.
-        pub fn boxtype(&self) -> BoxType {
-            match self {
-                ChunkOffsets::Stco(_) => BoxType::STCO,
-                ChunkOffsets::Co64(_) => BoxType::CO64,
-            }
-        }
-    }
-
     /// An owned Sample Table Box (`stbl`).
+    #[derive(Debug, Clone)]
     pub struct StblBox {
         /// The Sample Description Box (`stsd`).
         pub stsd: StsdBox,
@@ -278,8 +219,10 @@ mod owned {
         pub stsz: Option<StszBox>,
         /// The Sync Sample Box (`stss`), if present.
         pub stss: Option<StssBox>,
-        /// The Chunk Offset Box (`stco` or `co64`).
-        pub chunk_offsets: ChunkOffsets,
+        /// The Chunk Offsets Box (`stco`), use 32-bit offsets.
+        pub stco: Option<StcoBox>,
+        /// The Chunk Offsets Box (`co64`), use 64-bit offsets.
+        pub co64: Option<Co64Box>,
     }
 
     impl TryFrom<&StblBoxView<'_>> for StblBox {
@@ -293,7 +236,8 @@ mod owned {
             let mut stsc = None;
             let mut stsz = None;
             let mut stss = None;
-            let mut chunk_offsets = None;
+            let mut stco = None;
+            let mut co64 = None;
 
             for child in view.children() {
                 let child = child?;
@@ -326,13 +270,13 @@ mod owned {
                         let stss_view = StssBoxView::decode(child.payload())?;
                         stss = Some(StssBox::from(&stss_view));
                     }
-                    BoxType::STCO if chunk_offsets.is_none() => {
+                    BoxType::STCO if stco.is_none() => {
                         let stco_view = StcoBoxView::decode(child.payload())?;
-                        chunk_offsets = Some(ChunkOffsets::Stco(StcoBox::from(&stco_view)));
+                        stco = Some(StcoBox::from(&stco_view));
                     }
-                    BoxType::CO64 if chunk_offsets.is_none() => {
+                    BoxType::CO64 if co64.is_none() => {
                         let co64_view = Co64BoxView::decode(child.payload())?;
-                        chunk_offsets = Some(ChunkOffsets::Co64(Co64Box::from(&co64_view)));
+                        co64 = Some(Co64Box::from(&co64_view));
                     }
                     BoxType::STSD
                     | BoxType::STTS
@@ -378,13 +322,8 @@ mod owned {
                 ))?,
                 stsz,
                 stss,
-                chunk_offsets: chunk_offsets.ok_or(Error::in_box(
-                    ErrorKind::InvalidBoxField {
-                        field: "Chunk offsets",
-                        reason: "no chunk offset box found",
-                    },
-                    BoxType::STBL,
-                ))?,
+                stco,
+                co64,
             })
         }
     }
@@ -436,10 +375,14 @@ mod owned {
                 len += boxed_len(stss);
             }
 
-            // chunk_offsets
-            match &self.chunk_offsets {
-                ChunkOffsets::Stco(stco) => len += boxed_len(stco),
-                ChunkOffsets::Co64(co64) => len += boxed_len(co64),
+            // stco (opional)
+            if let Some(ref stco) = self.stco {
+                len += boxed_len(stco);
+            }
+
+            // co64 (optional)
+            if let Some(ref co64) = self.co64 {
+                len += boxed_len(co64);
             }
 
             len
@@ -477,13 +420,257 @@ mod owned {
                 write_box_in(&mut cur, stss)?;
             }
 
-            // chunk_offsets
-            match &self.chunk_offsets {
-                ChunkOffsets::Stco(stco) => write_box_in(&mut cur, stco)?,
-                ChunkOffsets::Co64(co64) => write_box_in(&mut cur, co64)?,
+            if self.stco.is_some() && self.co64.is_some() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxField {
+                        field: "Sample Table Box",
+                        reason: "both stco and co64 boxes are present",
+                    },
+                    BoxType::STBL,
+                ));
+            } else if self.stco.is_none() && self.co64.is_none() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxField {
+                        field: "Sample Table Box",
+                        reason: "neither stco nor co64 box is present",
+                    },
+                    BoxType::STBL,
+                ));
+            }
+
+            // stco (opional)
+            if let Some(ref stco) = self.stco {
+                write_box_in(&mut cur, stco)?;
+            }
+
+            // co64 (optional)
+            if let Some(ref co64) = self.co64 {
+                write_box_in(&mut cur, co64)?;
             }
 
             Ok(cur.position())
         }
+    }
+}
+
+#[cfg(all(test, feature = "alloc"))]
+mod tests {
+    use super::*;
+
+    fn make_box(boxtype: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let size = (8 + payload.len()) as u32;
+        let mut data = Vec::new();
+        data.extend_from_slice(&size.to_be_bytes());
+        data.extend_from_slice(boxtype);
+        data.extend_from_slice(payload);
+        data
+    }
+
+    fn make_fullbox_payload(version: u8, flags: u32) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.push(version);
+        data.extend_from_slice(&flags.to_be_bytes()[1..4]);
+        data
+    }
+
+    fn make_stsd_payload() -> Vec<u8> {
+        let mut data = make_fullbox_payload(0, 0);
+        data.extend_from_slice(&0u32.to_be_bytes()); // entry_count
+        data
+    }
+
+    fn make_stts_payload() -> Vec<u8> {
+        let mut data = make_fullbox_payload(0, 0);
+        data.extend_from_slice(&0u32.to_be_bytes()); // entry_count
+        data
+    }
+
+    fn make_stsc_payload() -> Vec<u8> {
+        let mut data = make_fullbox_payload(0, 0);
+        data.extend_from_slice(&0u32.to_be_bytes()); // entry_count
+        data
+    }
+
+    fn make_stco_payload() -> Vec<u8> {
+        let mut data = make_fullbox_payload(0, 0);
+        data.extend_from_slice(&0u32.to_be_bytes()); // entry_count
+        data
+    }
+
+    fn make_co64_payload() -> Vec<u8> {
+        let mut data = make_fullbox_payload(0, 0);
+        data.extend_from_slice(&0u32.to_be_bytes()); // entry_count
+        data
+    }
+
+    fn make_stbl_with_required_boxes() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&make_box(b"stsd", &make_stsd_payload()));
+        data.extend_from_slice(&make_box(b"stts", &make_stts_payload()));
+        data.extend_from_slice(&make_box(b"stsc", &make_stsc_payload()));
+        data
+    }
+
+    #[test]
+    fn decode_missing_stsd_returns_error() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&make_box(b"stts", &make_stts_payload()));
+        payload.extend_from_slice(&make_box(b"stsc", &make_stsc_payload()));
+
+        let view = StblBoxView::decode(&payload).unwrap();
+        let result = StblBox::try_from(&view);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err.kind(), ErrorKind::BoxMissing { required } if required == BoxType::STSD)
+        );
+    }
+
+    #[test]
+    fn decode_missing_stts_returns_error() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&make_box(b"stsd", &make_stsd_payload()));
+        payload.extend_from_slice(&make_box(b"stsc", &make_stsc_payload()));
+
+        let view = StblBoxView::decode(&payload).unwrap();
+        let result = StblBox::try_from(&view);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err.kind(), ErrorKind::BoxMissing { required } if required == BoxType::STTS)
+        );
+    }
+
+    #[test]
+    fn decode_missing_stsc_returns_error() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&make_box(b"stsd", &make_stsd_payload()));
+        payload.extend_from_slice(&make_box(b"stts", &make_stts_payload()));
+
+        let view = StblBoxView::decode(&payload).unwrap();
+        let result = StblBox::try_from(&view);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err.kind(), ErrorKind::BoxMissing { required } if required == BoxType::STSC)
+        );
+    }
+
+    #[test]
+    fn decode_duplicate_box_returns_error() {
+        let mut payload = make_stbl_with_required_boxes();
+        payload.extend_from_slice(&make_box(b"stts", &make_stts_payload()));
+
+        let view = StblBoxView::decode(&payload).unwrap();
+        let result = StblBox::try_from(&view);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err.kind(), ErrorKind::InvalidBoxField { .. }));
+    }
+
+    #[test]
+    fn encode_without_chunk_offset_returns_error() {
+        use crate::BoxEncode;
+        use crate::boxes::{StscBox, StsdBox, SttsBox};
+
+        let stbl = StblBox {
+            stsd: StsdBox {
+                version: 0,
+                flags: Default::default(),
+                entry_count: 0,
+                entries: Vec::new(),
+            },
+            stts: SttsBox::default(),
+            ctts: None,
+            cslg: None,
+            stsc: StscBox::default(),
+            stsz: None,
+            stss: None,
+            stco: None,
+            co64: None,
+        };
+
+        let mut buf = vec![0u8; stbl.encoded_len()];
+        let result = stbl.encode_into(&mut buf);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err.kind(), ErrorKind::InvalidBoxField { reason, .. } if reason.contains("neither"))
+        );
+    }
+
+    #[test]
+    fn encode_with_both_stco_and_co64_returns_error() {
+        use crate::BoxEncode;
+        use crate::boxes::{Co64Box, StcoBox, StscBox, StsdBox, SttsBox};
+
+        let stbl = StblBox {
+            stsd: StsdBox {
+                version: 0,
+                flags: Default::default(),
+                entry_count: 0,
+                entries: Vec::new(),
+            },
+            stts: SttsBox::default(),
+            ctts: None,
+            cslg: None,
+            stsc: StscBox::default(),
+            stsz: None,
+            stss: None,
+            stco: Some(StcoBox::default()),
+            co64: Some(Co64Box::default()),
+        };
+
+        let mut buf = vec![0u8; stbl.encoded_len()];
+        let result = stbl.encode_into(&mut buf);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err.kind(), ErrorKind::InvalidBoxField { reason, .. } if reason.contains("both"))
+        );
+    }
+
+    #[test]
+    fn round_trip_with_stco() {
+        use crate::BoxEncode;
+
+        let mut payload = make_stbl_with_required_boxes();
+        payload.extend_from_slice(&make_box(b"stco", &make_stco_payload()));
+
+        let view = StblBoxView::decode(&payload).unwrap();
+        let original = StblBox::try_from(&view).unwrap();
+
+        let mut encoded = vec![0u8; original.encoded_len()];
+        original.encode_into(&mut encoded).unwrap();
+
+        let decoded = StblBox::decode(&encoded).unwrap();
+
+        assert!(original.stco.is_some() && decoded.stco.is_some());
+        assert!(original.co64.is_none() && decoded.co64.is_none());
+    }
+
+    #[test]
+    fn round_trip_with_co64() {
+        use crate::BoxEncode;
+
+        let mut payload = make_stbl_with_required_boxes();
+        payload.extend_from_slice(&make_box(b"co64", &make_co64_payload()));
+
+        let view = StblBoxView::decode(&payload).unwrap();
+        let original = StblBox::try_from(&view).unwrap();
+
+        let mut encoded = vec![0u8; original.encoded_len()];
+        original.encode_into(&mut encoded).unwrap();
+
+        let decoded = StblBox::decode(&encoded).unwrap();
+
+        assert!(original.stco.is_none() && decoded.stco.is_none());
+        assert!(original.co64.is_some() && decoded.co64.is_some());
     }
 }

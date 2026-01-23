@@ -264,7 +264,6 @@ pub use stsd::StsdEntryView;
 
 // Re-export box utils
 pub use minf::MediaHeader;
-pub use stbl::ChunkOffsetsView;
 
 // Re-export fullbox flags and specs
 pub use co64::{Co64Flags, Co64Spec};
