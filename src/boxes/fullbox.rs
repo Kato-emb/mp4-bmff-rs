@@ -48,6 +48,13 @@ pub struct FullBoxFlags<T> {
     _marker: marker::PhantomData<T>,
 }
 
+impl<T> Default for FullBoxFlags<T> {
+    #[inline]
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 impl<T> FullBoxFlags<T> {
     /// Creates an empty `FullBoxFlags` with all flags cleared.
     #[inline]
