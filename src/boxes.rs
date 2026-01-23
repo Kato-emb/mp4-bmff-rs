@@ -110,8 +110,21 @@
 //! |prft|    |    |    |    |    | | |producer reference time
 //! +----+----+----+----+----+----+-+-+--------------------------------
 //! |stsd|    |    |    |    |    | |○|sample descriptions
-//! |    |avcc|    |    |    |    | |-|
-//! |    |    |avc1|    |    |    | |○|Advanced Video Coding
+//! |    |hint|    |    |    |    | | |hint track
+//! |    |btrt|    |    |    |    | | |Bitrate
+//! |    |metx|    |    |    |    | | |XML metadata
+//! |    |mett|    |    |    |    | | |Text metadata
+//! |    |uri |    |    |    |    | | |URI
+//! |    |uriI|    |    |    |    | | |URI initialization
+//! |    |urim|    |    |    |    | | |URI metadata
+//! |    |    |    |    |    |    | | |URI metadata
+//! |    |pasp|    |    |    |    | | |Pixel Aspect Ratio
+//! |    |clap|    |    |    |    | | |Clean Aperture
+//! |    |avcc|    |    |    |    | |-|ISO/IEC 14496-15 AVC Configuration Box
+//! |    |    |avc1|    |    |    | |○|
+//! |    |    |avc2|    |    |    | | |
+//! |    |    |avc3|    |    |    | |○|
+//! |    |    |avc4|    |    |    | | |
 //! |    |hevx|    |    |    |    | |-|
 //! |    |    |hev1|    |    |    | | |HEVC video with parameter sets in the Sample Entry or samples
 //! |    |vpxx|    |    |    |    | |-|
@@ -122,8 +135,6 @@
 //! |    |mp4v|    |    |    |    | | |MPEG-4 Visual
 //! |    |mp4a|    |    |    |    | |○|MPEG-4 Audio
 //! |    |mp4s|    |    |    |    | | |MPEG-4 System Stream
-//! |    |pasp|    |    |    |    | | |Pixel Aspect Ratio
-//! |    |btrt|    |    |    |    | | |Bitrate
 //! +----+----+----+----+----+----+-+-+--------------------------------
 //! |    |    |    |    |    |    | | |
 //! ```
@@ -294,6 +305,7 @@ pub use sample_entry::VisualSampleEntry;
 
 // Re-export avcc box and related types
 pub use avcc::Avc1BoxView;
+pub use avcc::Avc3BoxView;
 pub use avcc::AvcCBoxView;
 pub use avcc::NalUnitIter;
 
@@ -347,6 +359,7 @@ mod owned_exports {
 
     // Re-export avcc owned types
     pub use avcc::Avc1Box;
+    pub use avcc::Avc3Box;
     pub use avcc::AvcCBox;
 }
 
