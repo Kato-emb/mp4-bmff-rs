@@ -236,7 +236,7 @@ mod tests {
         let offsets = vec![100, 200, 300];
         let payload = make_stco_payload(offsets.clone());
         let view = StcoBoxView::decode(&payload).unwrap();
-        let owned = StcoBox::try_from(&view).unwrap();
+        let owned = StcoBox::from(&view);
         assert_eq!(owned.entries.len(), 3);
         assert_eq!(owned.entries[0].chunk_offset, 100);
     }

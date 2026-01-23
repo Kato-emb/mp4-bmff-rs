@@ -62,8 +62,7 @@ pub trait BoxEncode {
     #[cfg(feature = "alloc")]
     fn encode_to_vec(&self) -> Result<Vec<u8>> {
         let len = self.encoded_len();
-        let mut buf = Vec::new();
-        buf.resize(len, 0);
+        let mut buf = crate::lib::vec![0u8; len];
         self.encode(&mut buf)?;
 
         Ok(buf)

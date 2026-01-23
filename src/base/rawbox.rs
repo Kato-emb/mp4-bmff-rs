@@ -18,7 +18,7 @@ pub struct RawBox<T> {
 /// A reference to a RawBox's contents.
 pub type RawBoxRef<'a> = RawBox<&'a [u8]>;
 
-/// A owned RawBox with a Vec<u8> payload.
+/// A owned RawBox with a `Vec<u8>` payload.
 #[cfg(feature = "alloc")]
 pub type RawBoxOwned = RawBox<Vec<u8>>;
 

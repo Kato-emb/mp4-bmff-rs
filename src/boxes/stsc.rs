@@ -239,7 +239,7 @@ mod tests {
         ];
         let payload = make_stsc_payload(entries.clone());
         let view = StscBoxView::decode(&payload).unwrap();
-        let owned = StscBox::try_from(&view).unwrap();
+        let owned = StscBox::from(&view);
 
         // Write to buffer
         let mut buf = vec![0u8; 256];

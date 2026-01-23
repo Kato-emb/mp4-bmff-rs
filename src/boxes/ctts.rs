@@ -246,7 +246,7 @@ mod tests {
         ];
         let payload = make_ctts_payload_v1(entries.clone());
         let view = CttsBoxView::decode(&payload).unwrap();
-        let owned = CttsBox::try_from(&view).unwrap();
+        let owned = CttsBox::from(&view);
 
         // Write to buffer
         let mut buf = vec![0u8; 256];

@@ -20,6 +20,7 @@ mod lib {
         format, //
         string::String,
         string::ToString,
+        vec,
         vec::Vec,
     };
 
@@ -28,6 +29,7 @@ mod lib {
         format, //
         string::String,
         string::ToString,
+        vec,
         vec::Vec,
     };
 }

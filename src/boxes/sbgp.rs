@@ -289,7 +289,7 @@ mod tests {
     fn owned_conversion() {
         let payload = make_sbgp_payload_v0(b"roll", &[(10, 1), (20, 2)]);
         let view = SbgpBoxView::decode(&payload).unwrap();
-        let owned = SbgpBox::try_from(&view).unwrap();
+        let owned = SbgpBox::from(&view);
 
         assert_eq!(owned.entries.len(), 2);
         assert_eq!(owned.entries[0].sample_count, 10);

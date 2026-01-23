@@ -291,7 +291,7 @@ mod tests {
         let sizes = vec![100, 200, 300, 150, 250];
         let payload = make_stsz_payload_variable(sizes.clone());
         let view = StszBoxView::decode(&payload).unwrap();
-        let owned = StszBox::try_from(&view).unwrap();
+        let owned = StszBox::from(&view);
 
         // Write to buffer
         let mut buf = vec![0u8; 256];
@@ -310,7 +310,7 @@ mod tests {
         // Uniform sizes case
         let payload = make_stsz_payload_uniform(1024, 10);
         let view = StszBoxView::decode(&payload).unwrap();
-        let owned = StszBox::try_from(&view).unwrap();
+        let owned = StszBox::from(&view);
 
         let mut buf = vec![0u8; 256];
         let written = owned.encode_into(&mut buf).unwrap();

@@ -225,7 +225,7 @@ mod tests {
         ];
         let payload = make_stts_payload(entries.clone());
         let view = SttsBoxView::decode(&payload).unwrap();
-        let owned = SttsBox::try_from(&view).unwrap();
+        let owned = SttsBox::from(&view);
 
         // Write to buffer
         let mut buf = vec![0u8; 256];

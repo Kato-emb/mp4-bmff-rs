@@ -266,7 +266,7 @@ mod tests {
         let samples = vec![1, 5, 10];
         let payload = make_stss_payload(samples.clone());
         let view = StssBoxView::decode(&payload).unwrap();
-        let owned = StssBox::try_from(&view).unwrap();
+        let owned = StssBox::from(&view);
         assert_eq!(owned.entries.len(), 3);
         assert_eq!(owned.entries[0].sample_number, 1);
         assert!(owned.is_sync_sample(1));
