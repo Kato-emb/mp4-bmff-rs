@@ -137,7 +137,7 @@ mod owned {
             let mut truns = Vec::new();
             for trun_result in view.truns() {
                 let trun_view = trun_result?;
-                truns.push(TrunBox::from(&trun_view));
+                truns.push(TrunBox::try_from(&trun_view)?);
             }
 
             let mut sbgps = Vec::new();

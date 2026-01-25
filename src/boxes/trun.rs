@@ -304,35 +304,179 @@ mod owned {
         pub data_offset: Option<i32>,
         /// The flags for the first sample.
         pub first_sample_flags: Option<u32>,
-        /// The raw sample data bytes.
-        samples: Vec<u8>,
+        /// The samples in this run.
+        /// When `flags.sample_data_size() == 0`, this may be empty even if `sample_count > 0`,
+        /// indicating that all samples use default values from tfhd/trex.
+        pub samples: Vec<TrunSample>,
     }
 
-    impl From<&TrunBoxView<'_>> for TrunBox {
-        fn from(view: &TrunBoxView<'_>) -> Self {
-            let samples = view.samples.to_vec();
+    impl TryFrom<&TrunBoxView<'_>> for TrunBox {
+        type Error = Error;
 
-            TrunBox {
+        fn try_from(view: &TrunBoxView<'_>) -> Result<Self> {
+            let samples: Vec<TrunSample> = if view.flags.sample_data_size() == 0 {
+                // No per-sample data, samples use default values
+                Vec::new()
+            } else {
+                view.samples().collect::<Result<Vec<_>>>()?
+            };
+
+            Ok(TrunBox {
                 version: view.version,
                 flags: view.flags,
                 sample_count: view.sample_count,
                 data_offset: view.data_offset,
                 first_sample_flags: view.first_sample_flags,
                 samples,
-            }
+            })
         }
     }
 
     impl TrunBox {
-        /// Returns an iterator over the samples in the Track Run Box.
+        /// Creates a new Track Run Box with sample data.
         ///
-        /// Each sample yields a tuple of (duration, size, flags, composition_time_offset).
-        pub fn samples(&self) -> TrunSampleIter<'_> {
-            TrunSampleIter {
-                samples: &self.samples,
-                flags: self.flags,
-                version: self.version,
+        /// Use this when samples have per-sample fields (duration, size, flags, etc.).
+        /// The `sample_count` is automatically set to `samples.len()`.
+        ///
+        /// For samples using only default values (no per-sample data), use [`with_defaults`] instead.
+        ///
+        /// # Arguments
+        ///
+        /// * `version` - The version of the box (0 or 1).
+        /// * `flags` - The flags indicating which optional fields are present.
+        /// * `data_offset` - The data offset from the start of the moof (required if `DATA_OFFSET_PRESENT` flag is set).
+        /// * `first_sample_flags` - The flags for the first sample (required if `FIRST_SAMPLE_FLAGS_PRESENT` flag is set).
+        /// * `samples` - The sample data.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if:
+        /// - `version` is not 0 or 1.
+        /// - `data_offset` presence doesn't match `DATA_OFFSET_PRESENT` flag.
+        /// - `first_sample_flags` presence doesn't match `FIRST_SAMPLE_FLAGS_PRESENT` flag.
+        /// - Any sample is missing a required field based on the flags.
+        pub fn new(
+            version: u8,
+            flags: TrunFlags,
+            data_offset: Option<i32>,
+            first_sample_flags: Option<u32>,
+            samples: Vec<TrunSample>,
+        ) -> Result<Self> {
+            // Validate version
+            if version > 1 {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxVersion {
+                        reason: "trun version must be 0 or 1",
+                        got: version,
+                    },
+                    BoxType::TRUN,
+                ));
             }
+
+            // Validate data_offset presence matches flag
+            if data_offset.is_some() != flags.data_offset_present() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxField {
+                        field: "data_offset",
+                        reason: "presence must match DATA_OFFSET_PRESENT flag",
+                    },
+                    BoxType::TRUN,
+                ));
+            }
+
+            // Validate first_sample_flags presence matches flag
+            if first_sample_flags.is_some() != flags.first_sample_flags_present() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxField {
+                        field: "first_sample_flags",
+                        reason: "presence must match FIRST_SAMPLE_FLAGS_PRESENT flag",
+                    },
+                    BoxType::TRUN,
+                ));
+            }
+
+            // Validate samples
+            for sample in &samples {
+                if flags.sample_duration_present() && sample.duration.is_none() {
+                    return Err(Error::in_box(
+                        ErrorKind::InvalidBoxField {
+                            field: "sample.duration",
+                            reason: "required by SAMPLE_DURATION_PRESENT flag but missing",
+                        },
+                        BoxType::TRUN,
+                    ));
+                }
+
+                if flags.sample_size_present() && sample.size.is_none() {
+                    return Err(Error::in_box(
+                        ErrorKind::InvalidBoxField {
+                            field: "sample.size",
+                            reason: "required by SAMPLE_SIZE_PRESENT flag but missing",
+                        },
+                        BoxType::TRUN,
+                    ));
+                }
+
+                if flags.sample_flags_present() && sample.flags.is_none() {
+                    return Err(Error::in_box(
+                        ErrorKind::InvalidBoxField {
+                            field: "sample.flags",
+                            reason: "required by SAMPLE_FLAGS_PRESENT flag but missing",
+                        },
+                        BoxType::TRUN,
+                    ));
+                }
+
+                if flags.sample_composition_time_offsets_present()
+                    && sample.composition_time_offset.is_none()
+                {
+                    return Err(Error::in_box(
+                        ErrorKind::InvalidBoxField {
+                            field: "sample.composition_time_offset",
+                            reason: "required by SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT flag but missing",
+                        },
+                        BoxType::TRUN,
+                    ));
+                }
+            }
+
+            let sample_count = samples.len() as u32;
+
+            Ok(Self {
+                version,
+                flags,
+                sample_count,
+                data_offset,
+                first_sample_flags,
+                samples,
+            })
+        }
+
+        /// Creates a new Track Run Box with default sample values.
+        ///
+        /// This is useful when all samples use default values from tfhd/trex.
+        pub fn with_defaults(
+            version: u8,
+            sample_count: u32,
+            data_offset: Option<i32>,
+            first_sample_flags: Option<u32>,
+        ) -> Result<Self> {
+            let mut flags = TrunFlags::default();
+            if data_offset.is_some() {
+                flags |= TrunFlags::DATA_OFFSET_PRESENT;
+            }
+            if first_sample_flags.is_some() {
+                flags |= TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT;
+            }
+
+            Ok(Self {
+                version,
+                flags,
+                sample_count,
+                data_offset,
+                first_sample_flags,
+                samples: Vec::new(),
+            })
         }
     }
 
@@ -345,7 +489,7 @@ mod owned {
     impl BoxDecode<'_> for TrunBox {
         fn decode(bytes: &[u8]) -> Result<Self> {
             let view = TrunBoxView::decode(bytes)?;
-            Ok(TrunBox::from(&view))
+            TrunBox::try_from(&view)
         }
     }
 
@@ -359,13 +503,13 @@ mod owned {
                     4
                 } else {
                     0
-                } // data_offset
+                }
                 + if self.flags.first_sample_flags_present() {
                     4
                 } else {
                     0
-                } // first_sample_flags
-                + self.samples.len() // samples
+                }
+                + self.samples.len() * self.flags.sample_data_size()
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
@@ -384,7 +528,20 @@ mod owned {
                 cur.write_u32_be(first_sample_flags)?;
             }
 
-            cur.write_slice(&self.samples)?;
+            for sample in &self.samples {
+                if self.flags.sample_duration_present() {
+                    cur.write_u32_be(sample.duration.unwrap_or(0))?;
+                }
+                if self.flags.sample_size_present() {
+                    cur.write_u32_be(sample.size.unwrap_or(0))?;
+                }
+                if self.flags.sample_flags_present() {
+                    cur.write_u32_be(sample.flags.unwrap_or(0))?;
+                }
+                if self.flags.sample_composition_time_offsets_present() {
+                    cur.write_i32_be(sample.composition_time_offset.unwrap_or(0))?;
+                }
+            }
 
             Ok(cur.position())
         }
@@ -501,17 +658,149 @@ mod tests {
         assert_eq!(reparsed.data_offset, original.data_offset);
         assert_eq!(reparsed.first_sample_flags, original.first_sample_flags);
 
-        let orig_samples: Vec<_> = original.samples().collect();
-        let reparsed_samples: Vec<_> = reparsed.samples().collect();
-        assert_eq!(orig_samples.len(), reparsed_samples.len());
+        assert_eq!(original.samples.len(), reparsed.samples.len());
 
-        for (o, r) in orig_samples.iter().zip(reparsed_samples.iter()) {
-            let o = o.as_ref().unwrap();
-            let r = r.as_ref().unwrap();
+        for (o, r) in original.samples.iter().zip(reparsed.samples.iter()) {
             assert_eq!(o.duration, r.duration);
             assert_eq!(o.size, r.size);
             assert_eq!(o.flags, r.flags);
             assert_eq!(o.composition_time_offset, r.composition_time_offset);
         }
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn trun_box_new_valid() {
+        use crate::BoxEncode;
+
+        let flags = TrunFlags::DATA_OFFSET_PRESENT
+            | TrunFlags::SAMPLE_DURATION_PRESENT
+            | TrunFlags::SAMPLE_SIZE_PRESENT
+            | TrunFlags::SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT;
+
+        let samples = vec![
+            TrunSample {
+                duration: Some(1000),
+                size: Some(5000),
+                flags: None,
+                composition_time_offset: Some(100),
+            },
+            TrunSample {
+                duration: Some(1000),
+                size: Some(3000),
+                flags: None,
+                composition_time_offset: Some(-50),
+            },
+        ];
+
+        let trun = TrunBox::new(1, flags, Some(1024), None, samples).unwrap();
+
+        assert_eq!(trun.version, 1);
+        assert_eq!(trun.sample_count, 2);
+        assert_eq!(trun.data_offset, Some(1024));
+        assert_eq!(trun.first_sample_flags, None);
+
+        // Round-trip test
+        let mut buf = vec![0u8; trun.encoded_len()];
+        trun.encode(&mut buf).unwrap();
+
+        let reparsed = TrunBox::decode(&buf).unwrap();
+
+        assert_eq!(reparsed.sample_count, 2);
+        assert_eq!(reparsed.samples.len(), 2);
+        assert_eq!(reparsed.samples[0].duration, Some(1000));
+        assert_eq!(reparsed.samples[0].size, Some(5000));
+        assert_eq!(reparsed.samples[0].composition_time_offset, Some(100));
+        assert_eq!(reparsed.samples[1].composition_time_offset, Some(-50));
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn trun_box_new_with_defaults() {
+        use crate::BoxEncode;
+
+        // Create a trun with 10 samples, all using default values
+        let trun = TrunBox::with_defaults(0, 10, Some(100), None).unwrap();
+
+        assert_eq!(trun.version, 0);
+        assert_eq!(trun.sample_count, 10);
+        assert_eq!(trun.data_offset, Some(100));
+        assert!(trun.samples.is_empty()); // No per-sample data
+
+        // Round-trip test
+        let mut buf = vec![0u8; trun.encoded_len()];
+        trun.encode(&mut buf).unwrap();
+
+        let reparsed = TrunBox::decode(&buf).unwrap();
+
+        assert_eq!(reparsed.sample_count, 10);
+        assert!(reparsed.samples.is_empty());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn trun_box_new_invalid_version() {
+        let result = TrunBox::new(2, TrunFlags::default(), None, None, vec![]);
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            ErrorKind::InvalidBoxVersion { .. }
+        ));
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn trun_box_new_data_offset_mismatch() {
+        // Flag says data_offset present, but None provided
+        let flags = TrunFlags::DATA_OFFSET_PRESENT;
+        let result = TrunBox::new(0, flags, None, None, vec![]);
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            ErrorKind::InvalidBoxField {
+                field: "data_offset",
+                ..
+            }
+        ));
+
+        // Flag says data_offset not present, but Some provided
+        let flags = TrunFlags::default();
+        let result = TrunBox::new(0, flags, Some(100), None, vec![]);
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            ErrorKind::InvalidBoxField {
+                field: "data_offset",
+                ..
+            }
+        ));
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn trun_box_new_missing_sample_field() {
+        let flags = TrunFlags::SAMPLE_DURATION_PRESENT | TrunFlags::SAMPLE_SIZE_PRESENT;
+
+        // Sample missing required duration
+        let samples = vec![TrunSample {
+            duration: None, // Missing!
+            size: Some(1000),
+            flags: None,
+            composition_time_offset: None,
+        }];
+
+        let result = TrunBox::new(0, flags, None, None, samples);
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            ErrorKind::InvalidBoxField {
+                field: "sample.duration",
+                ..
+            }
+        ));
     }
 }
