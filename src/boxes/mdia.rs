@@ -116,6 +116,7 @@ mod owned {
     use crate::boxes::MinfBox;
 
     /// An owned Media Box (`mdia`).
+    #[derive(Debug, Clone)]
     pub struct MdiaBox {
         /// The Media Header Box (`mdhd`).
         pub mdhd: MdhdBox,

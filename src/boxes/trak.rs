@@ -108,6 +108,7 @@ mod owned {
     use crate::boxes::TrefBox;
 
     /// An owned Track Box (`trak`).
+    #[derive(Debug, Clone)]
     pub struct TrakBox {
         /// The Track Header Box (`tkhd`).
         pub tkhd: TkhdBox,

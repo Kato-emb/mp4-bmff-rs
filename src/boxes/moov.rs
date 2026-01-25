@@ -100,6 +100,7 @@ mod owned {
     use crate::boxes::TrakBox;
 
     /// An owned Movie Box (`moov`).
+    #[derive(Debug, Clone)]
     pub struct MoovBox {
         /// The Movie Header Box (`mvhd`).
         pub mvhd: MvhdBox,
