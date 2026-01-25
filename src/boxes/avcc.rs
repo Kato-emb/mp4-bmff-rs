@@ -474,6 +474,16 @@ mod owned {
         _marker: core::marker::PhantomData<C>,
     }
 
+    impl<C> AvcSampleEntry<C> {
+        pub fn new(base: VisualSampleEntry, avcc: AvcCBox) -> Self {
+            Self {
+                base,
+                avcc,
+                _marker: core::marker::PhantomData,
+            }
+        }
+    }
+
     /// Type alias for owned AVC1 Sample Entry Box
     pub type Avc1Box = AvcSampleEntry<Avc1Spec>;
     /// Type alias for owned AVC3 Sample Entry Box
