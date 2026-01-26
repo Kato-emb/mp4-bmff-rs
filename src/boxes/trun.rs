@@ -338,7 +338,7 @@ mod owned {
         /// Use this when samples have per-sample fields (duration, size, flags, etc.).
         /// The `sample_count` is automatically set to `samples.len()`.
         ///
-        /// For samples using only default values (no per-sample data), use [`with_defaults`] instead.
+        /// For samples using only default values (no per-sample data), use [`TrunBox::with_defaults`] instead.
         ///
         /// # Arguments
         ///
