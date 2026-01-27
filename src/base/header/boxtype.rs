@@ -192,6 +192,8 @@ define_box_types! {
     STCO = b"stco",
     /// 64-bit Chunk Offset Box
     CO64 = b"co64",
+    /// independent and Disposable Samples Box
+    SDTP = b"sdtp",
 
     // =========================================================================
     // ISO 14496-12 (BMFF) - Media headers
