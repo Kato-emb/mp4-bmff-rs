@@ -56,8 +56,6 @@ pub struct SbgpBoxView<'a> {
 }
 
 impl<'a> SbgpBoxView<'a> {
-    const ENTRY_SIZE: usize = 8;
-
     /// Returns an iterator over the entries in the Sample to Group Box.
     pub fn entries(&self) -> FixedSizeEntryIter<'a, SbgpEntry> {
         FixedSizeEntryIter::new(self.entries)
@@ -105,7 +103,7 @@ impl<'de> BoxDecode<'de> for SbgpBoxView<'de> {
 
         let entry_count = cur.read_u32_be()?;
 
-        let expected_size = entry_count as usize * Self::ENTRY_SIZE;
+        let expected_size = entry_count as usize * SbgpEntry::ENTRY_SIZE;
         if cur.remaining() != expected_size {
             return Err(Error::in_box(
                 ErrorKind::InvalidBoxSize {
@@ -142,8 +140,7 @@ pub use owned::SbgpBox;
 
 #[cfg(feature = "alloc")]
 mod owned {
-    extern crate alloc;
-    use alloc::vec::Vec;
+    use crate::lib::Vec;
 
     use crate::BoxEncode;
     use crate::cursor::WriteCursor;
