@@ -118,7 +118,7 @@ macro_rules! define_box_types {
 
 define_box_types! {
     // =========================================================================
-    // ISO 14496-12 (BMFF) - Core boxes
+    // ISO 14496-12 (BMFF) - File Structure and general boxes
     // =========================================================================
 
     /// File Type Box
@@ -131,6 +131,8 @@ define_box_types! {
     SKIP = b"skip",
     /// Media Data Box
     MDAT = b"mdat",
+    /// Progressive Download Information Box
+    PDIN = b"pdin",
 
     // =========================================================================
     // ISO 14496-12 (BMFF) - Movie structure
