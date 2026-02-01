@@ -86,6 +86,11 @@ pub enum ErrorKind {
         /// The type of the required box.
         required: BoxType,
     },
+    /// A duplicate box was found.
+    BoxDuplicate {
+        /// The type of the duplicate box.
+        duplicate: BoxType,
+    },
     #[cfg(feature = "std")]
     /// An I/O error occurred.
     Io,
@@ -139,6 +144,9 @@ impl fmt::Display for ErrorKind {
             }
             ErrorKind::BoxMissing { required } => {
                 write!(f, "required box '{required}' is missing")
+            }
+            ErrorKind::BoxDuplicate { duplicate } => {
+                write!(f, "duplicate box '{duplicate}' found")
             }
             #[cfg(feature = "std")]
             ErrorKind::Io => write!(f, "I/O error"),

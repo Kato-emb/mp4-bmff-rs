@@ -117,120 +117,32 @@ macro_rules! define_box_types {
 }
 
 define_box_types! {
-    // =========================================================================
-    // ISO 14496-12 (BMFF) - Movie structure
-    // =========================================================================
-
-    /// Movie Box
-    MOOV = b"moov",
-    /// Movie Header Box
-    MVHD = b"mvhd",
-    /// Track Box
-    TRAK = b"trak",
-    /// Track Header Box
-    TKHD = b"tkhd",
-    /// Track Reference Box
-    TREF = b"tref",
-    /// Media Information Box
-    MINF = b"minf",
-    /// Handler Reference Box
-    HDLR = b"hdlr",
-    /// Media Header Box
-    MDHD = b"mdhd",
-    /// Media Box
-    MDIA = b"mdia",
-
-    // =========================================================================
-    // ISO 14496-12 (BMFF) - Data information
-    // =========================================================================
-
-    /// Data Information Box
-    DINF = b"dinf",
-    /// Data Reference Box
-    DREF = b"dref",
-    /// URL Box
-    URL_ = b"url ",
-    /// URN Box
-    URN_ = b"urn ",
 
     // =========================================================================
     // ISO 14496-12 (BMFF) - Sample table
     // =========================================================================
 
-    /// Sample Table Box
-    STBL = b"stbl",
-    /// Sample Description Box
-    STSD = b"stsd",
-    /// Decoding Time to Sample Box
-    STTS = b"stts",
-    /// Composition Time to Sample Box
-    CTTS = b"ctts",
-    /// Composition to Decode Timeline Mapping Box
-    CSLG = b"cslg",
-    /// Sample to Chunk Box
-    STSC = b"stsc",
-    /// Sample Size Box
-    STSZ = b"stsz",
-    /// Sync Sample Table Box
-    STSS = b"stss",
-    /// Chunk Offset Box
-    STCO = b"stco",
-    /// 64-bit Chunk Offset Box
-    CO64 = b"co64",
-    /// independent and Disposable Samples Box
-    SDTP = b"sdtp",
 
     // =========================================================================
     // ISO 14496-12 (BMFF) - Media headers
     // =========================================================================
 
-    /// Video Media Header Box
-    VMHD = b"vmhd",
-    /// Sound Media Header Box
-    SMHD = b"smhd",
-    /// Hint Media Header Box
-    HMHD = b"hmhd",
-    /// Null Media Header Box
-    NMHD = b"nmhd",
 
     // =========================================================================
     // ISO 14496-12 (BMFF) - Movie Extends (fragmented movies)
     // =========================================================================
 
-    /// Movie Extends Box
-    MVEX = b"mvex",
-    /// Movie Extends Header Box
-    MEHD = b"mehd",
-    /// Track Extends Defaults Box
-    TREX = b"trex",
-
     // =========================================================================
     // ISO 14496-12 (BMFF) - Movie Fragments
     // =========================================================================
 
-    /// Movie Fragment Box
-    MOOF = b"moof",
-    /// Movie Fragment Header Box
-    MFHD = b"mfhd",
-    /// Track Fragment Box
-    TRAF = b"traf",
-    /// Track Fragment Header Box
-    TFHD = b"tfhd",
-    /// Track Fragment Decode Time Box
-    TFDT = b"tfdt",
-    /// Track Run Box
-    TRUN = b"trun",
+
 
     // =========================================================================
     // ISO 14496-12 (BMFF) - Movie Fragment Random Access
     // =========================================================================
 
-    /// Movie Fragment Random Access Box
-    MFRA = b"mfra",
-    /// Track Fragment Random Access Box
-    TFRA = b"tfra",
-    /// Movie Fragment Random Access Offset Box
-    MFRO = b"mfro",
+
 
     // =========================================================================
     // ISO 14496-12 (BMFF) - Sample grouping

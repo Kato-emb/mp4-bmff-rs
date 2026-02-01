@@ -22,6 +22,15 @@ pub type RawBoxRef<'a> = RawBox<&'a [u8]>;
 #[cfg(feature = "alloc")]
 pub type RawBoxOwned = RawBox<Vec<u8>>;
 
+impl<T: Clone> Clone for RawBox<T> {
+    fn clone(&self) -> Self {
+        Self {
+            header: self.header,
+            payload: self.payload.clone(),
+        }
+    }
+}
+
 impl<T> RawBox<T> {
     #[cfg(feature = "std")]
     pub(crate) fn from_parts(header: BoxHeader, payload: T) -> Self {

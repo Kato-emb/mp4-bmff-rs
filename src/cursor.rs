@@ -403,4 +403,12 @@ impl<'a> WriteCursor<'a> {
         self.write_array(&value.to_be_bytes())?;
         Ok(())
     }
+
+    /// Writes a big-endian 64-bit signed integer to the cursor.
+    #[inline]
+    #[track_caller]
+    pub fn write_i64_be(&mut self, value: i64) -> Result<()> {
+        self.write_array(&value.to_be_bytes())?;
+        Ok(())
+    }
 }

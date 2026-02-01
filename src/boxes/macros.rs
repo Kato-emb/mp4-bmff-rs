@@ -112,7 +112,7 @@ macro_rules! define_box_flags {
 
             /// Returns the flags as a 3-byte big-endian array.
             #[inline]
-            pub const fn to_be_bytes(&self) -> [u8; 3] {
+            pub const fn to_be_bytes(self) -> [u8; 3] {
                 [
                     ((self.0 >> 16) & 0xFF) as u8,
                     ((self.0 >> 8) & 0xFF) as u8,

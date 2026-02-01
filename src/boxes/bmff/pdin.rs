@@ -5,13 +5,10 @@ use crate::error::*;
 use crate::iter::FixedSizeEntry;
 use crate::iter::FixedSizeEntryIter;
 
-use crate::boxes::FullBoxFlags;
-
-/// Specification for Progressive Download Information Box (`pdin`).
-pub struct PdinSpec;
-
-/// Flags for Progressive Download Information Box (`pdin`).
-pub type PdinFlags = FullBoxFlags<PdinSpec>;
+define_box_flags!(
+    /// Flags for the Progressive Download Information Box (`pdin`).
+    PdinFlags {}
+);
 
 /// An entry in the Progressive Download Information Box (`pdin`).
 #[derive(Debug, Clone, Copy)]
@@ -72,10 +69,9 @@ impl<'de> BoxDecode<'de> for PdinBoxView<'de> {
         let version = cur.read_u8()?;
 
         // Read flags (3 bytes)
-        let flags_bytes = cur.read_array::<3>()?;
-        let flags = PdinFlags::from_bytes(flags_bytes);
+        let flags = PdinFlags::from_be_bytes(cur.read_array::<3>()?);
 
-        if cur.remaining() % PdinEntry::ENTRY_SIZE != 0 {
+        if !cur.remaining().is_multiple_of(PdinEntry::ENTRY_SIZE) {
             return Err(Error::at_in_box(
                 ErrorKind::InvalidBoxSize {
                     reason: "PDIN entries length is not a multiple of entry size",
@@ -156,8 +152,9 @@ mod owned {
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
+
             cur.write_u8(self.version)?;
-            cur.write_array(&self.flags.to_bytes())?;
+            cur.write_array(&self.flags.to_be_bytes())?;
 
             for entry in &self.entries {
                 let buf = cur.take_mut(PdinEntry::ENTRY_SIZE)?;
@@ -170,7 +167,7 @@ mod owned {
 }
 
 #[cfg(feature = "alloc")]
-pub use owned::PdinBox;
+pub use owned::*;
 
 #[cfg(test)]
 mod tests {
@@ -192,7 +189,7 @@ mod tests {
         let data = raw_data();
         let pdin_box_view = PdinBoxView::decode(&data).unwrap();
         assert_eq!(pdin_box_view.version, 0);
-        assert_eq!(pdin_box_view.flags.get(), 0);
+        assert_eq!(pdin_box_view.flags.bits(), 0);
 
         let mut entries = pdin_box_view.entries();
         let first = entries.next().unwrap();
@@ -276,7 +273,7 @@ mod tests {
         let owned = view.to_owned();
 
         assert_eq!(owned.version, view.version);
-        assert_eq!(owned.flags.get(), view.flags.get());
+        assert_eq!(owned.flags.bits(), view.flags.bits());
         assert_eq!(owned.entries.len(), view.entries().count());
     }
 }
