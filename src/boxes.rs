@@ -139,6 +139,9 @@
 //! |    |    |    |    |    |    | | |
 //! ```
 
+#[macro_use]
+mod macros;
+
 pub mod bmff; // ISO/IEC 14496-12
 
 mod avcc;
