@@ -107,6 +107,10 @@ mod owned {
     /// An owned Sample Size Box (`stsz`).
     #[derive(Debug, Clone)]
     pub struct StszBox {
+        /// The version of the box (0).
+        pub version: u8,
+        /// The flags of the box.
+        pub flags: StszFlags,
         /// The sample size if all samples have the same size, or 0.
         pub sample_size: u32,
         /// The sizes of the samples.
@@ -117,6 +121,8 @@ mod owned {
         fn from(view: &StszBoxView<'_>) -> Self {
             let entries = view.entries().collect();
             StszBox {
+                version: view.version,
+                flags: view.flags,
                 sample_size: view.sample_size,
                 entries,
             }
@@ -155,8 +161,8 @@ mod owned {
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
-            cur.write_u8(0)?; // version
-            cur.write_array(&[0, 0, 0])?; // flags
+            cur.write_u8(self.version)?; // version
+            cur.write_array(&self.flags.to_be_bytes())?; // flags
 
             cur.write_u32_be(self.sample_size)?;
             cur.write_u32_be(self.entries.len() as u32)?;
@@ -180,8 +186,8 @@ mod tests {
 
     fn raw_data() -> [u8; 20] {
         [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags = 0
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x00, // sample_size = 0 (variable)
             0x00, 0x00, 0x00, 0x02, // sample_count = 2
             // entries
@@ -208,8 +214,8 @@ mod tests {
     #[test]
     fn test_stsz_box_view_empty_entries() {
         let data: [u8; 12] = [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags = 0
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x00, // sample_size = 0
             0x00, 0x00, 0x00, 0x00, // sample_count = 0
         ];
