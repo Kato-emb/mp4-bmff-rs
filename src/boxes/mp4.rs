@@ -20,3 +20,10 @@ mod owned_exports {
 
 #[cfg(feature = "alloc")]
 pub use owned_exports::*;
+
+define_box_types!(
+    /// ES Descriptor Box
+    ESDS = b"esds",
+    /// MPEG-4 Audio Sample Entry Box
+    MP4A = b"mp4a",
+);
