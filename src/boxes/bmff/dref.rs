@@ -433,9 +433,8 @@ mod owned {
 
         fn try_from(view: &DrefBoxView<'_>) -> Result<Self> {
             let mut entries = Vec::with_capacity(view.entry_count as usize);
-            let mut iter = view.data_entries();
 
-            while let Some(entry_result) = iter.next() {
+            for entry_result in view.data_entries() {
                 let entry_view = entry_result?;
                 entries.push(DataEntryBox::from(&entry_view));
             }

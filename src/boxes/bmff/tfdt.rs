@@ -36,10 +36,9 @@ impl BoxDecode<'_> for TfdtBox {
         let version = cur.read_u8()?;
         let flags = TfdtFlags::from_be_bytes(cur.read_array::<3>()?);
 
-        let base_media_decode_time: u64;
-        match version {
-            0 => base_media_decode_time = cur.read_u32_be()? as u64,
-            1 => base_media_decode_time = cur.read_u64_be()?,
+        let base_media_decode_time = match version {
+            0 => cur.read_u32_be()? as u64,
+            1 => cur.read_u64_be()?,
             _ => {
                 return Err(Error::in_box(
                     ErrorKind::InvalidBoxVersion {
@@ -49,7 +48,7 @@ impl BoxDecode<'_> for TfdtBox {
                     BoxType::TFDT,
                 ));
             }
-        }
+        };
 
         Ok(TfdtBox {
             version,

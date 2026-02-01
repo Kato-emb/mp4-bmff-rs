@@ -13,7 +13,7 @@ define_box_flags!(
 );
 
 /// Sound Media Header Box (`smhd`).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SmhdBox {
     /// Box version.
     pub version: u8,
@@ -24,16 +24,6 @@ pub struct SmhdBox {
 }
 
 const RESERVED: usize = 2;
-
-impl Default for SmhdBox {
-    fn default() -> Self {
-        SmhdBox {
-            version: 0,
-            flags: SmhdFlags::empty(),
-            balance: 0,
-        }
-    }
-}
 
 impl BoxCodec for SmhdBox {
     fn boxtype(&self) -> BoxType {

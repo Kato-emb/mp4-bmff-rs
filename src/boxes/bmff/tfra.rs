@@ -329,8 +329,7 @@ mod owned {
 
             cur.write_u32_be(self.track_id)?;
 
-            let reserved_and_length: u32 = ((0u32) << 6)
-                | ((self.length_size_of_traf_num as u32 & 0x03) << 4)
+            let reserved_and_length: u32 = ((self.length_size_of_traf_num as u32 & 0x03) << 4)
                 | ((self.length_size_of_trun_num as u32 & 0x03) << 2)
                 | (self.length_size_of_sample_num as u32 & 0x03);
             cur.write_u32_be(reserved_and_length)?;

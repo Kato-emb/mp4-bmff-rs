@@ -36,10 +36,9 @@ impl BoxDecode<'_> for MehdBox {
         let version = cur.read_u8()?;
         let flags = MehdFlags::from_be_bytes(cur.read_array::<3>()?);
 
-        let fragment_duration: u64;
-        match version {
-            0 => fragment_duration = cur.read_u32_be()? as u64,
-            1 => fragment_duration = cur.read_u64_be()?,
+        let fragment_duration = match version {
+            0 => cur.read_u32_be()? as u64,
+            1 => cur.read_u64_be()?,
             _ => {
                 return Err(Error::in_box(
                     ErrorKind::InvalidBoxVersion {
@@ -49,7 +48,7 @@ impl BoxDecode<'_> for MehdBox {
                     BoxType::MEHD,
                 ));
             }
-        }
+        };
 
         Ok(MehdBox {
             version,

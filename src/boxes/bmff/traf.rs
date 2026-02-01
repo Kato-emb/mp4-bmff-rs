@@ -170,8 +170,8 @@ mod owned {
         #[inline]
         fn encoded_len(&self) -> usize {
             boxed_len(&self.tfhd)
-                + self.truns.iter().map(|trun| boxed_len(trun)).sum::<usize>()
-                + self.tfdt.as_ref().map_or(0, |tfdt| boxed_len(tfdt))
+                + self.truns.iter().map(boxed_len).sum::<usize>()
+                + self.tfdt.as_ref().map_or(0, boxed_len)
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
