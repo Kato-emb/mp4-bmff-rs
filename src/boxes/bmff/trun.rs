@@ -248,8 +248,6 @@ mod owned {
         pub version: u8,
         /// The flags of the box.
         pub flags: TrunFlags,
-        /// The number of samples in the box.
-        pub sample_count: u32,
         /// The data offset, if present.
         pub data_offset: Option<i32>,
         /// The first sample flags, if present.
@@ -266,7 +264,6 @@ mod owned {
             Ok(TrunBox {
                 version: view.version,
                 flags: view.flags,
-                sample_count: view.sample_count,
                 data_offset: view.data_offset,
                 first_sample_flags: view.first_sample_flags,
                 samples: samples?,
@@ -313,7 +310,7 @@ mod owned {
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_be_bytes())?;
 
-            cur.write_u32_be(self.sample_count)?;
+            cur.write_u32_be(self.samples.len() as u32)?;
 
             if self.flags.contains(TrunFlags::DATA_OFFSET_PRESENT) {
                 if let Some(data_offset) = self.data_offset {
@@ -322,7 +319,7 @@ mod owned {
                     return Err(Error::in_box(
                         ErrorKind::InvalidBoxField {
                             field: "data_offset",
-                            reason: "missing data_offset for sample",
+                            reason: "missing data_offset for samples",
                         },
                         BoxType::TRUN,
                     ));
@@ -336,7 +333,7 @@ mod owned {
                     return Err(Error::in_box(
                         ErrorKind::InvalidBoxField {
                             field: "first_sample_flags",
-                            reason: "missing first_sample_flags for sample",
+                            reason: "missing first_sample_flags for samples",
                         },
                         BoxType::TRUN,
                     ));
@@ -351,7 +348,7 @@ mod owned {
                         return Err(Error::in_box(
                             ErrorKind::InvalidBoxField {
                                 field: "sample.duration",
-                                reason: "missing duration for sample",
+                                reason: "missing duration for samples",
                             },
                             BoxType::TRUN,
                         ));
@@ -365,7 +362,7 @@ mod owned {
                         return Err(Error::in_box(
                             ErrorKind::InvalidBoxField {
                                 field: "sample.size",
-                                reason: "missing size for sample",
+                                reason: "missing size for samples",
                             },
                             BoxType::TRUN,
                         ));
@@ -379,7 +376,7 @@ mod owned {
                         return Err(Error::in_box(
                             ErrorKind::InvalidBoxField {
                                 field: "sample.flags",
-                                reason: "missing flags for sample",
+                                reason: "missing flags for samples",
                             },
                             BoxType::TRUN,
                         ));
@@ -400,7 +397,7 @@ mod owned {
                         return Err(Error::in_box(
                             ErrorKind::InvalidBoxField {
                                 field: "sample.composition_time_offset",
-                                reason: "missing composition_time_offset for sample",
+                                reason: "missing composition_time_offset for samples",
                             },
                             BoxType::TRUN,
                         ));
@@ -549,7 +546,6 @@ mod tests {
 
         assert_eq!(owned.version, view.version);
         assert_eq!(owned.flags.bits(), view.flags.bits());
-        assert_eq!(owned.sample_count, view.sample_count);
         assert_eq!(owned.samples.len(), view.sample_count as usize);
     }
 }
