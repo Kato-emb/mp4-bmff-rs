@@ -4,7 +4,7 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
-use mp4_bmff::boxes::{
+use mp4_bmff::boxes::bmff::{
     FtypBox, FtypBoxView, MoovBox, MoovBoxView, SttsBox, SttsBoxView, SttsEntry, SttsFlags,
 };
 use mp4_bmff::types::FourCC;

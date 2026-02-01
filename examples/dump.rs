@@ -7,7 +7,7 @@ use std::path::PathBuf;
 #[cfg(feature = "std")]
 use mp4_bmff::{
     BoxType, Error, RawBoxRef,
-    boxes::{FreeBoxView, FtypBoxView, HdlrBoxView, MdhdBox, MvhdBox, StypBoxView, TkhdBox},
+    boxes::bmff::{FreeBoxView, FtypBoxView, HdlrBoxView, MdhdBox, MvhdBox, StypBoxView, TkhdBox},
 };
 
 #[cfg(feature = "std")]
