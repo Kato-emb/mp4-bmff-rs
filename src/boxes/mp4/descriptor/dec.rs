@@ -128,7 +128,7 @@ mod owned {
     use crate::lib::Vec;
 
     use super::*;
-    use crate::descriptor::DescriptorOwned;
+    use crate::boxes::mp4::descriptor::DescriptorOwned;
 
     /// Owned Decoder Config Descriptor
     #[derive(Debug, Clone)]

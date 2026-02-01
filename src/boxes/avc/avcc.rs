@@ -7,7 +7,7 @@ use crate::BoxDecode;
 use crate::error::*;
 use crate::iter::BoxIter;
 
-use crate::boxes::VisualSampleEntry;
+use crate::boxes::sample_entry::VisualSampleEntry;
 
 use crate::cursor::ReadCursor;
 

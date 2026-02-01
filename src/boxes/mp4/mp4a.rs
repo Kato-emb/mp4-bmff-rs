@@ -6,8 +6,8 @@ use crate::iter::BoxIter;
 
 use crate::error::*;
 
-use crate::boxes::AudioSampleEntry;
-use crate::boxes::EsdsBoxView;
+use super::EsdsBoxView;
+use crate::boxes::sample_entry::AudioSampleEntry;
 
 /// A reference to an Mp4a Box's contents.
 #[derive(Debug)]
@@ -63,18 +63,15 @@ impl<'de> BoxDecode<'de> for Mp4aBoxView<'de> {
 }
 
 #[cfg(feature = "alloc")]
-pub use owned::Mp4aBox;
-
-#[cfg(feature = "alloc")]
 mod owned {
+    use super::*;
     use crate::BoxEncode;
-    use crate::cursor::WriteCursor;
 
     use crate::codec::boxed_len;
     use crate::codec::write_box_in;
+    use crate::cursor::WriteCursor;
 
-    use super::*;
-    use crate::boxes::EsdsBox;
+    use crate::boxes::mp4::EsdsBox;
 
     /// An owned Mp4a Box (`mp4a`).
     #[derive(Debug, Clone)]
@@ -128,3 +125,6 @@ mod owned {
         }
     }
 }
+
+#[cfg(feature = "alloc")]
+pub use owned::*;

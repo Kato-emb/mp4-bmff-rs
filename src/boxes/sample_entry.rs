@@ -1,3 +1,5 @@
+//! Sample Entry bases and common fields.
+
 use core::mem;
 
 use crate::cursor::ReadCursor;

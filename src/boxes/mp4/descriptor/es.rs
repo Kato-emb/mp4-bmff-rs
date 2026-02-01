@@ -168,9 +168,9 @@ mod owned {
     };
 
     use super::*;
-    use crate::descriptor::DecoderConfigDescriptor;
-    use crate::descriptor::DescriptorOwned;
-    use crate::descriptor::SizeOfInstance;
+    use crate::boxes::mp4::descriptor::DecoderConfigDescriptor;
+    use crate::boxes::mp4::descriptor::DescriptorOwned;
+    use crate::boxes::mp4::descriptor::SizeOfInstance;
 
     use crate::cursor::WriteCursor;
 

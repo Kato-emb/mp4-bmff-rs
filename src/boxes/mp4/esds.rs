@@ -1,15 +1,18 @@
-use crate::cursor::ReadCursor;
-
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
 
-use crate::descriptor::DescriptorView;
-use crate::descriptor::EsDescriptorView;
-use crate::descriptor::Tag;
+use crate::cursor::ReadCursor;
 
-use super::FullBoxFlags;
+use super::descriptor::DescriptorView;
+use super::descriptor::EsDescriptorView;
+use super::descriptor::Tag;
+
+define_box_flags!(
+    /// Flags for the ESDS Box (`esds`).
+    EsdsFlags {}
+);
 
 /// A reference to an ESDS box's contents.
 #[derive(Debug)]
@@ -22,12 +25,6 @@ pub struct EsdsBoxView<'a> {
     pub esd: EsDescriptorView<'a>,
 }
 
-/// Specification type for ESDS Box ('esds')
-pub struct EsdsSpec;
-
-/// The flags for the ESDS Box ('esds')
-pub type EsdsFlags = FullBoxFlags<EsdsSpec>;
-
 impl BoxCodec for EsdsBoxView<'_> {
     fn boxtype(&self) -> BoxType {
         BoxType::ESDS
@@ -39,7 +36,7 @@ impl<'de> BoxDecode<'de> for EsdsBoxView<'de> {
         let mut cur = ReadCursor::new(bytes);
 
         let version = cur.read_u8()?;
-        let flags = EsdsFlags::from_bytes(cur.read_array()?);
+        let flags = EsdsFlags::from_be_bytes(cur.read_array::<3>()?);
 
         let es_descr = DescriptorView::parse_in(&mut cur)?;
         let esd = if es_descr.tag == Tag::ES_DESCR_TAG {
@@ -70,15 +67,13 @@ impl<'a> TryFrom<&'a [u8]> for EsdsBoxView<'a> {
 }
 
 #[cfg(feature = "alloc")]
-pub use owned::EsdsBox;
-
-#[cfg(feature = "alloc")]
 mod owned {
-    use crate::BoxEncode;
-    use crate::cursor::WriteCursor;
-    use crate::descriptor::EsDescriptor;
-
     use super::*;
+    use crate::BoxEncode;
+
+    use crate::cursor::WriteCursor;
+
+    use crate::boxes::mp4::descriptor::EsDescriptor;
 
     /// An owned ESDS box.
     #[derive(Debug, Clone)]
@@ -132,7 +127,7 @@ mod owned {
             cur.write_u8(self.version)?;
 
             // Write flags (3 bytes)
-            cur.write_slice(&self.flags.to_bytes())?;
+            cur.write_array(&self.flags.to_be_bytes())?;
 
             // Write ES Descriptor
             self.esd.write_in(&mut cur)?;
@@ -141,6 +136,9 @@ mod owned {
         }
     }
 }
+
+#[cfg(feature = "alloc")]
+pub use owned::*;
 
 #[cfg(test)]
 mod tests {
@@ -189,7 +187,7 @@ mod tests {
         // Parse again and verify values match
         let reparsed = EsdsBox::decode(&buf[..written]).unwrap();
         assert_eq!(reparsed.version, esds.version);
-        assert_eq!(reparsed.flags.get(), esds.flags.get());
+        assert_eq!(reparsed.flags.bits(), esds.flags.bits());
         assert_eq!(reparsed.esd.es_id, esds.esd.es_id);
     }
 }
