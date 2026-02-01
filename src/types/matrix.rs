@@ -12,6 +12,7 @@ use super::fixed::{
 #[rustfmt::skip]
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
 pub struct Matrix {
     pub a: I16F16, pub b: I16F16, pub u: I2F30,
     pub c: I16F16, pub d: I16F16, pub v: I2F30,

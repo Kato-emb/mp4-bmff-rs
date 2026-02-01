@@ -12,9 +12,9 @@ pub struct BoxIter<'a> {
 
 impl<'a> BoxIter<'a> {
     /// Creates a new `BoxIter` from the given byte slice.
-    pub(crate) fn new(data: &'a [u8]) -> Self {
+    pub(crate) fn new(content: &'a [u8]) -> Self {
         Self {
-            cur: ReadCursor::new(data),
+            cur: ReadCursor::new(content),
         }
     }
 }
