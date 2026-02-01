@@ -180,8 +180,8 @@ mod tests {
 
     fn raw_data() -> [u8; 16] {
         [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags (3 bytes)
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags (3 bytes)
             0x00, 0x00, 0x00, 0x02, // entry_count = 2
             0x00, 0x00, 0x00, 0x01, // entry 1: sample_number = 1
             0x00, 0x00, 0x00, 0x64, // entry 2: sample_number = 100
@@ -208,8 +208,8 @@ mod tests {
     #[test]
     fn test_stss_box_view_empty_entries() {
         let data: [u8; 8] = [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags (3 bytes)
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags (3 bytes)
             0x00, 0x00, 0x00, 0x00, // entry_count = 0
         ];
 
@@ -223,8 +223,8 @@ mod tests {
     fn test_stss_box_view_invalid_size() {
         // entry_count = 2 but only 1 entry provided
         let data: [u8; 12] = [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags (3 bytes)
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags (3 bytes)
             0x00, 0x00, 0x00, 0x02, // entry_count = 2
             0x00, 0x00, 0x00, 0x01, // entry 1: sample_number = 1
         ];

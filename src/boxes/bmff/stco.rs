@@ -178,8 +178,8 @@ mod tests {
 
     fn raw_data() -> [u8; 16] {
         [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags = 0
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x02, // entry_count = 2
             // entries
             0x00, 0x00, 0x10, 0x00, // chunk_offset = 4096
@@ -204,8 +204,8 @@ mod tests {
     #[test]
     fn test_stco_box_view_empty_entries() {
         let data: [u8; 8] = [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags = 0
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x00, // entry_count = 0
         ];
 
@@ -223,7 +223,9 @@ mod tests {
 
     #[test]
     fn test_stco_entry_round_trip() {
-        let entry = StcoEntry { chunk_offset: 12345 };
+        let entry = StcoEntry {
+            chunk_offset: 12345,
+        };
 
         let mut bytes = [0u8; 4];
         entry.to_bytes(&mut bytes);

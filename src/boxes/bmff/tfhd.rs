@@ -187,7 +187,8 @@ mod tests {
     fn raw_data_all_optional() -> [u8; 32] {
         [
             0x00, // version = 0
-            0x00, 0x00, 0x3B, // flags = BASE_DATA_OFFSET | SAMPLE_DESC_INDEX | DURATION | SIZE | FLAGS
+            0x00, 0x00,
+            0x3B, // flags = BASE_DATA_OFFSET | SAMPLE_DESC_INDEX | DURATION | SIZE | FLAGS
             0x00, 0x00, 0x00, 0x01, // track_id = 1
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, // base_data_offset = 4096
             0x00, 0x00, 0x00, 0x01, // sample_description_index = 1

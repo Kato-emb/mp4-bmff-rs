@@ -184,8 +184,8 @@ mod tests {
 
     fn raw_data() -> [u8; 20] {
         [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags = 0
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x01, // entry_count = 1
             // entry (12 bytes)
             0x00, 0x00, 0x00, 0x01, // first_chunk = 1
@@ -213,8 +213,8 @@ mod tests {
     #[test]
     fn test_stsc_box_view_empty_entries() {
         let data: [u8; 8] = [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags = 0
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x00, // entry_count = 0
         ];
 
@@ -244,7 +244,10 @@ mod tests {
         let decoded = StscEntry::from_bytes(&bytes);
         assert_eq!(decoded.first_chunk, entry.first_chunk);
         assert_eq!(decoded.samples_per_chunk, entry.samples_per_chunk);
-        assert_eq!(decoded.sample_description_index, entry.sample_description_index);
+        assert_eq!(
+            decoded.sample_description_index,
+            entry.sample_description_index
+        );
     }
 
     #[cfg(feature = "alloc")]

@@ -194,9 +194,14 @@ mod tests {
 
     fn raw_data() -> [u8; 10] {
         [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags (3 bytes)
-            0x00, 0x00, 0x00, 0x02, // entry_count = 2
+            0x00, // version = 0
+            0x00,
+            0x00,
+            0x00, // flags (3 bytes)
+            0x00,
+            0x00,
+            0x00,
+            0x02, // entry_count = 2
             // entry 1: is_leading=3, sample_depends_on=2, sample_is_depended_on=1, sample_has_redundancy=0
             0b11_10_01_00, // 0xE4
             // entry 2: is_leading=0, sample_depends_on=1, sample_is_depended_on=2, sample_has_redundancy=3
@@ -232,8 +237,8 @@ mod tests {
     #[test]
     fn test_sdtp_box_view_empty_entries() {
         let data: [u8; 8] = [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags (3 bytes)
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags (3 bytes)
             0x00, 0x00, 0x00, 0x00, // entry_count = 0
         ];
 
@@ -247,10 +252,10 @@ mod tests {
     fn test_sdtp_box_view_invalid_size() {
         // entry_count = 3 but only 2 entries provided
         let data: [u8; 10] = [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags (3 bytes)
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags (3 bytes)
             0x00, 0x00, 0x00, 0x03, // entry_count = 3
-            0xE4, 0x1B,             // only 2 entries
+            0xE4, 0x1B, // only 2 entries
         ];
 
         let result = SdtpBoxView::decode(&data);

@@ -186,8 +186,8 @@ mod tests {
 
     fn raw_data() -> [u8; 24] {
         [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags (3 bytes)
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags (3 bytes)
             0x00, 0x00, 0x00, 0x02, // entry_count = 2
             0x00, 0x00, 0x00, 0x0A, // entry 1: shadowed_sample_number = 10
             0x00, 0x00, 0x00, 0x01, // entry 1: sync_sample_number = 1
@@ -217,8 +217,8 @@ mod tests {
     #[test]
     fn test_stsh_box_view_empty_entries() {
         let data: [u8; 8] = [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags (3 bytes)
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags (3 bytes)
             0x00, 0x00, 0x00, 0x00, // entry_count = 0
         ];
 
@@ -231,8 +231,8 @@ mod tests {
     fn test_stsh_box_view_invalid_size() {
         // entry_count = 2 but only 1 entry provided
         let data: [u8; 16] = [
-            0x00,                   // version = 0
-            0x00, 0x00, 0x00,       // flags (3 bytes)
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags (3 bytes)
             0x00, 0x00, 0x00, 0x02, // entry_count = 2
             0x00, 0x00, 0x00, 0x0A, // entry 1: shadowed_sample_number = 10
             0x00, 0x00, 0x00, 0x01, // entry 1: sync_sample_number = 1
