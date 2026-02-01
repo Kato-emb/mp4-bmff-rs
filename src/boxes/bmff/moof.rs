@@ -77,6 +77,8 @@ impl<'de> BoxDecode<'de> for MoofBoxView<'de> {
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::Vec;
+
     use super::*;
     use crate::BoxEncode;
 
@@ -213,7 +215,7 @@ mod tests {
             // mfhd box
             0x00, 0x00, 0x00, 0x10, // size = 16
             b'm', b'f', b'h', b'd', // type = "mfhd"
-            0x00,             // version = 0
+            0x00, // version = 0
             0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x01, // sequence_number = 1
         ]
@@ -224,7 +226,7 @@ mod tests {
             // mfhd box
             0x00, 0x00, 0x00, 0x10, // size = 16
             b'm', b'f', b'h', b'd', // type = "mfhd"
-            0x00,             // version = 0
+            0x00, // version = 0
             0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x02, // sequence_number = 2
             // traf box (contains tfhd)
@@ -233,7 +235,7 @@ mod tests {
             // tfhd box inside traf
             0x00, 0x00, 0x00, 0x10, // size = 16
             b't', b'f', b'h', b'd', // type = "tfhd"
-            0x00,             // version = 0
+            0x00, // version = 0
             0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x01, // track_id = 1
         ]

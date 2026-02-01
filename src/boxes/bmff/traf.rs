@@ -77,6 +77,8 @@ impl<'de> BoxDecode<'de> for TrafBoxView<'de> {
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::Vec;
+
     use super::*;
     use crate::BoxEncode;
 
@@ -204,7 +206,7 @@ mod tests {
             // tfhd box (minimal, no optional fields)
             0x00, 0x00, 0x00, 0x10, // size = 16
             b't', b'f', b'h', b'd', // type = "tfhd"
-            0x00,             // version = 0
+            0x00, // version = 0
             0x00, 0x00, 0x00, // flags = 0 (no optional fields)
             0x00, 0x00, 0x00, 0x01, // track_id = 1
         ]
@@ -215,13 +217,13 @@ mod tests {
             // tfhd box (minimal)
             0x00, 0x00, 0x00, 0x10, // size = 16
             b't', b'f', b'h', b'd', // type = "tfhd"
-            0x00,             // version = 0
+            0x00, // version = 0
             0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x02, // track_id = 2
             // trun box (minimal, no samples)
             0x00, 0x00, 0x00, 0x10, // size = 16
             b't', b'r', b'u', b'n', // type = "trun"
-            0x00,             // version = 0
+            0x00, // version = 0
             0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x00, // sample_count = 0
         ]
@@ -232,13 +234,13 @@ mod tests {
             // tfhd box (minimal)
             0x00, 0x00, 0x00, 0x10, // size = 16
             b't', b'f', b'h', b'd', // type = "tfhd"
-            0x00,             // version = 0
+            0x00, // version = 0
             0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x00, 0x01, // track_id = 1
             // tfdt box (version 0)
             0x00, 0x00, 0x00, 0x10, // size = 16
             b't', b'f', b'd', b't', // type = "tfdt"
-            0x00,             // version = 0
+            0x00, // version = 0
             0x00, 0x00, 0x00, // flags = 0
             0x00, 0x00, 0x10, 0x00, // base_media_decode_time = 4096
         ]

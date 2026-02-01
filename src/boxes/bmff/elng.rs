@@ -56,7 +56,10 @@ impl<'de> BoxDecode<'de> for ElngBoxView<'de> {
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::lib::String;
+    use crate::lib::{
+        String, //
+        ToString,
+    };
 
     use super::*;
     use crate::BoxEncode;

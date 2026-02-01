@@ -51,7 +51,7 @@ impl<'de> BoxDecode<'de> for UrlBoxView<'de> {
                 ));
             }
 
-            let loc_str = std::str::from_utf8(loc_bytes).map_err(|_| {
+            let loc_str = core::str::from_utf8(loc_bytes).map_err(|_| {
                 Error::in_box(
                     ErrorKind::InvalidBoxField {
                         field: "location",
@@ -107,7 +107,7 @@ impl<'de> BoxDecode<'de> for UrnBoxView<'de> {
         let flags = UrnFlags::from_be_bytes(cur.read_array::<3>()?);
 
         let name_bytes = cur.take_until(0)?; // Read until null terminator
-        let name_str = std::str::from_utf8(name_bytes).map_err(|_| {
+        let name_str = core::str::from_utf8(name_bytes).map_err(|_| {
             Error::in_box(
                 ErrorKind::InvalidBoxField {
                     field: "name",
@@ -120,7 +120,7 @@ impl<'de> BoxDecode<'de> for UrnBoxView<'de> {
         let location = if !cur.is_empty() {
             let loc_bytes = cur.take_until(0)?; // Read until null terminator
 
-            let loc_str = std::str::from_utf8(loc_bytes).map_err(|_| {
+            let loc_str = core::str::from_utf8(loc_bytes).map_err(|_| {
                 Error::in_box(
                     ErrorKind::InvalidBoxField {
                         field: "location",

@@ -73,7 +73,10 @@ impl<'de> BoxDecode<'de> for HdlrBoxView<'de> {
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::lib::String;
+    use crate::lib::{
+        String, //
+        ToString,
+    };
 
     use super::*;
     use crate::BoxEncode;
