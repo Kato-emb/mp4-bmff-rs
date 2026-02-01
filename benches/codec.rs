@@ -4,7 +4,7 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
-use mp4_bmff::boxes::{
+use mp4_bmff::boxes::bmff::{
     FtypBox, FtypBoxView, MoovBox, MoovBoxView, SttsBox, SttsBoxView, SttsEntry, SttsFlags,
 };
 use mp4_bmff::types::FourCC;
@@ -185,6 +185,13 @@ fn make_stbl_payload() -> Vec<u8> {
     stsc.extend_from_slice(&[0, 0, 0]);
     stsc.extend_from_slice(&0u32.to_be_bytes());
     data.extend_from_slice(&make_box(b"stsc", &stsc));
+
+    let mut stsz = Vec::new();
+    stsz.push(0);
+    stsz.extend_from_slice(&[0, 0, 0]);
+    stsz.extend_from_slice(&0u32.to_be_bytes()); // sample_size
+    stsz.extend_from_slice(&0u32.to_be_bytes()); // sample_count
+    data.extend_from_slice(&make_box(b"stsz", &stsz));
 
     let mut stco = Vec::new();
     stco.push(0);

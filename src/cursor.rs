@@ -120,6 +120,7 @@ impl<'a> ReadCursor<'a> {
         self.pos
     }
 
+    #[allow(dead_code)]
     /// Sets the current position of the cursor.
     #[inline]
     pub const fn set_position(&mut self, pos: usize) {
@@ -400,6 +401,14 @@ impl<'a> WriteCursor<'a> {
     #[inline]
     #[track_caller]
     pub fn write_u64_be(&mut self, value: u64) -> Result<()> {
+        self.write_array(&value.to_be_bytes())?;
+        Ok(())
+    }
+
+    /// Writes a big-endian 64-bit signed integer to the cursor.
+    #[inline]
+    #[track_caller]
+    pub fn write_i64_be(&mut self, value: i64) -> Result<()> {
         self.write_array(&value.to_be_bytes())?;
         Ok(())
     }

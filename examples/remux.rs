@@ -23,7 +23,7 @@ use mp4_bmff::io::{BoxReader, BoxWriter};
 use mp4_bmff::{BoxDecode, BoxType};
 
 #[cfg(feature = "std")]
-use mp4_bmff::boxes::{FreeBox, FtypBox, MdatBox, MoofBox, MoovBox, StypBox};
+use mp4_bmff::boxes::bmff::{FreeBox, FtypBox, MdatBox, MoofBox, MoovBox, StypBox};
 
 #[cfg(not(feature = "std"))]
 fn main() {

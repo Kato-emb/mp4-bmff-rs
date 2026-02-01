@@ -6,10 +6,13 @@ rust-version = "1.87"
 repository = "https://github.com/Kato-emb/mp4-bmff-rs"
 
 [features]
-default = ["std"]
+default = ["std", "avc", "mp4"]
 
 alloc = []
 std = ["alloc"]
+
+avc = []
+mp4 = []
 
 [dependencies]
 

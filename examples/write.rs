@@ -16,7 +16,7 @@ use std::io::BufWriter;
 use std::path::PathBuf;
 
 #[cfg(feature = "std")]
-use mp4_bmff::boxes::FtypBox;
+use mp4_bmff::boxes::bmff::FtypBox;
 #[cfg(feature = "std")]
 use mp4_bmff::io::BoxWriter;
 #[cfg(feature = "std")]
