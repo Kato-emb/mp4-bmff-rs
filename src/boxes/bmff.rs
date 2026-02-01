@@ -73,7 +73,6 @@ pub use free::FreeBoxView;
 pub use ftyp::FtypBoxView;
 pub use hdlr::HdlrBoxView;
 pub use mdat::MdatBoxView;
-pub use mvex::MvexBoxView;
 pub use pdin::PdinBoxView;
 pub use sdtp::SdtpBoxView;
 pub use stco::StcoBoxView;
@@ -86,11 +85,7 @@ pub use stsz::StszBoxView;
 pub use stts::SttsBoxView;
 pub use styp::StypBoxView;
 pub use tfra::TfraBoxView;
-pub use tref::{
-    TrefBoxView, //
-    TrefTypeBoxView,
-};
-pub use trgr::TrgrBoxView;
+pub use tref::TrefTypeBoxView;
 pub use trun::TrunBoxView;
 
 // Container boxes - View types
@@ -101,9 +96,12 @@ pub use mfra::MfraBoxView;
 pub use minf::MinfBoxView;
 pub use moof::MoofBoxView;
 pub use moov::MoovBoxView;
+pub use mvex::MvexBoxView;
 pub use stbl::StblBoxView;
 pub use traf::TrafBoxView;
 pub use trak::TrakBoxView;
+pub use tref::TrefBoxView;
+pub use trgr::TrgrBoxView;
 
 // Fixed-size boxes (Copy types, no View/Owned distinction)
 pub use cslg::CslgBox;
@@ -172,7 +170,6 @@ pub use tfra::{
     TfraEntry, //
     TfraEntryIter,
 };
-
 pub use trun::{
     TrunSample, //
     TrunSampleIter,
