@@ -1,9 +1,8 @@
-use crate::types::FourCC;
-
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
+use crate::types::*;
 
 use crate::cursor::ReadCursor;
 
@@ -152,16 +151,19 @@ pub use owned::FtypBox;
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_ftyp_box_ref_parse() {
-        let data: [u8; 20] = [
+    fn raw_data() -> [u8; 20] {
+        [
             b'i', b's', b'o', b'm', // major_brand
             0x00, 0x00, 0x02, 0x00, // minor_version (512)
             b'i', b's', b'o', b'm', // compatible_brand 1
             b'i', b's', b'o', b'2', // compatible_brand 2
             b'a', b'v', b'c', b'1', // compatible_brand 3
-        ];
+        ]
+    }
 
+    #[test]
+    fn test_ftyp_box_view_decode() {
+        let data = raw_data();
         let ftyp_view = FtypBoxView::decode(&data).unwrap();
 
         assert_eq!(ftyp_view.major_brand, FourCC::new(*b"isom"));
@@ -178,58 +180,67 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "alloc")]
     #[test]
-    fn test_ftyp_box_owned_parse() {
-        let data: [u8; 20] = [
+    fn test_ftyp_box_view_no_compatible_brands() {
+        let data: [u8; 8] = [
             b'i', b's', b'o', b'm', // major_brand
-            0x00, 0x00, 0x02, 0x00, // minor_version (512)
-            b'i', b's', b'o', b'm', // compatible_brand 1
-            b'i', b's', b'o', b'2', // compatible_brand 2
-            b'a', b'v', b'c', b'1', // compatible_brand 3
+            0x00, 0x00, 0x00, 0x01, // minor_version (1)
         ];
 
-        let ftyp_box = FtypBox::decode(&data).unwrap();
+        let ftyp_view = FtypBoxView::decode(&data).unwrap();
+        assert_eq!(ftyp_view.major_brand, FourCC::new(*b"isom"));
+        assert_eq!(ftyp_view.minor_version, 1);
+        assert_eq!(ftyp_view.compatible_brands().count(), 0);
+    }
 
-        assert_eq!(ftyp_box.major_brand, FourCC::new(*b"isom"));
-        assert_eq!(ftyp_box.minor_version, 512);
+    #[test]
+    fn test_ftyp_box_view_invalid_size() {
+        // 9 bytes: major_brand(4) + minor_version(4) + 1 extra byte (not multiple of 4)
+        let data: [u8; 9] = [
+            b'i', b's', b'o', b'm', // major_brand
+            0x00, 0x00, 0x00, 0x01, // minor_version
+            0x00, // invalid extra byte
+        ];
 
-        assert_eq!(
-            ftyp_box.compatible_brands,
-            vec![
-                FourCC::new(*b"isom"),
-                FourCC::new(*b"iso2"),
-                FourCC::new(*b"avc1"),
-            ]
-        );
+        let result = FtypBoxView::decode(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ftyp_box_view_truncated() {
+        // Only 4 bytes, missing minor_version
+        let data: [u8; 4] = [b'i', b's', b'o', b'm'];
+
+        let result = FtypBoxView::decode(&data);
+        assert!(result.is_err());
     }
 
     #[cfg(feature = "alloc")]
     #[test]
-    fn test_ftyp_box_write() {
+    fn test_ftyp_box_round_trip() {
         use crate::BoxEncode;
 
-        let ftyp_view = FtypBox {
-            major_brand: FourCC::new(*b"isom"),
-            minor_version: 512,
-            compatible_brands: vec![
-                FourCC::new(*b"isom"),
-                FourCC::new(*b"iso2"),
-                FourCC::new(*b"avc1"),
-            ],
-        };
+        let original = raw_data();
+        let ftyp_box = FtypBox::decode(&original).unwrap();
 
-        let mut buffer = vec![0u8; 20];
-        ftyp_view.encode_into(&mut buffer).unwrap();
+        let mut encoded = vec![0u8; ftyp_box.encoded_len()];
+        ftyp_box.encode_into(&mut encoded).unwrap();
 
-        let expected: [u8; 20] = [
-            b'i', b's', b'o', b'm', // major_brand
-            0x00, 0x00, 0x02, 0x00, // minor_version (512)
-            b'i', b's', b'o', b'm', // compatible_brand 1
-            b'i', b's', b'o', b'2', // compatible_brand 2
-            b'a', b'v', b'c', b'1', // compatible_brand 3
-        ];
+        assert_eq!(&encoded[..], &original[..]);
+    }
 
-        assert_eq!(buffer, expected);
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_ftyp_box_to_owned() {
+        let data = raw_data();
+        let view = FtypBoxView::decode(&data).unwrap();
+        let owned = view.to_owned();
+
+        assert_eq!(owned.major_brand, view.major_brand);
+        assert_eq!(owned.minor_version, view.minor_version);
+        assert_eq!(
+            owned.compatible_brands.len(),
+            view.compatible_brands().count()
+        );
     }
 }

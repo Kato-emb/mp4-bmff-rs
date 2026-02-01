@@ -88,29 +88,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_mdat_box_view_parse() {
+    fn test_mdat_box_view_decode() {
         let data = b"example media data";
         let mdat_box_view = MdatBoxView::decode(data).unwrap();
         assert_eq!(mdat_box_view.data, data);
     }
 
-    #[cfg(feature = "alloc")]
     #[test]
-    fn test_mdat_box_owned_parse() {
-        let data = b"example media data";
-        let mdat_box = MdatBox::decode(data).unwrap();
-        assert_eq!(mdat_box.data, data);
+    fn test_mdat_box_view_empty() {
+        let data: &[u8] = &[];
+        let mdat_box_view = MdatBoxView::decode(data).unwrap();
+        assert_eq!(mdat_box_view.data.len(), 0);
     }
 
     #[cfg(feature = "alloc")]
     #[test]
-    fn test_mdat_box_owned_write() {
+    fn test_mdat_box_round_trip() {
         use crate::BoxEncode;
-        let mdat_box = MdatBox {
-            data: b"example media data".to_vec(),
-        };
-        let mut buffer = vec![0u8; 18];
-        mdat_box.encode_into(&mut buffer).unwrap();
-        assert_eq!(&buffer, b"example media data");
+
+        let original = b"round trip media data test";
+        let mdat_box = MdatBox::decode(original).unwrap();
+
+        let mut encoded = vec![0u8; mdat_box.encoded_len()];
+        mdat_box.encode_into(&mut encoded).unwrap();
+
+        assert_eq!(&encoded[..], original);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_mdat_box_to_owned() {
+        let data = b"to_owned test";
+        let view = MdatBoxView::decode(data).unwrap();
+        let owned = view.to_owned();
+
+        assert_eq!(owned.data, data);
     }
 }

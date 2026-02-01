@@ -188,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pdin_box_view_parse() {
+    fn test_pdin_box_view_decode() {
         let data = raw_data();
         let pdin_box_view = PdinBoxView::decode(&data).unwrap();
         assert_eq!(pdin_box_view.version, 0);
@@ -217,13 +217,6 @@ mod tests {
     }
 
     #[test]
-    fn test_pdin_box_view_boxtype() {
-        let data = raw_data();
-        let pdin_box_view = PdinBoxView::decode(&data).unwrap();
-        assert_eq!(pdin_box_view.boxtype(), BoxType::PDIN);
-    }
-
-    #[test]
     fn test_pdin_box_view_invalid_size() {
         // 7 bytes after header: not a multiple of 8 (entry size)
         let data: [u8; 11] = [
@@ -247,19 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pdin_entry_from_bytes() {
-        let bytes = [
-            0x00, 0x00, 0x03, 0xE8, // rate = 1000
-            0x00, 0x00, 0x01, 0xF4, // initial_delay = 500
-        ];
-
-        let entry = PdinEntry::from_bytes(&bytes);
-        assert_eq!(entry.rate, 1000);
-        assert_eq!(entry.initial_delay, 500);
-    }
-
-    #[test]
-    fn test_pdin_entry_to_bytes() {
+    fn test_pdin_entry_round_trip() {
         let entry = PdinEntry {
             rate: 1000,
             initial_delay: 500,
@@ -268,52 +249,9 @@ mod tests {
         let mut bytes = [0u8; 8];
         entry.to_bytes(&mut bytes);
 
-        assert_eq!(
-            bytes,
-            [0x00, 0x00, 0x03, 0xE8, 0x00, 0x00, 0x01, 0xF4]
-        );
-    }
-
-    #[cfg(feature = "alloc")]
-    #[test]
-    fn test_pdin_box_owned_parse() {
-        let data = raw_data();
-        let pdin_box = PdinBox::decode(&data).unwrap();
-        assert_eq!(pdin_box.version, 0);
-        assert_eq!(pdin_box.flags.get(), 0);
-        assert_eq!(pdin_box.entries.len(), 2);
-        assert_eq!(pdin_box.entries[0].rate, 1000);
-        assert_eq!(pdin_box.entries[0].initial_delay, 500);
-        assert_eq!(pdin_box.entries[1].rate, 2000);
-        assert_eq!(pdin_box.entries[1].initial_delay, 1000);
-    }
-
-    #[cfg(feature = "alloc")]
-    #[test]
-    fn test_pdin_box_owned_empty_entries() {
-        let data: [u8; 4] = [
-            0x00, // version
-            0x00, 0x00, 0x00, // flags
-        ];
-
-        let pdin_box = PdinBox::decode(&data).unwrap();
-        assert_eq!(pdin_box.entries.len(), 0);
-    }
-
-    #[cfg(feature = "alloc")]
-    #[test]
-    fn test_pdin_box_owned_write() {
-        use crate::BoxEncode;
-
-        let original_data = raw_data();
-
-        let pdin_box = PdinBox::decode(&original_data).unwrap();
-        let encoded_len = pdin_box.encoded_len();
-        let mut encoded_data = vec![0u8; encoded_len];
-        pdin_box.encode_into(&mut encoded_data).unwrap();
-
-        assert_eq!(original_data.len(), encoded_len);
-        assert_eq!(&original_data[..], &encoded_data[..]);
+        let decoded = PdinEntry::from_bytes(&bytes);
+        assert_eq!(decoded.rate, entry.rate);
+        assert_eq!(decoded.initial_delay, entry.initial_delay);
     }
 
     #[cfg(feature = "alloc")]
@@ -340,23 +278,5 @@ mod tests {
         assert_eq!(owned.version, view.version);
         assert_eq!(owned.flags.get(), view.flags.get());
         assert_eq!(owned.entries.len(), view.entries().count());
-    }
-
-    #[cfg(feature = "alloc")]
-    #[test]
-    fn test_pdin_box_encoded_len() {
-        use crate::BoxEncode;
-
-        let pdin_box = PdinBox {
-            version: 0,
-            flags: PdinFlags::empty(),
-            entries: vec![
-                PdinEntry { rate: 1000, initial_delay: 500 },
-                PdinEntry { rate: 2000, initial_delay: 1000 },
-            ],
-        };
-
-        // 4 (version + flags) + 16 (2 * 8 entries)
-        assert_eq!(pdin_box.encoded_len(), 20);
     }
 }

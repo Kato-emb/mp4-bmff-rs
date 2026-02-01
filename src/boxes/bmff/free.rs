@@ -88,33 +88,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_free_box_view_parse() {
+    fn test_free_box_view_decode() {
         let data = b"example free space data";
         let free_box_view = FreeBoxView::decode(data).unwrap();
         assert_eq!(free_box_view.data, data);
     }
 
-    #[cfg(feature = "alloc")]
     #[test]
-    fn test_free_box_owned_parse() {
-        let data = b"example free space data";
-        let free_box = FreeBox::decode(data).unwrap();
-        assert_eq!(free_box.data, data);
+    fn test_free_box_view_empty() {
+        let data: &[u8] = &[];
+        let free_box_view = FreeBoxView::decode(data).unwrap();
+        assert_eq!(free_box_view.data.len(), 0);
     }
 
     #[cfg(feature = "alloc")]
     #[test]
-    fn test_free_box_owned_write() {
+    fn test_free_box_round_trip() {
         use crate::BoxEncode;
-        let free_box = FreeBox {
-            data: b"example free space data".to_vec(),
-        };
 
-        let mut buffer = vec![0u8; 23];
-        free_box.encode_into(&mut buffer).unwrap();
+        let original = b"round trip test data";
+        let free_box = FreeBox::decode(original).unwrap();
 
-        let expected = b"example free space data";
+        let mut encoded = vec![0u8; free_box.encoded_len()];
+        free_box.encode_into(&mut encoded).unwrap();
 
-        assert_eq!(buffer, expected);
+        assert_eq!(&encoded[..], original);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_free_box_to_owned() {
+        let data = b"to_owned test";
+        let view = FreeBoxView::decode(data).unwrap();
+        let owned = view.to_owned();
+
+        assert_eq!(owned.data, data);
     }
 }
