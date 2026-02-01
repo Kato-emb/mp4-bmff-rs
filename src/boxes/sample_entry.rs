@@ -2,13 +2,10 @@
 
 use core::mem;
 
-use crate::cursor::ReadCursor;
 use crate::types::*;
 
-use crate::error::*;
-
 #[cfg(feature = "alloc")]
-use crate::cursor::WriteCursor;
+use crate::error::*;
 
 /// Fields common to all Sample Entry boxes.
 #[derive(Debug, Clone, Copy)]
@@ -25,7 +22,8 @@ impl SampleEntry {
         Self::RESERVED_SIZE + 2 // reserved + data_reference_index
     }
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
+    #[cfg(feature = "alloc")]
+    pub(crate) fn parse_in(cur: &mut crate::cursor::ReadCursor<'_>) -> Result<Self> {
         // Skip reserved bytes
         cur.advance(Self::RESERVED_SIZE)?;
         let data_reference_index = cur.read_u16_be()?;
@@ -36,7 +34,7 @@ impl SampleEntry {
     }
 
     #[cfg(feature = "alloc")]
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    pub(crate) fn write_in(&self, cur: &mut crate::cursor::WriteCursor<'_>) -> Result<()> {
         // Write reserved bytes (6 bytes of zeros)
         cur.write_slice(&[0u8; Self::RESERVED_SIZE])?;
         cur.write_u16_be(self.data_reference_index)?;
@@ -133,7 +131,8 @@ impl VisualSampleEntry {
         }
     }
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
+    #[cfg(feature = "alloc")]
+    pub(crate) fn parse_in(cur: &mut crate::cursor::ReadCursor<'_>) -> Result<Self> {
         let base = SampleEntry::parse_in(cur)?;
 
         // Skip pre_defined (2 bytes)
@@ -175,7 +174,7 @@ impl VisualSampleEntry {
     }
 
     #[cfg(feature = "alloc")]
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    pub(crate) fn write_in(&self, cur: &mut crate::cursor::WriteCursor<'_>) -> Result<()> {
         self.base.write_in(cur)?;
 
         // pre_defined (2 bytes)
@@ -253,7 +252,8 @@ impl AudioSampleEntry {
         &self.base
     }
 
-    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
+    #[cfg(feature = "alloc")]
+    pub(crate) fn parse_in(cur: &mut crate::cursor::ReadCursor<'_>) -> Result<Self> {
         let base = SampleEntry::parse_in(cur)?;
 
         // Skip reserved (4 bytes)
@@ -278,7 +278,7 @@ impl AudioSampleEntry {
     }
 
     #[cfg(feature = "alloc")]
-    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+    pub(crate) fn write_in(&self, cur: &mut crate::cursor::WriteCursor<'_>) -> Result<()> {
         self.base.write_in(cur)?;
 
         // reserved (8 bytes)

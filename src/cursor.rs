@@ -120,6 +120,7 @@ impl<'a> ReadCursor<'a> {
         self.pos
     }
 
+    #[allow(dead_code)]
     /// Sets the current position of the cursor.
     #[inline]
     pub const fn set_position(&mut self, pos: usize) {
