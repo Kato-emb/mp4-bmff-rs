@@ -144,9 +144,13 @@ mod macros;
 
 // ISO/IEC 14496-12
 pub mod bmff;
+
 // ISO/IEC 14496-14
+#[cfg(feature = "mp4")]
 pub mod mp4;
+
 // ISO/IEC 14496-15
+#[cfg(feature = "avc")]
 pub mod avc;
 
 pub mod sample_entry;
