@@ -17,12 +17,3 @@ mod owned_exports {
 
 #[cfg(feature = "alloc")]
 pub use owned_exports::*;
-
-define_box_types!(
-    /// AVC Configuration Box
-    AVCC = b"avcC",
-    /// AVC Sample Entry Box
-    AVC1 = b"avc1",
-    /// AVC3 Sample Entry Box
-    AVC3 = b"avc3",
-);
