@@ -250,6 +250,11 @@ mod owned {
     use crate::lib::String;
 
     use super::*;
+    use crate::BoxEncode;
+
+    use crate::codec::boxed_len;
+    use crate::codec::write_box_in;
+    use crate::cursor::WriteCursor;
 
     /// An owned AVC Decoder configuration record
     #[derive(Debug, Clone)]
@@ -276,6 +281,91 @@ mod owned {
         pub bit_depth_chroma_minus8: Option<u8>,
         /// Sequence parameter set extensions (optional)
         pub sps_ext: Option<Vec<Vec<u8>>>,
+    }
+
+    impl AVCDecoderConfigurationRecord {
+        /// Returns the size in bytes when encoded to a byte slice.
+        pub fn encoded_len(&self) -> usize {
+            // Base fields: 6 bytes
+            // configuration_version (1) + avc_profile_indication (1) + profile_compatibility (1)
+            // + avc_level_indication (1) + length_size_minus_one (1) + num_of_sps (1)
+            let mut size = 6;
+
+            // SPS: 2 bytes (length) + data for each
+            for sps in &self.sps {
+                size += 2 + sps.len();
+            }
+
+            // num_of_pps: 1 byte
+            size += 1;
+
+            // PPS: 2 bytes (length) + data for each
+            for pps in &self.pps {
+                size += 2 + pps.len();
+            }
+
+            // Optional fields (when profile is 100, 110, 122, or 144)
+            if self.chroma_format.is_some() {
+                // chroma_format (1) + bit_depth_luma_minus8 (1) + bit_depth_chroma_minus8 (1) + num_of_sps_ext (1)
+                size += 4;
+
+                // SPS ext: 2 bytes (length) + data for each
+                if let Some(ref sps_ext) = self.sps_ext {
+                    for ext in sps_ext {
+                        size += 2 + ext.len();
+                    }
+                }
+            }
+
+            size
+        }
+
+        fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
+            cur.write_u8(self.configuration_version)?;
+            cur.write_u8(self.avc_profile_indication)?;
+            cur.write_u8(self.profile_compatibility)?;
+            cur.write_u8(self.avc_level_indication)?;
+
+            // reserved (6 bits) + lengthSizeMinusOne (2 bits)
+            cur.write_u8(0xFC | (self.length_size_minus_one & 0x03))?;
+
+            // reserved (3 bits) + numOfSequenceParameterSets (5 bits)
+            cur.write_u8(0xE0 | ((self.sps.len() as u8) & 0x1F))?;
+            for sps in &self.sps {
+                cur.write_u16_be(sps.len() as u16)?;
+                cur.write_slice(sps)?;
+            }
+
+            // numOfPictureParameterSets
+            cur.write_u8(self.pps.len() as u8)?;
+            for pps in &self.pps {
+                cur.write_u16_be(pps.len() as u16)?;
+                cur.write_slice(pps)?;
+            }
+
+            if let Some(chroma_format) = self.chroma_format {
+                // reserved (6 bits) + chromaFormat (2 bits)
+                cur.write_u8(0xFC | (chroma_format & 0x03))?;
+                // reserved (5 bits) + bitDepthLumaMinus8 (3 bits)
+                cur.write_u8(0xF8 | (self.bit_depth_luma_minus8.unwrap_or(0) & 0x07))?;
+                // reserved (5 bits) + bitDepthChromaMinus8 (3 bits)
+                cur.write_u8(0xF8 | (self.bit_depth_chroma_minus8.unwrap_or(0) & 0x07))?;
+
+                if let Some(ref sps_ext) = self.sps_ext {
+                    // numOfSequenceParameterSetExt
+                    cur.write_u8(sps_ext.len() as u8)?;
+                    for ext in sps_ext {
+                        cur.write_u16_be(ext.len() as u16)?;
+                        cur.write_slice(ext)?;
+                    }
+                } else {
+                    // numOfSequenceParameterSetExt = 0
+                    cur.write_u8(0)?;
+                }
+            }
+
+            Ok(())
+        }
     }
 
     impl From<&AVCDecoderConfigurationRecordView<'_>> for AVCDecoderConfigurationRecord {
@@ -324,6 +414,32 @@ mod owned {
         }
     }
 
+    impl BoxCodec for AvcCBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::AVCC
+        }
+    }
+
+    impl BoxDecode<'_> for AvcCBox {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = AvcCBoxView::decode(bytes)?;
+            Ok(AvcCBox::from(&view))
+        }
+    }
+
+    impl BoxEncode for AvcCBox {
+        fn encoded_len(&self) -> usize {
+            self.avc_config.encoded_len()
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+            self.avc_config.write_in(&mut cur)?;
+
+            Ok(cur.position())
+        }
+    }
+
     /// An owned AVC Sample Entry
     #[derive(Debug, Clone)]
     pub struct AvcSampleEntry<S> {
@@ -332,6 +448,19 @@ mod owned {
         /// The AVC Configuration Box (`avcC`)
         pub avcc: AvcCBox,
         _marker: PhantomData<S>,
+    }
+
+    impl<S> AvcSampleEntry<S> {
+        fn write_codec_string_in(&self, w: &mut impl fmt::Write, codec: &str) -> fmt::Result {
+            write!(
+                w,
+                "{}.{:02X}{:02X}{:02X}",
+                codec,
+                self.avcc.avc_config.avc_profile_indication,
+                self.avcc.avc_config.profile_compatibility,
+                self.avcc.avc_config.avc_level_indication
+            )
+        }
     }
 
     impl<S> TryFrom<&AvcSampleEntryView<'_, S>> for AvcSampleEntry<S> {
@@ -354,6 +483,20 @@ mod owned {
         }
     }
 
+    impl<S> BoxEncode for AvcSampleEntry<S> {
+        fn encoded_len(&self) -> usize {
+            VisualSampleEntry::size() + boxed_len(&self.avcc)
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+            self.base.write_in(&mut cur)?;
+            write_box_in(&mut cur, &self.avcc)?;
+
+            Ok(cur.position())
+        }
+    }
+
     /// An owned AVC1 Sample Entry
     pub type Avc1SampleEntry = AvcSampleEntry<Avc1>;
 
@@ -361,19 +504,8 @@ mod owned {
         /// Returns the codec string (e.g., "avc1.640028")
         pub fn codec_string(&self) -> String {
             let mut buf = String::new();
-            self.write_codec_string(&mut buf).unwrap();
+            self.write_codec_string_in(&mut buf, "avc1").unwrap();
             buf
-        }
-
-        /// Writes the codec string (e.g., "avc1.640028") to the given formatter.
-        pub fn write_codec_string(&self, w: &mut impl fmt::Write) -> fmt::Result {
-            write!(
-                w,
-                "avc1.{:02X}{:02X}{:02X}",
-                self.avcc.avc_config.avc_profile_indication,
-                self.avcc.avc_config.profile_compatibility,
-                self.avcc.avc_config.avc_level_indication
-            )
         }
     }
 

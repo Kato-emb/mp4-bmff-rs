@@ -15,17 +15,17 @@ pub struct SampleEntry {
 }
 
 impl SampleEntry {
-    const RESERVED_SIZE: usize = 6;
+    const RESERVED: usize = 6;
 
     /// Returns the size of the `SampleEntry` data.
     pub const fn size() -> usize {
-        Self::RESERVED_SIZE + 2 // reserved + data_reference_index
+        Self::RESERVED + 2 // reserved + data_reference_index
     }
 
     #[cfg(feature = "alloc")]
     pub(crate) fn parse_in(cur: &mut crate::cursor::ReadCursor<'_>) -> Result<Self> {
         // Skip reserved bytes
-        cur.advance(Self::RESERVED_SIZE)?;
+        cur.advance(Self::RESERVED)?;
         let data_reference_index = cur.read_u16_be()?;
 
         Ok(SampleEntry {
@@ -36,7 +36,7 @@ impl SampleEntry {
     #[cfg(feature = "alloc")]
     pub(crate) fn write_in(&self, cur: &mut crate::cursor::WriteCursor<'_>) -> Result<()> {
         // Write reserved bytes (6 bytes of zeros)
-        cur.write_slice(&[0u8; Self::RESERVED_SIZE])?;
+        cur.write_slice(&[0u8; Self::RESERVED])?;
         cur.write_u16_be(self.data_reference_index)?;
         Ok(())
     }
@@ -80,27 +80,27 @@ impl Default for VisualSampleEntry {
 }
 
 impl VisualSampleEntry {
-    const PRE_DEFINED_SIZE_1: usize = mem::size_of::<u16>();
-    const RESERVED_SIZE_1: usize = mem::size_of::<u16>();
-    const PRE_DEFINED_SIZE_2: usize = mem::size_of::<[u32; 3]>();
-    const RESERVED_SIZE_2: usize = mem::size_of::<u32>();
-    const PRE_DEFINED_SIZE_3: usize = mem::size_of::<i16>();
+    const PRE_DEFINED_0: usize = 2;
+    const RESERVED_0: usize = 2;
+    const PRE_DEFINED_1: usize = 12;
+    const RESERVED_1: usize = 4;
+    const PRE_DEFINED_2: usize = 2;
 
     /// Returns the size of the `VisualSampleEntry` data.
     pub const fn size() -> usize {
         SampleEntry::size()
-            + Self::PRE_DEFINED_SIZE_1
-            + Self::RESERVED_SIZE_1
-            + Self::PRE_DEFINED_SIZE_2
+            + Self::PRE_DEFINED_0
+            + Self::RESERVED_0
+            + Self::PRE_DEFINED_1
             + 2 // width
             + 2 // height
             + 4 // horizresolution
             + 4 // vertresolution
-            + Self::RESERVED_SIZE_2
+            + Self::RESERVED_1
             + 2 // frame_count
             + 32 // compressorname
             + 2 // depth
-            + Self::PRE_DEFINED_SIZE_3
+            + Self::PRE_DEFINED_2
     }
 
     /// Returns a reference to the base `SampleEntry`.
@@ -136,11 +136,11 @@ impl VisualSampleEntry {
         let base = SampleEntry::parse_in(cur)?;
 
         // Skip pre_defined (2 bytes)
-        cur.advance(Self::PRE_DEFINED_SIZE_1)?;
+        cur.advance(Self::PRE_DEFINED_0)?;
         // Skip reserved (2 bytes)
-        cur.advance(Self::RESERVED_SIZE_1)?;
+        cur.advance(Self::RESERVED_0)?;
         // Skip pre_defined (12 bytes)
-        cur.advance(Self::PRE_DEFINED_SIZE_2)?;
+        cur.advance(Self::PRE_DEFINED_1)?;
 
         let width = cur.read_u16_be()?;
         let height = cur.read_u16_be()?;
@@ -149,7 +149,7 @@ impl VisualSampleEntry {
         let vertresolution = U16F16::from_raw(cur.read_u32_be()?);
 
         // Skip reserved (4 bytes)
-        cur.advance(Self::RESERVED_SIZE_2)?;
+        cur.advance(Self::RESERVED_1)?;
 
         let frame_count = cur.read_u16_be()?;
 
@@ -159,7 +159,7 @@ impl VisualSampleEntry {
         let depth = cur.read_u16_be()?;
 
         // Skip pre_defined (2 bytes)
-        cur.advance(Self::PRE_DEFINED_SIZE_3)?;
+        cur.advance(Self::PRE_DEFINED_2)?;
 
         Ok(VisualSampleEntry {
             base,
@@ -178,11 +178,11 @@ impl VisualSampleEntry {
         self.base.write_in(cur)?;
 
         // pre_defined (2 bytes)
-        cur.write_slice(&[0u8; Self::PRE_DEFINED_SIZE_1])?;
+        cur.write_slice(&[0u8; Self::PRE_DEFINED_0])?;
         // reserved (2 bytes)
-        cur.write_slice(&[0u8; Self::RESERVED_SIZE_1])?;
+        cur.write_slice(&[0u8; Self::RESERVED_0])?;
         // pre_defined (12 bytes)
-        cur.write_slice(&[0u8; Self::PRE_DEFINED_SIZE_2])?;
+        cur.write_slice(&[0u8; Self::PRE_DEFINED_1])?;
 
         cur.write_u16_be(self.width)?;
         cur.write_u16_be(self.height)?;
@@ -191,7 +191,7 @@ impl VisualSampleEntry {
         cur.write_u32_be(self.vertresolution.to_raw())?;
 
         // reserved (4 bytes)
-        cur.write_slice(&[0u8; Self::RESERVED_SIZE_2])?;
+        cur.write_slice(&[0u8; Self::RESERVED_1])?;
 
         cur.write_u16_be(self.frame_count)?;
 
