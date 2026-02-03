@@ -178,11 +178,11 @@ mod owned {
             let mut cur = WriteCursor::new(bytes);
 
             write_box_in(&mut cur, &self.tfhd)?;
-            for trun in &self.truns {
-                write_box_in(&mut cur, trun)?;
-            }
             if let Some(tfdt) = &self.tfdt {
                 write_box_in(&mut cur, tfdt)?;
+            }
+            for trun in &self.truns {
+                write_box_in(&mut cur, trun)?;
             }
 
             Ok(cur.position())
