@@ -93,10 +93,10 @@ mod owned {
     pub struct TrafBox {
         /// The Track Fragment Header Box (`tfhd`).
         pub tfhd: TfhdBox,
-        /// The Track Fragment Run Boxes (`trun`).
-        pub truns: Vec<TrunBox>,
         /// The Track Fragment Decode Time Box (`tfdt`), if present.
         pub tfdt: Option<TfdtBox>,
+        /// The Track Fragment Run Boxes (`trun`).
+        pub truns: Vec<TrunBox>,
     }
 
     impl TryFrom<&TrafBoxView<'_>> for TrafBox {
