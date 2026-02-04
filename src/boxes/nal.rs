@@ -50,4 +50,8 @@ define_box_types!(
     AVC1 = b"avc1",
     /// AVC3 Sample Entry Box
     AVC3 = b"avc3",
+    /// AVC2 Sample Entry Box
+    AVC2 = b"avc2",
+    /// AVC4 Sample Entry Box
+    AVC4 = b"avc4",
 );

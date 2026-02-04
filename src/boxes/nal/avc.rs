@@ -174,13 +174,13 @@ impl<'de> BoxDecode<'de> for AvcCBoxView<'de> {
 
 /// A reference to an AVC Sample Entry
 #[derive(Debug)]
-pub struct AvcSampleEntryView<'a, S> {
+pub struct AVCSampleEntryView<'a, S> {
     base: VisualSampleEntry,
     content: &'a [u8],
     _marker: PhantomData<S>,
 }
 
-impl<'a, S> AvcSampleEntryView<'a, S> {
+impl<'a, S> AVCSampleEntryView<'a, S> {
     /// Returns the base Visual Sample Entry
     pub fn base(&self) -> &VisualSampleEntry {
         &self.base
@@ -205,15 +205,18 @@ impl<'a, S> AvcSampleEntryView<'a, S> {
             required: BoxType::AVCC,
         }))
     }
+
+    // TODO: Add helper method to access MPEG3ExtensionDescriptorsBox
+    // pub fn m4ds(&self) -> Result<M4dsBoxView<'a>> {}
 }
 
-impl<'de, S> BoxDecode<'de> for AvcSampleEntryView<'de, S> {
+impl<'de, S> BoxDecode<'de> for AVCSampleEntryView<'de, S> {
     fn decode(bytes: &'de [u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(bytes);
         let base = VisualSampleEntry::parse_in(&mut cur)?;
         let content = cur.take(cur.remaining())?;
 
-        Ok(AvcSampleEntryView {
+        Ok(AVCSampleEntryView {
             base,
             content,
             _marker: PhantomData,
@@ -224,7 +227,7 @@ impl<'de, S> BoxDecode<'de> for AvcSampleEntryView<'de, S> {
 /// A marker type for AVC1 Sample Entry
 pub struct Avc1;
 /// A reference to an AVC1 Sample Entry
-pub type Avc1SampleEntryView<'a> = AvcSampleEntryView<'a, Avc1>;
+pub type Avc1SampleEntryView<'a> = AVCSampleEntryView<'a, Avc1>;
 
 impl BoxCodec for Avc1SampleEntryView<'_> {
     fn boxtype(&self) -> BoxType {
@@ -235,11 +238,85 @@ impl BoxCodec for Avc1SampleEntryView<'_> {
 /// A marker type for AVC3 Sample Entry
 pub struct Avc3;
 /// A reference to an AVC3 Sample Entry
-pub type Avc3SampleEntryView<'a> = AvcSampleEntryView<'a, Avc3>;
+pub type Avc3SampleEntryView<'a> = AVCSampleEntryView<'a, Avc3>;
 
 impl BoxCodec for Avc3SampleEntryView<'_> {
     fn boxtype(&self) -> BoxType {
         BoxType::AVC3
+    }
+}
+
+/// A reference to an AVC2 Sample Entry
+#[derive(Debug)]
+pub struct AVC2SampleEntryView<'a, S> {
+    base: VisualSampleEntry,
+    content: &'a [u8],
+    _marker: PhantomData<S>,
+}
+
+impl<'a, S> AVC2SampleEntryView<'a, S> {
+    /// Returns the base Visual Sample Entry
+    pub fn base(&self) -> &VisualSampleEntry {
+        &self.base
+    }
+
+    /// Returns an iterator over the child boxes of this sample entry.
+    pub fn boxes(&self) -> BoxIter<'a> {
+        BoxIter::new(self.content)
+    }
+
+    /// Returns the AVC Configuration Box (`avcC`) contained in this sample entry.
+    pub fn avcc(&self) -> Result<AvcCBoxView<'a>> {
+        for result in self.boxes() {
+            let b = result?;
+            if b.boxtype() == BoxType::AVCC {
+                let avcc = AvcCBoxView::decode(b.into_payload())?;
+                return Ok(avcc);
+            }
+        }
+
+        Err(Error::new(ErrorKind::BoxMissing {
+            required: BoxType::AVCC,
+        }))
+    }
+
+    // TODO: Add helper method to access MPEG3ExtensionDescriptorsBox
+    // pub fn m4ds(&self) -> Result<M4dsBoxView<'a>> {}
+}
+
+impl<'de, S> BoxDecode<'de> for AVC2SampleEntryView<'de, S> {
+    fn decode(bytes: &'de [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+        let base = VisualSampleEntry::parse_in(&mut cur)?;
+        let content = cur.take(cur.remaining())?;
+
+        Ok(AVC2SampleEntryView {
+            base,
+            content,
+            _marker: PhantomData,
+        })
+    }
+}
+
+/// A marker type for AVC2 Sample Entry
+pub struct Avc2;
+/// A reference to an AVC2 Sample Entry
+pub type Avc2SampleEntryView<'a> = AVC2SampleEntryView<'a, Avc2>;
+
+impl BoxCodec for Avc2SampleEntryView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::AVC2
+    }
+}
+
+/// A marker type for AVC4 Sample Entry
+pub struct Avc4;
+/// A reference to an AVC4 Sample Entry
+pub type Avc4SampleEntryView<'a> = AVC2SampleEntryView<'a, Avc4>;
+
+impl BoxCodec for Avc4SampleEntryView<'_> {
+    fn boxtype(&self) -> BoxType {
+        BoxType::AVC4
     }
 }
 
@@ -442,7 +519,7 @@ mod owned {
 
     /// An owned AVC Sample Entry
     #[derive(Debug, Clone)]
-    pub struct AvcSampleEntry<S> {
+    pub struct AVCSampleEntry<S> {
         /// The base Visual Sample Entry
         pub base: VisualSampleEntry,
         /// The AVC Configuration Box (`avcC`)
@@ -450,7 +527,7 @@ mod owned {
         _marker: PhantomData<S>,
     }
 
-    impl<S> AvcSampleEntry<S> {
+    impl<S> AVCSampleEntry<S> {
         fn write_codec_string_in(&self, w: &mut impl fmt::Write, codec: &str) -> fmt::Result {
             write!(
                 w,
@@ -463,12 +540,12 @@ mod owned {
         }
     }
 
-    impl<S> TryFrom<&AvcSampleEntryView<'_, S>> for AvcSampleEntry<S> {
+    impl<S> TryFrom<&AVCSampleEntryView<'_, S>> for AVCSampleEntry<S> {
         type Error = Error;
 
-        fn try_from(view: &AvcSampleEntryView<'_, S>) -> Result<Self> {
+        fn try_from(view: &AVCSampleEntryView<'_, S>) -> Result<Self> {
             let avcc = view.avcc()?;
-            Ok(AvcSampleEntry {
+            Ok(AVCSampleEntry {
                 base: view.base,
                 avcc: AvcCBox::from(&avcc),
                 _marker: PhantomData,
@@ -476,14 +553,14 @@ mod owned {
         }
     }
 
-    impl<S> BoxDecode<'_> for AvcSampleEntry<S> {
+    impl<S> BoxDecode<'_> for AVCSampleEntry<S> {
         fn decode(bytes: &[u8]) -> Result<Self> {
-            let view = AvcSampleEntryView::decode(bytes)?;
-            AvcSampleEntry::try_from(&view)
+            let view = AVCSampleEntryView::decode(bytes)?;
+            AVCSampleEntry::try_from(&view)
         }
     }
 
-    impl<S> BoxEncode for AvcSampleEntry<S> {
+    impl<S> BoxEncode for AVCSampleEntry<S> {
         fn encoded_len(&self) -> usize {
             VisualSampleEntry::size() + boxed_len(&self.avcc)
         }
@@ -498,13 +575,14 @@ mod owned {
     }
 
     /// An owned AVC1 Sample Entry
-    pub type Avc1SampleEntry = AvcSampleEntry<Avc1>;
+    pub type Avc1SampleEntry = AVCSampleEntry<Avc1>;
 
     impl Avc1SampleEntry {
         /// Returns the codec string (e.g., "avc1.640028")
         pub fn codec_string(&self) -> String {
             let mut buf = String::new();
-            self.write_codec_string_in(&mut buf, "avc1").unwrap();
+            self.write_codec_string_in(&mut buf, "avc1")
+                .expect("Writing to String should not fail");
             buf
         }
     }
@@ -516,11 +594,116 @@ mod owned {
     }
 
     /// An owned AVC3 Sample Entry
-    pub type Avc3SampleEntry = AvcSampleEntry<Avc3>;
+    pub type Avc3SampleEntry = AVCSampleEntry<Avc3>;
 
     impl BoxCodec for Avc3SampleEntry {
         fn boxtype(&self) -> BoxType {
             BoxType::AVC3
+        }
+    }
+
+    impl Avc3SampleEntry {
+        /// Returns the codec string (e.g., "avc3.640028")
+        pub fn codec_string(&self) -> String {
+            let mut buf = String::new();
+            self.write_codec_string_in(&mut buf, "avc3")
+                .expect("Writing to String should not fail");
+            buf
+        }
+    }
+
+    /// An owned AVC2 Sample Entry
+    #[derive(Debug, Clone)]
+    pub struct AVC2SampleEntry<S> {
+        /// The base Visual Sample Entry
+        pub base: VisualSampleEntry,
+        /// The AVC Configuration Box (`avcC`)
+        pub avcc: AvcCBox,
+        _marker: PhantomData<S>,
+    }
+
+    impl<S> AVC2SampleEntry<S> {
+        fn write_codec_string_in(&self, w: &mut impl fmt::Write, codec: &str) -> fmt::Result {
+            write!(
+                w,
+                "{}.{:02X}{:02X}{:02X}",
+                codec,
+                self.avcc.avc_config.avc_profile_indication,
+                self.avcc.avc_config.profile_compatibility,
+                self.avcc.avc_config.avc_level_indication
+            )
+        }
+    }
+
+    impl<S> TryFrom<&AVC2SampleEntryView<'_, S>> for AVC2SampleEntry<S> {
+        type Error = Error;
+
+        fn try_from(view: &AVC2SampleEntryView<'_, S>) -> Result<Self> {
+            let avcc = view.avcc()?;
+            Ok(AVC2SampleEntry {
+                base: view.base,
+                avcc: AvcCBox::from(&avcc),
+                _marker: PhantomData,
+            })
+        }
+    }
+
+    impl<S> BoxDecode<'_> for AVC2SampleEntry<S> {
+        fn decode(bytes: &[u8]) -> Result<Self> {
+            let view = AVC2SampleEntryView::decode(bytes)?;
+            AVC2SampleEntry::try_from(&view)
+        }
+    }
+
+    impl<S> BoxEncode for AVC2SampleEntry<S> {
+        fn encoded_len(&self) -> usize {
+            VisualSampleEntry::size() + boxed_len(&self.avcc)
+        }
+
+        fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+            self.base.write_in(&mut cur)?;
+            write_box_in(&mut cur, &self.avcc)?;
+
+            Ok(cur.position())
+        }
+    }
+
+    /// An owned AVC2 Sample Entry
+    pub type Avc2SampleEntry = AVC2SampleEntry<Avc2>;
+
+    impl Avc2SampleEntry {
+        /// Returns the codec string (e.g., "avc2.640028")
+        pub fn codec_string(&self) -> String {
+            let mut buf = String::new();
+            self.write_codec_string_in(&mut buf, "avc2")
+                .expect("Writing to String should not fail");
+            buf
+        }
+    }
+
+    impl BoxCodec for Avc2SampleEntry {
+        fn boxtype(&self) -> BoxType {
+            BoxType::AVC2
+        }
+    }
+
+    /// An owned AVC4 Sample Entry
+    pub type Avc4SampleEntry = AVC2SampleEntry<Avc4>;
+
+    impl Avc4SampleEntry {
+        /// Returns the codec string (e.g., "avc4.640028")
+        pub fn codec_string(&self) -> String {
+            let mut buf = String::new();
+            self.write_codec_string_in(&mut buf, "avc4")
+                .expect("Writing to String should not fail");
+            buf
+        }
+    }
+
+    impl BoxCodec for Avc4SampleEntry {
+        fn boxtype(&self) -> BoxType {
+            BoxType::AVC4
         }
     }
 }
