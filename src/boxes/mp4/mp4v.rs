@@ -4,30 +4,28 @@ use crate::BoxType;
 use crate::error::*;
 use crate::iter::BoxIter;
 
-use crate::cursor::ReadCursor;
+use super::esds::EsdsBoxView;
+use crate::boxes::sample_entry::VisualSampleEntry;
 
-use super::EsdsBoxView;
-use crate::boxes::sample_entry::AudioSampleEntry;
-
-/// A reference to an MP4 Audio Sample Entry
+/// A reference to an MP4 Visual Sample Entry
 #[derive(Debug)]
-pub struct Mp4aSampleEntryView<'a> {
-    base: AudioSampleEntry,
+pub struct Mp4vSampleEntryView<'a> {
+    base: VisualSampleEntry,
     content: &'a [u8],
 }
 
-impl<'a> Mp4aSampleEntryView<'a> {
-    /// Returns the base Audio Sample Entry.
-    pub fn base(&self) -> &AudioSampleEntry {
+impl<'a> Mp4vSampleEntryView<'a> {
+    /// Returns the base Visual Sample Entry.
+    pub fn base(&self) -> &VisualSampleEntry {
         &self.base
     }
 
-    /// Returns an iterator over the child boxes of this Mp4a Sample Entry.
+    /// Returns an iterator over the child boxes of this Mp4v Sample Entry.
     pub fn boxes(&self) -> BoxIter<'a> {
         BoxIter::new(self.content)
     }
 
-    /// Returns the ESDS box contained in this Mp4a Sample Entry.
+    /// Returns the ESDS box contained in this Mp4v Sample Entry.
     pub fn esds(&self) -> Result<EsdsBoxView<'a>> {
         for result in self.boxes() {
             let rawbox = result?;
@@ -40,25 +38,25 @@ impl<'a> Mp4aSampleEntryView<'a> {
             ErrorKind::BoxMissing {
                 required: BoxType::ESDS,
             },
-            BoxType::MP4A,
+            BoxType::MP4V,
         ))
     }
 }
 
-impl BoxCodec for Mp4aSampleEntryView<'_> {
+impl BoxCodec for Mp4vSampleEntryView<'_> {
     fn boxtype(&self) -> BoxType {
-        BoxType::MP4A
+        BoxType::MP4V
     }
 }
 
-impl<'de> BoxDecode<'de> for Mp4aSampleEntryView<'de> {
+impl<'de> BoxDecode<'de> for Mp4vSampleEntryView<'de> {
     fn decode(bytes: &'de [u8]) -> Result<Self> {
-        let mut cur = ReadCursor::new(bytes);
+        let mut cur = crate::cursor::ReadCursor::new(bytes);
 
-        let base = AudioSampleEntry::parse_in(&mut cur)?;
+        let base = VisualSampleEntry::parse_in(&mut cur)?;
         let content = cur.take(cur.remaining())?;
 
-        Ok(Mp4aSampleEntryView { base, content })
+        Ok(Mp4vSampleEntryView { base, content })
     }
 }
 
@@ -73,19 +71,19 @@ mod owned {
 
     use crate::boxes::mp4::EsdsBox;
 
-    /// An owned MP4 Audio Sample Entry (`mp4a`).
+    /// An owned MP4V Sample Entry
     #[derive(Debug, Clone)]
-    pub struct Mp4aSampleEntry {
-        /// The base Audio Sample Entry.
-        pub base: AudioSampleEntry,
-        /// The ESDS box contained in this Mp4a Sample Entry.
+    pub struct Mp4vSampleEntry {
+        /// The base Visual Sample Entry
+        pub base: VisualSampleEntry,
+        /// The ESDS box contained in this Mp4v Sample Entry.
         pub esds: EsdsBox,
     }
 
-    impl TryFrom<&Mp4aSampleEntryView<'_>> for Mp4aSampleEntry {
+    impl TryFrom<&Mp4vSampleEntryView<'_>> for Mp4vSampleEntry {
         type Error = Error;
 
-        fn try_from(view: &Mp4aSampleEntryView<'_>) -> Result<Self> {
+        fn try_from(view: &Mp4vSampleEntryView<'_>) -> Result<Self> {
             let mut esds = None;
 
             for result in view.boxes() {
@@ -98,7 +96,7 @@ mod owned {
                                 ErrorKind::BoxDuplicate {
                                     duplicate: BoxType::ESDS,
                                 },
-                                BoxType::MP4A,
+                                BoxType::MP4V,
                             ));
                         }
                         esds = Some(EsdsBox::decode(rawbox.into_payload())?);
@@ -112,33 +110,33 @@ mod owned {
                     ErrorKind::BoxMissing {
                         required: BoxType::ESDS,
                     },
-                    BoxType::MP4A,
+                    BoxType::MP4V,
                 )
             })?;
 
-            Ok(Mp4aSampleEntry {
+            Ok(Mp4vSampleEntry {
                 base: view.base,
                 esds,
             })
         }
     }
 
-    impl BoxCodec for Mp4aSampleEntry {
+    impl BoxCodec for Mp4vSampleEntry {
         fn boxtype(&self) -> BoxType {
-            BoxType::MP4A
+            BoxType::MP4V
         }
     }
 
-    impl BoxDecode<'_> for Mp4aSampleEntry {
+    impl BoxDecode<'_> for Mp4vSampleEntry {
         fn decode(bytes: &'_ [u8]) -> Result<Self> {
-            let view = Mp4aSampleEntryView::decode(bytes)?;
-            Mp4aSampleEntry::try_from(&view)
+            let view = Mp4vSampleEntryView::decode(bytes)?;
+            Mp4vSampleEntry::try_from(&view)
         }
     }
 
-    impl BoxEncode for Mp4aSampleEntry {
+    impl BoxEncode for Mp4vSampleEntry {
         fn encoded_len(&self) -> usize {
-            AudioSampleEntry::size() + boxed_len(&self.esds)
+            VisualSampleEntry::size() + boxed_len(&self.esds)
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
