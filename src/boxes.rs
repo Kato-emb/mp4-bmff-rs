@@ -144,13 +144,37 @@ mod macros;
 
 // ISO/IEC 14496-12
 pub mod bmff;
-
 // ISO/IEC 14496-14
 #[cfg(feature = "mp4")]
 pub mod mp4;
-
 // ISO/IEC 14496-15
+#[cfg(any(feature = "avc", feature = "hevc"))]
+pub mod nal;
+
+/// re-exports of `AVC` structures in `nal` (ISO/IEC 14496-15)
 #[cfg(feature = "avc")]
-pub mod avc;
+pub mod avc {
+    use super::*;
+
+    pub use nal::avc::AVCDecoderConfigurationRecordView;
+    pub use nal::avc::AvcCBoxView;
+
+    pub use nal::avc::Avc1SampleEntryView;
+    pub use nal::avc::Avc3SampleEntryView;
+
+    #[cfg(feature = "alloc")]
+    mod owned_exports {
+        use super::*;
+
+        pub use nal::avc::AVCDecoderConfigurationRecord;
+        pub use nal::avc::AvcCBox;
+
+        pub use nal::avc::Avc1SampleEntry;
+        pub use nal::avc::Avc3SampleEntry;
+    }
+
+    #[cfg(feature = "alloc")]
+    pub use owned_exports::*;
+}
 
 pub mod sample_entry;
