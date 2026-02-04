@@ -325,6 +325,7 @@ mod owned {
     use core::fmt;
 
     use crate::lib::String;
+    use crate::lib::Vec;
 
     use super::*;
     use crate::BoxEncode;

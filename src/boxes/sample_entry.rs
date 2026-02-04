@@ -1,7 +1,9 @@
 //! Sample Entry bases and common fields.
 
 use crate::error::*;
-use crate::types::*;
+
+use crate::cursor::ReadCursor;
+use crate::cursor::WriteCursor;
 
 /// Fields common to all Sample Entry boxes.
 #[derive(Debug, Clone, Copy)]
@@ -18,7 +20,13 @@ impl SampleEntry {
         Self::RESERVED + 2 // reserved + data_reference_index
     }
 
-    pub(crate) fn parse_in(cur: &mut crate::cursor::ReadCursor<'_>) -> Result<Self> {
+    /// Parses a `SampleEntry` from the given byte slice.
+    pub fn parse(bytes: &[u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(bytes);
+        Self::parse_in(&mut cur)
+    }
+
+    pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
         // Skip reserved bytes
         cur.advance(Self::RESERVED)?;
         let data_reference_index = cur.read_u16_be()?;
@@ -28,10 +36,15 @@ impl SampleEntry {
         })
     }
 
-    #[cfg(feature = "alloc")]
-    pub(crate) fn write_in(&self, cur: &mut crate::cursor::WriteCursor<'_>) -> Result<()> {
+    /// Writes the `SampleEntry` to the given byte slice.
+    pub fn write(&self, bytes: &mut [u8]) -> Result<()> {
+        let mut cur = WriteCursor::new(bytes);
+        self.write_in(&mut cur)
+    }
+
+    pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
         // Write reserved bytes (6 bytes of zeros)
-        cur.write_slice(&[0u8; Self::RESERVED])?;
+        cur.reserve_zeros(Self::RESERVED)?;
         cur.write_u16_be(self.data_reference_index)?;
         Ok(())
     }
@@ -40,6 +53,7 @@ impl SampleEntry {
 #[cfg(any(feature = "mp4", feature = "avc", feature = "hevc"))]
 mod visual {
     use super::*;
+    use crate::types::*;
 
     /// Visual Sample Entry box (`avc1`, `mp4v`, etc.).
     #[derive(Debug, Clone, Copy)]
@@ -208,9 +222,10 @@ mod visual {
 #[cfg(any(feature = "mp4", feature = "avc", feature = "hevc"))]
 pub use visual::VisualSampleEntry;
 
-#[cfg(any(feature = "mp4"))]
+#[cfg(feature = "mp4")]
 mod audio {
     use super::*;
+    use crate::types::*;
 
     /// Audio Sample Entry box (`mp4a`, etc.).
     #[derive(Debug, Clone, Copy)]
@@ -304,5 +319,5 @@ mod audio {
     }
 }
 
-#[cfg(any(feature = "mp4"))]
+#[cfg(feature = "mp4")]
 pub use audio::AudioSampleEntry;
