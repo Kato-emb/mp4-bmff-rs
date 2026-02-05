@@ -1,3 +1,12 @@
+//! Track Fragment Decode Time Box (`tfdt`) implementation.
+//!
+//! The Track Fragment Decode Time Box provides the absolute decode time
+//! of the first sample in the track fragment. This is essential for
+//! correctly placing fragment samples on the timeline, especially for
+//! live streaming or random access scenarios.
+//!
+//! This box is optional within the Track Fragment Box (`traf`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -9,17 +18,44 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for the Track Fragment Decode Time Box (`tfdt`).
+    ///
+    /// Reserved (should be 0).
     TfdtFlags {}
 );
 
 /// Track Fragment Decode Time Box (`tfdt`).
+///
+/// Specifies the decode time of the first sample in this track fragment
+/// relative to the track timeline origin. Essential for fragment timing.
+///
+/// # Structure
+///
+/// - `version`: Box version (0 for 32-bit time, 1 for 64-bit).
+/// - `flags`: Reserved (should be 0).
+/// - `base_media_decode_time`: Decode time of first sample in track timescale.
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::BoxDecode;
+/// use mp4_bmff::boxes::bmff::TfdtBox;
+///
+/// let data: [u8; 8] = [
+///     0x00,                   // version = 0
+///     0x00, 0x00, 0x00,       // flags
+///     0x00, 0x01, 0x51, 0x80, // base_media_decode_time = 86400
+/// ];
+///
+/// let tfdt = TfdtBox::decode(&data).unwrap();
+/// assert_eq!(tfdt.base_media_decode_time, 86400);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct TfdtBox {
-    /// The version of the box.
+    /// Box version (0 for 32-bit time, 1 for 64-bit).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: TfdtFlags,
-    /// The base media decode time.
+    /// Decode time of the first sample in this fragment (in track timescale).
     pub base_media_decode_time: u64,
 }
 

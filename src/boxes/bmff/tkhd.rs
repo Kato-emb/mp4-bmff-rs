@@ -1,3 +1,9 @@
+//! Track Header Box (`tkhd`) implementation.
+//!
+//! The Track Header Box contains characteristics of a single track,
+//! including its unique identifier, duration, and visual presentation
+//! properties (width, height, transformation matrix).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -10,44 +16,67 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for the Track Header Box (`tkhd`).
+    ///
+    /// These flags control track behavior during playback.
     TkhdFlags {
-        /// Track is enabled.
+        /// Track is enabled for playback. Disabled tracks are treated as not present.
         TRACK_ENABLED = 0x000001,
-        /// Track is included in the movie.
+        /// Track is used in the presentation. Controls whether track is included.
         TRACK_IN_MOVIE = 0x000002,
-        /// Track is included in the preview.
+        /// Track is used when previewing. Controls preview inclusion.
         TRACK_IN_PREVIEW = 0x000004,
-        /// Track size is aspect ratio.
+        /// Width and height represent aspect ratio, not actual pixel dimensions.
         TRACK_SIZE_IS_ASPECT_RATIO = 0x000008,
     }
 );
 
 /// A Track Header Box (`tkhd`).
+///
+/// The Track Header Box specifies characteristics of a single track.
+/// It is contained within the Track Box (`trak`) and must appear exactly once.
+///
+/// This is a fixed-size box that implements `Copy`, so there is no separate
+/// View/Owned distinction.
+///
+/// # Structure
+///
+/// - `version`: Box version (0 or 1). Version 1 uses 64-bit time/duration fields.
+/// - `flags`: Track flags controlling enabled/in_movie/in_preview states.
+/// - `creation_time`: When the track was created.
+/// - `modification_time`: When the track was last modified.
+/// - `track_id`: Unique identifier for this track (must be non-zero).
+/// - `duration`: Length of the track in movie timescale units.
+/// - `layer`: Front-to-back ordering (0 = normal, negative = closer to viewer).
+/// - `alternate_group`: Group ID for alternate tracks (0 = no group).
+/// - `volume`: Audio playback volume (1.0 = full, 0.0 = mute).
+/// - `matrix`: Transformation matrix for visual tracks.
+/// - `width`: Visual width as 16.16 fixed-point (0 for audio tracks).
+/// - `height`: Visual height as 16.16 fixed-point (0 for audio tracks).
 #[derive(Debug, Clone, Copy)]
 pub struct TkhdBox {
-    /// Box version.
+    /// Box version (0 or 1). Version 1 uses 64-bit time and duration fields.
     pub version: u8,
-    /// Box flags.
+    /// Track flags (enabled, in_movie, in_preview, size_is_aspect_ratio).
     pub flags: TkhdFlags,
-    /// Creation time of the track.
+    /// When the track was created (QuickTime epoch: 1904-01-01 UTC).
     pub creation_time: QuickTimeDateTime,
-    /// Modification time of the track.
+    /// When the track was last modified.
     pub modification_time: QuickTimeDateTime,
-    /// Track ID.
+    /// Unique identifier for this track (must be non-zero, unique within the movie).
     pub track_id: u32,
-    /// Duration of the track.
+    /// Length of the track in movie timescale units (from `mvhd`).
     pub duration: u64,
-    /// Layer of the track.
+    /// Front-to-back ordering of video tracks (0 = normal depth).
     pub layer: i16,
-    /// Alternate group of the track.
+    /// Group ID for alternate tracks (0 = not in any alternate group).
     pub alternate_group: i16,
-    /// Volume of the track.
+    /// Audio playback volume as 8.8 fixed-point (0x0100 = full volume).
     pub volume: U8F8,
-    /// Transformation matrix.
+    /// Transformation matrix for video display (rotation, scaling, etc.).
     pub matrix: Matrix,
-    /// Width of the track.
+    /// Track visual width as 16.16 fixed-point pixels (0 for audio tracks).
     pub width: U16F16,
-    /// Height of the track.
+    /// Track visual height as 16.16 fixed-point pixels (0 for audio tracks).
     pub height: U16F16,
 }
 

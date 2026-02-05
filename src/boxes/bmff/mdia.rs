@@ -1,3 +1,9 @@
+//! Media Box (`mdia`) implementation.
+//!
+//! The Media Box contains all objects that define information about the media
+//! data within a track. The Media Box is required within every Track Box (`trak`)
+//! and provides the complete description of the media format and timing.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -10,6 +16,17 @@ use super::MdhdBox;
 use super::MinfBoxView;
 
 /// A reference to a Media Box (`mdia`).
+///
+/// The Media Box declares the overall information about the media data within
+/// a track. It contains the handler that identifies the media type, the media
+/// header with timing information, and the media information container.
+///
+/// # Structure
+///
+/// - `mdhd`: Media Header Box (required) - timescale, duration, and language.
+/// - `hdlr`: Handler Reference Box (required) - identifies the media handler.
+/// - `minf`: Media Information Box (required) - contains media-specific data.
+/// - `elng`: Extended Language Tag Box (optional) - RFC 4646 language tag.
 #[derive(Debug)]
 pub struct MdiaBoxView<'a> {
     content: &'a [u8],
@@ -115,15 +132,25 @@ mod owned {
     use crate::boxes::bmff::MinfBox;
 
     /// An owned Media Box (`mdia`).
+    ///
+    /// This is the owned variant of [`MdiaBoxView`] that stores child boxes
+    /// in heap-allocated structures.
+    ///
+    /// # Structure
+    ///
+    /// - `mdhd`: Media Header Box - media timescale, duration, and language.
+    /// - `hdlr`: Handler Reference Box - identifies the media type (video/audio/etc.).
+    /// - `minf`: Media Information Box - contains sample description and sample table.
+    /// - `elng`: Extended Language Tag Box (optional) - RFC 4646 language tag.
     #[derive(Debug, Clone)]
     pub struct MdiaBox {
-        /// Media Header Box (`mdhd`).
+        /// Media Header Box with timescale and duration specific to this media.
         pub mdhd: MdhdBox,
-        /// Handler Reference Box (`hdlr`).
+        /// Handler Reference Box identifying the media type (e.g., "vide", "soun").
         pub hdlr: HdlrBox,
-        /// Media Information Box (`minf`).
+        /// Media Information Box containing sample table and data location info.
         pub minf: MinfBox,
-        /// Extended language tag Box (`elng`), if present.
+        /// Extended Language Tag Box for RFC 4646 language tags, if present.
         pub elng: Option<ElngBox>,
     }
 

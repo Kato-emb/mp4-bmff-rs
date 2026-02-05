@@ -1,8 +1,28 @@
-//! BMFF box core infrastructure.
+//! BMFF box type definitions and implementations.
 //!
-//! This module provides the core types for parsing and writing BMFF boxes.
-//! All types in this module are designed to work in `no_std` and `no_alloc`
-//! environments, using zero-copy parsing with borrowed data.
+//! This module provides types for parsing and writing boxes in ISO Base Media
+//! File Format (BMFF) and related specifications. All types support `no_std`
+//! and `no_alloc` environments through zero-copy parsing.
+//!
+//! # Module Organization
+//!
+//! - [`bmff`]: ISO/IEC 14496-12 boxes (core BMFF specification).
+//! - `mp4`: ISO/IEC 14496-14 boxes (MPEG-4 storage, requires `mp4` feature).
+//! - `nal`: ISO/IEC 14496-15 boxes (NAL video like AVC/HEVC, requires `avc`/`hevc` feature).
+//! - `avc`: Convenience re-exports of AVC types from `nal::avc`.
+//! - [`sample_entry`]: Base types for sample entries used by codec-specific modules.
+//!
+//! # View vs Owned Types
+//!
+//! Most box types come in two variants:
+//!
+//! - **View types** (`*BoxView<'a>`): Zero-copy references into borrowed data.
+//!   Available in all environments including `no_std` + `no_alloc`.
+//! - **Owned types** (`*Box`): Heap-allocated types that own their data.
+//!   Require the `alloc` feature.
+//!
+//! Fixed-size boxes (like `MvhdBox`, `TkhdBox`) are `Copy` types and don't
+//! need separate View/Owned variants.
 
 #[macro_use]
 mod macros;
@@ -16,7 +36,10 @@ pub mod mp4;
 #[cfg(any(feature = "avc", feature = "hevc"))]
 pub mod nal;
 
-/// re-exports of `AVC` structures in `nal` (ISO/IEC 14496-15)
+/// Re-exports of AVC (H.264) types from [`nal::avc`].
+///
+/// This module provides convenient access to AVC sample entry and
+/// configuration box types without navigating through `nal::avc`.
 #[cfg(feature = "avc")]
 pub mod avc {
     use super::*;

@@ -1,3 +1,13 @@
+//! Movie Fragment Box (`moof`) implementation.
+//!
+//! The Movie Fragment Box contains all metadata for a fragment of media data
+//! in a fragmented MP4 file. Each fragment consists of a `moof` box followed
+//! by the corresponding `mdat` (media data) box. Fragments enable progressive
+//! download and live streaming scenarios.
+//!
+//! This box appears at the top level of a fragmented MP4 file, typically after
+//! the initial `moov` box.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -9,6 +19,17 @@ use super::MvexBoxView;
 use super::TrafBoxView;
 
 /// A reference to a Movie Fragment Box (`moof`).
+///
+/// Container for all metadata needed to interpret one fragment of media.
+/// Each fragment describes a portion of the overall movie timeline.
+///
+/// # Structure
+///
+/// Required child boxes:
+/// - `mfhd`: Movie Fragment Header Box - sequence number.
+///
+/// Optional child boxes:
+/// - `traf`: Track Fragment Box - per-track fragment data (zero or more).
 #[derive(Debug)]
 pub struct MoofBoxView<'a> {
     content: &'a [u8],
@@ -90,11 +111,20 @@ mod owned {
     use crate::boxes::bmff::TrafBox;
 
     /// An owned Movie Fragment Box (`moof`).
+    ///
+    /// This is the owned variant of [`MoofBoxView`] that stores child boxes
+    /// in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `mfhd`: Movie Fragment Header with sequence number.
+    /// - `trafs`: Track Fragment boxes (one per track in this fragment).
+    /// - `mvex`: Optional Movie Extends Box.
     #[derive(Debug, Clone)]
     pub struct MoofBox {
-        /// Movie Fragment Header Box (`mfhd`).
+        /// Movie Fragment Header Box (`mfhd`) with fragment sequence number.
         pub mfhd: MfhdBox,
-        /// Track Fragment Boxes (`traf`).
+        /// Track Fragment Boxes (`traf`), one per track in this fragment.
         pub trafs: Vec<TrafBox>,
         /// Movie Extends Box (`mvex`), if present.
         pub mvex: Option<MvexBox>,

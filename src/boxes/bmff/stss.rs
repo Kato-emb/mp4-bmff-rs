@@ -1,3 +1,9 @@
+//! Sync Sample Box (`stss`) implementation.
+//!
+//! The Sync Sample Box identifies the sync samples (random access points)
+//! within the track. For video, these are typically I-frames/keyframes.
+//! If this box is absent, every sample is considered a sync sample.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -9,10 +15,15 @@ use crate::cursor::ReadCursor;
 
 define_box_flags!(
     /// Flags for the Sync Sample Box (`stss`).
+    ///
+    /// Reserved (should be 0).
     StssFlags {}
 );
 
 /// An entry in the Sync Sample Box (`stss`).
+///
+/// Identifies a single sync sample (random access point) by its
+/// 1-based sample number.
 #[derive(Debug, Clone, Copy)]
 pub struct StssEntry {
     /// The sample number of a sync sample.
@@ -37,13 +48,23 @@ impl FixedSizeEntry for StssEntry {
 }
 
 /// A reference to a Sync Sample Box (`stss`).
+///
+/// Lists all sync samples (random access points/keyframes) in the track.
+/// Used for seeking to specific points in the media.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `entry_count`: Number of sync samples.
+/// - `entries`: Array of 1-based sample numbers that are sync samples.
 #[derive(Debug)]
 pub struct StssBoxView<'a> {
-    /// Box version (0).
+    /// Box version (should be 0).
     pub version: u8,
-    /// Box flags (should be 0).
+    /// Reserved flags (should be 0).
     pub flags: StssFlags,
-    /// The number of entries in the box.
+    /// Number of sync samples in the track.
     pub entry_count: u32,
     entries: &'a [u8],
 }
@@ -104,13 +125,22 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Sync Sample Box (`stss`).
+    ///
+    /// This is the owned variant of [`StssBoxView`] that stores sync sample
+    /// numbers in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved (should be 0).
+    /// - `entries`: Sync sample numbers (1-based).
     #[derive(Debug, Clone)]
     pub struct StssBox {
-        /// Box version (0).
+        /// Box version (should be 0).
         pub version: u8,
-        /// Box flags (should be 0).
+        /// Reserved flags (should be 0).
         pub flags: StssFlags,
-        /// The entries in the box.
+        /// Sample numbers of sync samples (keyframes).
         pub entries: Vec<StssEntry>,
     }
 

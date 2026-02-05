@@ -1,11 +1,31 @@
+//! Media Data Box (`mdat`) implementation.
+//!
+//! The Media Data Box contains the actual media data (audio, video, etc.)
+//! for the presentation. The data is referenced by offset from the
+//! Sample Table Box (`stbl`) or Track Fragment Box (`traf`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
 
 /// A reference to a Media Data Box (`mdat`).
+///
+/// The Media Data Box contains the actual media samples (encoded audio frames,
+/// video frames, etc.). This is typically the largest box in a media file.
+/// The samples are not parsed by this box; instead, the Sample Table Box (`stbl`)
+/// provides byte offsets and sizes to locate individual samples within this data.
+///
+/// A file may contain multiple `mdat` boxes, and they may appear before or after
+/// the Movie Box (`moov`). When the `moov` box appears before `mdat`, the file
+/// is optimized for streaming (fast start).
+///
+/// # Structure
+///
+/// - `data`: Raw media sample data. The format depends on the codec specified
+///   in the Sample Description Box (`stsd`).
 pub struct MdatBoxView<'a> {
-    /// The raw data of the Media Data Box (`mdat`).
+    /// Raw media sample data referenced by the Sample Table Box.
     pub data: &'a [u8],
 }
 
@@ -31,9 +51,23 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Media Data Box (`mdat`).
+    ///
+    /// This is the owned variant of [`MdatBoxView`] that stores the media
+    /// sample data in a heap-allocated vector.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::boxes::bmff::MdatBox;
+    ///
+    /// // Create an mdat box containing raw media samples
+    /// let mdat = MdatBox {
+    ///     data: vec![0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1e], // H.264 NAL unit
+    /// };
+    /// ```
     #[derive(Debug, Clone)]
     pub struct MdatBox {
-        /// The raw data of the Media Data Box (`mdat`).
+        /// Raw media sample data referenced by the Sample Table Box.
         pub data: Vec<u8>,
     }
 

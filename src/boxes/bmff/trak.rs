@@ -1,3 +1,10 @@
+//! Track Box (`trak`) implementation.
+//!
+//! The Track Box contains all information for a single track of the presentation.
+//! Each track is independent and represents a timed sequence of media data
+//! (video frames, audio samples, etc.). A movie typically has multiple tracks
+//! (e.g., one video track and one or more audio tracks).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -11,6 +18,17 @@ use super::TrefBoxView;
 use super::TrgrBoxView;
 
 /// A reference to a Track Box (`trak`).
+///
+/// The Track Box is a container for a single track of the presentation.
+/// Each track is independent and has its own timeline and media data.
+///
+/// # Structure
+///
+/// - `tkhd`: Track Header Box (required) - track-level metadata.
+/// - `mdia`: Media Box (required) - contains media-specific information.
+/// - `edts`: Edit Box (optional) - maps timeline to media time.
+/// - `tref`: Track Reference Box (optional) - references to other tracks.
+/// - `trgr`: Track Group Box (optional) - track grouping information.
 #[derive(Debug)]
 pub struct TrakBoxView<'a> {
     content: &'a [u8],
@@ -125,17 +143,28 @@ mod owned {
     use crate::boxes::bmff::TrgrBox;
 
     /// An owned Track Box (`trak`).
+    ///
+    /// This is the owned variant of [`TrakBoxView`] that stores child boxes
+    /// in heap-allocated structures.
+    ///
+    /// # Structure
+    ///
+    /// - `tkhd`: Track Header Box (required) - track-level metadata.
+    /// - `mdia`: Media Box (required) - media handler and sample information.
+    /// - `edts`: Edit Box (optional) - timeline-to-media-time mapping.
+    /// - `tref`: Track Reference Box (optional) - inter-track references.
+    /// - `trgr`: Track Group Box (optional) - track grouping.
     #[derive(Debug, Clone)]
     pub struct TrakBox {
-        /// The Track Header Box contained in this `trak` box.
+        /// Track Header Box - contains track-level metadata (ID, duration, dimensions).
         pub tkhd: TkhdBox,
-        /// The Track Reference Box contained in this `trak` box, if any.
+        /// Track Reference Box - references to related tracks (e.g., hint tracks).
         pub tref: Option<TrefBox>,
-        /// The Track Group Box contained in this `trak` box, if any.
+        /// Track Group Box - groups tracks with similar characteristics.
         pub trgr: Option<TrgrBox>,
-        /// The Media Box contained in this `trak` box.
+        /// Media Box - contains media handler and sample table information.
         pub mdia: MdiaBox,
-        /// The Edit Box contained in this `trak` box, if any.
+        /// Edit Box - defines how to map the track timeline to media samples.
         pub edts: Option<EdtsBox>,
     }
 

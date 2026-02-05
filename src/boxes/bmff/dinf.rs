@@ -1,3 +1,12 @@
+//! Data Information Box (`dinf`) implementation.
+//!
+//! The Data Information Box is a container box that specifies the location
+//! of the media data. It contains a Data Reference Box (`dref`) that describes
+//! where the actual media data can be found - either within this file or
+//! in external files referenced by URL or URN.
+//!
+//! This box is required within the Media Information Box (`minf`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -7,6 +16,14 @@ use crate::iter::BoxIter;
 use super::dref::DrefBoxView;
 
 /// A reference to a Data Information Box (`dinf`).
+///
+/// Container box that holds data reference information describing where
+/// the media data is located.
+///
+/// # Structure
+///
+/// Required child boxes:
+/// - `dref`: Data Reference Box - contains URL/URN references to media data.
 #[derive(Debug)]
 pub struct DinfBoxView<'a> {
     content: &'a [u8],
@@ -61,6 +78,13 @@ mod owned {
     use crate::boxes::bmff::DrefBox;
 
     /// An owned Data Information Box (`dinf`).
+    ///
+    /// This is the owned variant of [`DinfBoxView`] that stores the
+    /// contained Data Reference Box.
+    ///
+    /// # Structure
+    ///
+    /// - `dref`: Data Reference Box with URL/URN entries.
     #[derive(Debug, Clone)]
     pub struct DinfBox {
         /// The Data Reference Box contained in this `dinf` box.

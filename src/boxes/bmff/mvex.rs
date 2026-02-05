@@ -1,3 +1,12 @@
+//! Movie Extends Box (`mvex`) implementation.
+//!
+//! The Movie Extends Box signals that the movie may contain movie fragments
+//! (fragmented MP4/fMP4). It provides default values for track fragments and
+//! optionally declares the total duration of all fragments.
+//!
+//! This box is required for fragmented MP4 files and resides within the
+//! Movie Box (`moov`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -8,6 +17,17 @@ use super::MehdBox;
 use super::TrexBox;
 
 /// A reference to a Movie Extends Box (`mvex`).
+///
+/// Container for fragmented movie metadata. Signals that the file contains
+/// movie fragments and provides default sample properties for each track.
+///
+/// # Structure
+///
+/// Optional child boxes:
+/// - `mehd`: Movie Extends Header Box - total fragment duration.
+///
+/// Required child boxes (one per track):
+/// - `trex`: Track Extends Box - default sample properties per track.
 #[derive(Debug)]
 pub struct MvexBoxView<'a> {
     content: &'a [u8],
@@ -68,11 +88,19 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Movie Extends Box (`mvex`).
+    ///
+    /// This is the owned variant of [`MvexBoxView`] that stores child boxes
+    /// in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `mehd`: Optional Movie Extends Header with fragment duration.
+    /// - `trexs`: Track Extends boxes (one per track) with default properties.
     #[derive(Debug, Clone)]
     pub struct MvexBox {
         /// Movie Extends Header Box (`mehd`), if present.
         pub mehd: Option<MehdBox>,
-        /// Track Extends Defaults Boxes (`trex`).
+        /// Track Extends Defaults Boxes (`trex`), one per track.
         pub trexs: Vec<TrexBox>,
     }
 

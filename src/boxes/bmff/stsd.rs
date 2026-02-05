@@ -1,3 +1,10 @@
+//! Sample Description Box (`stsd`) implementation.
+//!
+//! The Sample Description Box gives detailed information about the coding type
+//! used, and any initialization information needed for that coding. Each sample
+//! entry describes the format of a coded sample; multiple entries allow
+//! different formats within a single track.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -7,11 +14,30 @@ use crate::iter::BoxIter;
 use crate::cursor::ReadCursor;
 
 define_box_flags!(
-    /// Flags for Sample Description Box ('stsd')
+    /// Flags for Sample Description Box (`stsd`).
+    ///
+    /// Reserved (should be 0).
     StsdFlags {}
 );
 
-/// A reference to a Sample Description Box ('stsd')
+/// A reference to a Sample Description Box (`stsd`).
+///
+/// The Sample Description Box contains codec-specific configuration for the
+/// samples in this track. Each sample entry (identified by sample_description_index
+/// in other tables) describes how to decode a subset of samples.
+///
+/// # Common Sample Entry Types
+///
+/// Video: `avc1`, `avc3`, `hvc1`, `hev1`, `av01`, `vp09`
+/// Audio: `mp4a`, `ac-3`, `ec-3`, `Opus`, `fLaC`
+/// Text: `tx3g`, `wvtt`
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `entry_count`: Number of sample entries.
+/// - `entries`: Array of codec-specific sample entry boxes.
 #[derive(Debug)]
 pub struct StsdBoxView<'a> {
     /// Box version.
@@ -67,14 +93,27 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    /// An owned Sample Description Box ('stsd')
+    /// An owned Sample Description Box (`stsd`).
+    ///
+    /// This is the owned variant of [`StsdBoxView`] that stores sample entries
+    /// in a heap-allocated vector of raw boxes.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved (should be 0).
+    /// - `entries`: Codec-specific sample entry boxes (stored as raw boxes).
+    ///
+    /// Note: Sample entries are stored as [`RawBoxOwned`] because the specific
+    /// entry format varies by codec. Use codec-specific parsers to decode
+    /// individual entries (e.g., `Mp4aBox` for MPEG-4 audio, `Avc1Box` for H.264).
     #[derive(Debug, Clone)]
     pub struct StsdBox {
         /// Box version (should be 0).
         pub version: u8,
-        /// Box flags (should be 0).
+        /// Reserved flags (should be 0).
         pub flags: StsdFlags,
-        /// Sample entries contained in this `stsd` box.
+        /// Sample entries describing the formats used in this track.
         pub entries: Vec<RawBoxOwned>,
     }
 

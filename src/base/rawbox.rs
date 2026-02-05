@@ -1,4 +1,34 @@
 //! Raw BMFF box representation.
+//!
+//! This module provides [`RawBox`], a generic type for working with BMFF boxes
+//! at the byte level without interpreting the payload contents. This is useful
+//! for:
+//!
+//! - Iterating over boxes in a container without fully parsing each one.
+//! - Copying or forwarding unknown box types.
+//! - Low-level box manipulation and construction.
+//!
+//! # Type Aliases
+//!
+//! - [`RawBoxRef`]: Zero-copy reference to a box (`RawBox<&[u8]>`).
+//! - `RawBoxOwned`: Owned box with heap-allocated payload (`RawBox<Vec<u8>>`, requires `alloc`).
+//!
+//! # Parsing
+//!
+//! Use [`RawBoxRef::parse`] to parse a box from a byte slice:
+//!
+//! ```
+//! use mp4_bmff::base::rawbox::RawBoxRef;
+//!
+//! let data = [
+//!     0x00, 0x00, 0x00, 0x0C, // size = 12
+//!     b'f', b't', b'y', b'p', // type = "ftyp"
+//!     0x01, 0x02, 0x03, 0x04, // payload
+//! ];
+//!
+//! let raw = RawBoxRef::parse(&data).unwrap();
+//! assert_eq!(raw.payload(), &[0x01, 0x02, 0x03, 0x04]);
+//! ```
 
 use crate::BoxHeader;
 use crate::BoxSize;
@@ -8,17 +38,32 @@ use crate::error::*;
 #[cfg(feature = "alloc")]
 use crate::lib::Vec;
 
-/// A raw BMFF box with its header and payload.
+/// A raw BMFF box with header and uninterpreted payload.
+///
+/// The type parameter `T` determines how the payload is stored:
+/// - `&[u8]`: Zero-copy reference (see [`RawBoxRef`]).
+/// - `Vec<u8>`: Owned heap allocation (see `RawBoxOwned`, requires `alloc`).
+///
+/// # Structure
+///
+/// - `header`: Box header with size and type.
+/// - `payload`: Raw box content (not including header).
 #[derive(Debug)]
 pub struct RawBox<T> {
     header: BoxHeader,
     payload: T,
 }
 
-/// A reference to a RawBox's contents.
+/// A reference to a raw box's contents (zero-copy).
+///
+/// This type borrows the payload data from the original byte slice,
+/// making parsing very efficient for read-only access.
 pub type RawBoxRef<'a> = RawBox<&'a [u8]>;
 
-/// A owned RawBox with a `Vec<u8>` payload.
+/// An owned raw box with heap-allocated payload.
+///
+/// Use this when you need to store or modify box data independently
+/// of the original byte slice. Requires the `alloc` feature.
 #[cfg(feature = "alloc")]
 pub type RawBoxOwned = RawBox<Vec<u8>>;
 

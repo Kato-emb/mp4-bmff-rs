@@ -1,3 +1,9 @@
+//! Handler Reference Box (`hdlr`) implementation.
+//!
+//! The Handler Reference Box declares the process by which media data within
+//! a track is presented. It identifies the media handler component that is
+//! appropriate for interpreting the track's media data.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -8,10 +14,32 @@ use crate::cursor::ReadCursor;
 
 define_box_flags!(
     /// Flags for Handler Reference Box (`hdlr`).
+    ///
+    /// Reserved (should be 0).
     HdlrFlags {}
 );
 
 /// A reference to a Handler Reference Box (`hdlr`).
+///
+/// The Handler Reference Box is required within the Media Box (`mdia`) and
+/// declares the type of media data within the track. Decoders use this box
+/// to identify which handler to use for processing the track's media.
+///
+/// # Common Handler Types
+///
+/// - `vide`: Video track - contains video samples.
+/// - `soun`: Audio track - contains audio samples.
+/// - `hint`: Hint track - contains streaming hints.
+/// - `meta`: Timed metadata track.
+/// - `text`: Text track (subtitles).
+/// - `subt`: Subtitle track.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `handler_type`: FourCC identifying the media type.
+/// - `name`: Human-readable name for the handler (null-terminated UTF-8).
 #[derive(Debug)]
 pub struct HdlrBoxView<'a> {
     /// Box version (should be 0).
@@ -84,15 +112,49 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Handler Reference Box (`hdlr`).
+    ///
+    /// This is the owned variant of [`HdlrBoxView`] that stores the handler
+    /// name in a heap-allocated string.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved flags (should be 0).
+    /// - `handler_type`: FourCC identifying the media handler type.
+    /// - `name`: Human-readable name describing the handler.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::BoxDecode;
+    /// use mp4_bmff::boxes::bmff::HdlrBox;
+    /// use mp4_bmff::types::FourCC;
+    ///
+    /// // A handler box for video
+    /// let data: [u8; 30] = [
+    ///     0x00,                               // version = 0
+    ///     0x00, 0x00, 0x00,                   // flags
+    ///     0x00, 0x00, 0x00, 0x00,             // pre_defined
+    ///     b'v', b'i', b'd', b'e',             // handler_type = "vide"
+    ///     0x00, 0x00, 0x00, 0x00,             // reserved[0]
+    ///     0x00, 0x00, 0x00, 0x00,             // reserved[1]
+    ///     0x00, 0x00, 0x00, 0x00,             // reserved[2]
+    ///     b'V', b'i', b'd', b'e', b'o', 0x00, // name = "Video\0"
+    /// ];
+    ///
+    /// let hdlr = HdlrBox::decode(&data).unwrap();
+    /// assert_eq!(hdlr.handler_type, FourCC::new(*b"vide"));
+    /// assert_eq!(hdlr.name, "Video");
+    /// ```
     #[derive(Debug, Clone)]
     pub struct HdlrBox {
         /// Box version (should be 0).
         pub version: u8,
-        /// Box flags (should be 0).
+        /// Reserved flags (should be 0).
         pub flags: HdlrFlags,
-        /// Handler type (e.g., 'vide' for video, 'soun' for sound).
+        /// Handler type FourCC (e.g., "vide" for video, "soun" for audio).
         pub handler_type: FourCC,
-        /// Human-readable name for the track type.
+        /// Human-readable name describing this handler.
         pub name: String,
     }
 

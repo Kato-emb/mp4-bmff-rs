@@ -1,4 +1,17 @@
-//!/ AVC (H.264) codec related structures and functions
+//! AVC (H.264) codec configuration structures.
+//!
+//! This module provides types for the AVC Decoder Configuration Record
+//! as defined in ISO/IEC 14496-15. This record is stored in `avcC` boxes
+//! within AVC sample entries (`avc1`, `avc2`, `avc3`, `avc4`).
+//!
+//! # Structure
+//!
+//! The AVC configuration contains:
+//! - Profile, compatibility, and level indicators
+//! - NAL unit length size (typically 4 bytes)
+//! - Sequence Parameter Sets (SPS)
+//! - Picture Parameter Sets (PPS)
+//! - Extended fields for High profile and above
 
 use crate::error::*;
 
@@ -6,36 +19,58 @@ use crate::cursor::ReadCursor;
 
 use super::iter::ParameterSetsIter;
 
-/// A reference to a AVC Decoder configuration record
+/// Zero-copy view of an AVC Decoder Configuration Record.
+///
+/// This structure represents the configuration data required to initialize
+/// an AVC (H.264) decoder. It includes profile/level information and the
+/// parameter sets (SPS/PPS) needed for decoding.
+///
+/// # Structure (ISO/IEC 14496-15)
+///
+/// | Field | Size | Description |
+/// |-------|------|-------------|
+/// | configuration_version | 1 | Always 1 |
+/// | avc_profile_indication | 1 | Profile (66=Baseline, 77=Main, 100=High) |
+/// | profile_compatibility | 1 | Constraint flags |
+/// | avc_level_indication | 1 | Level × 10 (e.g., 30 = Level 3.0) |
+/// | length_size_minus_one | 2 bits | NAL unit length field size - 1 |
+/// | num_of_sps | 5 bits | Number of SPS |
+/// | sps[] | variable | Sequence Parameter Sets |
+/// | num_of_pps | 1 | Number of PPS |
+/// | pps[] | variable | Picture Parameter Sets |
+///
+/// For High profile (100) and above, additional fields follow:
+/// - chroma_format, bit_depth_luma_minus8, bit_depth_chroma_minus8
+/// - SPS extension NAL units
 #[derive(Debug)]
 pub struct AVCDecoderConfigurationRecordView<'a> {
-    /// Configuration version, should be 1
+    /// Configuration version (should be 1).
     pub configuration_version: u8,
-    /// AVC profile indication
+    /// AVC profile (66=Baseline, 77=Main, 100=High, etc.).
     pub avc_profile_indication: u8,
-    /// Profile compatibility
+    /// Profile compatibility constraint flags.
     pub profile_compatibility: u8,
-    /// AVC level indication
+    /// AVC level (value × 10, e.g., 30 = Level 3.0).
     pub avc_level_indication: u8,
-    /// Length size minus one
+    /// NAL unit length field size minus one (typically 3, meaning 4 bytes).
     pub length_size_minus_one: u8,
-    /// Number of sequence parameter sets
+    /// Number of Sequence Parameter Sets.
     pub num_of_sps: u8,
-    /// Sequence parameter sets
+    /// Raw bytes containing all SPS NAL units.
     sps: &'a [u8],
-    /// Number of picture parameter sets
+    /// Number of Picture Parameter Sets.
     pub num_of_pps: u8,
-    /// Picture parameter sets
+    /// Raw bytes containing all PPS NAL units.
     pps: &'a [u8],
-    /// Chroma format (optional)
+    /// Chroma format (High profile and above, 0-3).
     pub chroma_format: Option<u8>,
-    /// Bit depth luma minus 8 (optional)
+    /// Luma bit depth minus 8 (High profile and above).
     pub bit_depth_luma_minus8: Option<u8>,
-    /// Bit depth chroma minus 8 (optional)
+    /// Chroma bit depth minus 8 (High profile and above).
     pub bit_depth_chroma_minus8: Option<u8>,
-    /// Number of sequence parameter set extensions (optional)
+    /// Number of SPS extension NAL units (High profile and above).
     pub num_of_sps_ext: Option<u8>,
-    /// Sequence parameter set extensions (optional)
+    /// Raw bytes containing SPS extension NAL units.
     sps_ext: Option<&'a [u8]>,
 }
 
@@ -153,30 +188,58 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    /// An owned AVC Decoder configuration record
+    /// Owned AVC Decoder Configuration Record with heap-allocated data.
+    ///
+    /// This is the owned version of [`AVCDecoderConfigurationRecordView`],
+    /// suitable for modification and storage independent of the source buffer.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::formats::mpeg4::codecs::avc::AVCDecoderConfigurationRecordView;
+    ///
+    /// let data = [
+    ///     0x01,       // configuration_version
+    ///     0x42,       // avc_profile_indication (Baseline)
+    ///     0xC0,       // profile_compatibility
+    ///     0x1E,       // avc_level_indication (Level 3.0)
+    ///     0xFF,       // length_size_minus_one = 3 (4 bytes)
+    ///     0xE1,       // num_of_sps = 1
+    ///     0x00, 0x04, 0x67, 0x42, 0xC0, 0x1E, // SPS
+    ///     0x01,       // num_of_pps = 1
+    ///     0x00, 0x04, 0x68, 0xCE, 0x3C, 0x80, // PPS
+    /// ];
+    ///
+    /// let view = AVCDecoderConfigurationRecordView::parse(&data).unwrap();
+    /// let owned = view.to_owned();
+    ///
+    /// assert_eq!(owned.avc_profile_indication, 0x42);
+    /// assert_eq!(owned.sps.len(), 1);
+    /// assert_eq!(owned.pps.len(), 1);
+    /// ```
     #[derive(Debug, Clone)]
     pub struct AVCDecoderConfigurationRecord {
-        /// Configuration version, should be 1
+        /// Configuration version (should be 1).
         pub configuration_version: u8,
-        /// AVC profile indication
+        /// AVC profile (66=Baseline, 77=Main, 100=High, etc.).
         pub avc_profile_indication: u8,
-        /// Profile compatibility
+        /// Profile compatibility constraint flags.
         pub profile_compatibility: u8,
-        /// AVC level indication
+        /// AVC level (value × 10).
         pub avc_level_indication: u8,
-        /// Length size minus one
+        /// NAL unit length field size minus one.
         pub length_size_minus_one: u8,
-        /// Sequence parameter sets
+        /// Sequence Parameter Sets (SPS NAL units).
         pub sps: Vec<Vec<u8>>,
-        /// Picture parameter sets
+        /// Picture Parameter Sets (PPS NAL units).
         pub pps: Vec<Vec<u8>>,
-        /// Chroma format (optional)
+        /// Chroma format (High profile and above).
         pub chroma_format: Option<u8>,
-        /// Bit depth luma minus 8 (optional)
+        /// Luma bit depth minus 8 (High profile and above).
         pub bit_depth_luma_minus8: Option<u8>,
-        /// Bit depth chroma minus 8 (optional)
+        /// Chroma bit depth minus 8 (High profile and above).
         pub bit_depth_chroma_minus8: Option<u8>,
-        /// Sequence parameter set extensions (optional)
+        /// SPS extension NAL units (High profile and above).
         pub sps_ext: Option<Vec<Vec<u8>>>,
     }
 

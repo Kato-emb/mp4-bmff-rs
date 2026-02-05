@@ -1,3 +1,10 @@
+//! Sample to Chunk Box (`stsc`) implementation.
+//!
+//! The Sample to Chunk Box maps samples to chunks. Samples within a media
+//! track are grouped into chunks, and this box describes how samples are
+//! packed into those chunks. It uses run-length encoding to efficiently
+//! represent consecutive chunks with the same number of samples.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -9,10 +16,15 @@ use crate::cursor::ReadCursor;
 
 define_box_flags!(
     /// Flags for the Sample to Chunk Box (`stsc`).
+    ///
+    /// Reserved (should be 0).
     StscFlags {}
 );
 
 /// An entry in the Sample to Chunk Box (`stsc`).
+///
+/// Each entry describes a run of consecutive chunks that have the same
+/// number of samples and use the same sample description.
 #[derive(Debug, Clone, Copy)]
 pub struct StscEntry {
     /// The index of the first chunk in this entry (1-based).
@@ -50,13 +62,23 @@ impl FixedSizeEntry for StscEntry {
 }
 
 /// A reference to a Sample to Chunk Box (`stsc`).
+///
+/// Maps samples to chunks using run-length encoding. Required for locating
+/// samples within the media data.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `entry_count`: Number of entries.
+/// - `entries`: Array of (first_chunk, samples_per_chunk, sample_description_index).
 #[derive(Debug)]
 pub struct StscBoxView<'a> {
-    /// The version of the box (0).
+    /// Box version (should be 0).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: StscFlags,
-    /// The number of entries in the box.
+    /// Number of entries in the table.
     pub entry_count: u32,
     entries: &'a [u8],
 }
@@ -116,13 +138,22 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Sample to Chunk Box (`stsc`).
+    ///
+    /// This is the owned variant of [`StscBoxView`] that stores entries
+    /// in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved (should be 0).
+    /// - `entries`: Sample-to-chunk mapping entries.
     #[derive(Debug, Clone)]
     pub struct StscBox {
-        /// The version of the box (0).
+        /// Box version (should be 0).
         pub version: u8,
-        /// The flags of the box.
+        /// Reserved flags (should be 0).
         pub flags: StscFlags,
-        /// The entries in the box.
+        /// Entries mapping chunk ranges to their sample configurations.
         pub entries: Vec<StscEntry>,
     }
 

@@ -1,3 +1,9 @@
+//! Edit Box (`edts`) implementation.
+//!
+//! The Edit Box is an optional container that maps the timeline of a track
+//! (the presentation time) to the media time within that track. This allows
+//! for operations like trimming, looping, or inserting empty time.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -7,6 +13,14 @@ use crate::iter::BoxIter;
 use super::ElstBoxView;
 
 /// A reference to an Edit Box (`edts`).
+///
+/// The Edit Box contains an edit list that defines how to map the track
+/// timeline to the actual media samples. Each edit segment specifies
+/// a portion of the media to play and at what rate.
+///
+/// # Structure
+///
+/// - `elst`: Edit List Box (optional) - the actual edit list entries.
 #[derive(Debug)]
 pub struct EdtsBoxView<'a> {
     content: &'a [u8],
@@ -56,9 +70,16 @@ mod owned {
     use crate::boxes::bmff::ElstBox;
 
     /// An owned Edit Box (`edts`).
+    ///
+    /// This is the owned variant of [`EdtsBoxView`] that stores the edit list
+    /// in a heap-allocated structure.
+    ///
+    /// # Structure
+    ///
+    /// - `elst`: Edit List Box containing the timeline mapping entries.
     #[derive(Debug, Clone)]
     pub struct EdtsBox {
-        /// Edit List Box (`elst`), if present.
+        /// Edit List Box defining how track time maps to media time.
         pub elst: Option<ElstBox>,
     }
 

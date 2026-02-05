@@ -1,3 +1,12 @@
+//! Segment Type Box (`styp`) implementation.
+//!
+//! The Segment Type Box identifies the specifications to which a segment
+//! conforms, similar to how `ftyp` identifies a complete file. It appears
+//! at the beginning of each media segment in segmented/streaming delivery.
+//!
+//! This box has the same structure as the File Type Box (`ftyp`) but uses
+//! a different box type to distinguish segment-level branding.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -6,12 +15,21 @@ use crate::types::*;
 
 use crate::cursor::ReadCursor;
 
-/// A reference to a File Type Box (`styp`).
+/// A reference to a Segment Type Box (`styp`).
+///
+/// Identifies the specifications a media segment conforms to. Used in
+/// segmented delivery (DASH, HLS) to brand individual segments.
+///
+/// # Structure
+///
+/// - `major_brand`: Primary specification the segment conforms to.
+/// - `minor_version`: Informative version of the major brand.
+/// - `compatible_brands`: List of specifications this segment is compatible with.
 #[derive(Debug)]
 pub struct StypBoxView<'a> {
-    /// The major brand.
+    /// Primary brand/specification this segment conforms to.
     pub major_brand: FourCC,
-    /// The minor version.
+    /// Informative version number of the major brand.
     pub minor_version: u32,
     compatible_brands: &'a [u8],
 }
@@ -74,14 +92,23 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    /// An owned File Type Box (`styp`).
+    /// An owned Segment Type Box (`styp`).
+    ///
+    /// This is the owned variant of [`StypBoxView`] that stores compatible
+    /// brands in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `major_brand`: Primary specification the segment conforms to.
+    /// - `minor_version`: Informative version of the major brand.
+    /// - `compatible_brands`: Other specifications this segment supports.
     #[derive(Debug, Clone)]
     pub struct StypBox {
-        /// The major brand.
+        /// Primary brand/specification this segment conforms to.
         pub major_brand: FourCC,
-        /// The minor version.
+        /// Informative version number of the major brand.
         pub minor_version: u32,
-        /// The compatible brands.
+        /// List of compatible brands/specifications.
         pub compatible_brands: Vec<FourCC>,
     }
 

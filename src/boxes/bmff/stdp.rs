@@ -1,3 +1,12 @@
+//! Degradation Priority Box (`stdp`) implementation.
+//!
+//! The Degradation Priority Box assigns a relative priority to each sample,
+//! indicating which samples are more important to preserve when the media must
+//! be degraded (e.g., under bandwidth constraints or for transcoding). Higher
+//! priority values indicate more important samples that should be retained.
+//!
+//! This box is optional and resides within the Sample Table Box (`stbl`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -7,13 +16,19 @@ use crate::iter::FixedSizeEntryIter;
 
 define_box_flags!(
     /// Flags for the Degradation Priority Box (`stdp`).
+    ///
+    /// Reserved (should be 0).
     StdpFlags {}
 );
 
 /// An entry in the Degradation Priority Box (`stdp`).
+///
+/// Contains a 16-bit degradation priority value for a single sample.
+/// Higher values indicate greater importance - samples with higher
+/// priorities should be retained preferentially when degradation occurs.
 #[derive(Debug, Clone, Copy)]
 pub struct StdpEntry {
-    /// The degradation priority of the sample.
+    /// The degradation priority of the sample (higher = more important).
     pub priority: u16,
 }
 
@@ -35,11 +50,21 @@ impl FixedSizeEntry for StdpEntry {
 }
 
 /// A reference to a Degradation Priority Box (`stdp`).
+///
+/// Assigns degradation priorities to samples, allowing decoders or
+/// transcoders to make informed decisions about which samples to preserve
+/// when quality must be reduced.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `entries`: One 16-bit priority per sample (indexed by sample number).
 #[derive(Debug)]
 pub struct StdpBoxView<'a> {
-    /// Box version (0).
+    /// Box version (should be 0).
     pub version: u8,
-    /// Box flags (should be 0).
+    /// Reserved flags (should be 0).
     pub flags: StdpFlags,
     entries: &'a [u8],
 }
@@ -99,13 +124,22 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Degradation Priority Box (`stdp`).
+    ///
+    /// This is the owned variant of [`StdpBoxView`] that stores degradation
+    /// priority entries in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved (should be 0).
+    /// - `entries`: Degradation priority for each sample.
     #[derive(Debug, Clone)]
     pub struct StdpBox {
-        /// Box version (0).
+        /// Box version (should be 0).
         pub version: u8,
-        /// Box flags (should be 0).
+        /// Reserved flags (should be 0).
         pub flags: StdpFlags,
-        /// STDP entries contained in this `stdp` box.
+        /// Degradation priority entries (one per sample).
         pub entries: Vec<StdpEntry>,
     }
 

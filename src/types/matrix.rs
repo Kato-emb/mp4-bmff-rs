@@ -1,22 +1,81 @@
-//! Affine transform matrix used by BMFF visual track boxes.
+//! Affine transformation matrix for video tracks.
 //!
-//! The matrix is stored row-major using 16.16 fixed point for the 2D affine
-//! components and 2.30 fixed point for the projective terms.
+//! BMFF uses a 3×3 transformation matrix in track and movie headers to
+//! specify how video should be displayed. The matrix supports rotation,
+//! scaling, translation, and perspective transforms.
+//!
+//! # Matrix Layout
+//!
+//! The matrix is stored in row-major order:
+//!
+//! ```text
+//! | a  b  u |
+//! | c  d  v |
+//! | x  y  w |
+//! ```
+//!
+//! Where:
+//! - `a`, `b`, `c`, `d`: 2D affine components (I16F16 fixed-point).
+//! - `x`, `y`: Translation components (I16F16 fixed-point).
+//! - `u`, `v`, `w`: Projective components (I2F30 fixed-point).
+//!
+//! # Coordinate Transformation
+//!
+//! A point (px, py) is transformed to (px', py') by:
+//!
+//! ```text
+//! px' = (a*px + c*py + x) / (u*px + v*py + w)
+//! py' = (b*px + d*py + y) / (u*px + v*py + w)
+//! ```
+//!
+//! For affine transforms (no perspective), u=0, v=0, w=1.
 
 use super::fixed::{
     I2F30,
     I16F16, //
 };
 
-/// 3×3 transformation matrix as described in ISO/IEC 14496-12 § 6.5.2.
+/// 3×3 transformation matrix as defined in ISO/IEC 14496-12 § 6.5.2.
+///
+/// Used in `mvhd` (movie header) and `tkhd` (track header) boxes to specify
+/// the display transformation for video content.
+///
+/// # Structure
+///
+/// - `a`, `b`: First row affine components (I16F16).
+/// - `u`: First row projective component (I2F30).
+/// - `c`, `d`: Second row affine components (I16F16).
+/// - `v`: Second row projective component (I2F30).
+/// - `x`, `y`: Translation components (I16F16).
+/// - `w`: Homogeneous coordinate scale (I2F30, typically 1.0).
+///
+/// # Common Transforms
+///
+/// - **Identity**: `Matrix::identity()` - no transformation.
+/// - **90° rotation**: Set a=0, b=1, c=-1, d=0.
+/// - **Horizontal flip**: Set a=-1, d=1.
 #[rustfmt::skip]
-#[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct Matrix {
-    pub a: I16F16, pub b: I16F16, pub u: I2F30,
-    pub c: I16F16, pub d: I16F16, pub v: I2F30,
-    pub x: I16F16, pub y: I16F16, pub w: I2F30,
+    /// Horizontal scaling / rotation component.
+    pub a: I16F16,
+    /// Vertical shearing component.
+    pub b: I16F16,
+    /// First projective component (typically 0).
+    pub u: I2F30,
+    /// Horizontal shearing component.
+    pub c: I16F16,
+    /// Vertical scaling / rotation component.
+    pub d: I16F16,
+    /// Second projective component (typically 0).
+    pub v: I2F30,
+    /// Horizontal translation.
+    pub x: I16F16,
+    /// Vertical translation.
+    pub y: I16F16,
+    /// Homogeneous scale (typically 1.0).
+    pub w: I2F30,
 }
 
 impl Matrix {

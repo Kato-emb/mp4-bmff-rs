@@ -1,3 +1,11 @@
+//! Movie Fragment Header Box (`mfhd`) implementation.
+//!
+//! The Movie Fragment Header Box contains a sequence number that identifies
+//! the order of movie fragments. Sequence numbers start at 1 and increment
+//! for each subsequent fragment.
+//!
+//! This box is required within every Movie Fragment Box (`moof`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -9,17 +17,45 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for the Movie Fragment Header Box (`mfhd`).
+    ///
+    /// Reserved (should be 0).
     MfhdFlags {}
 );
 
 /// Movie Fragment Header Box (`mfhd`).
+///
+/// Identifies a movie fragment by its sequence number. Fragments must
+/// be processed in sequence number order to correctly reconstruct the
+/// movie timeline.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `sequence_number`: 1-based fragment order (first fragment is 1).
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::BoxDecode;
+/// use mp4_bmff::boxes::bmff::MfhdBox;
+///
+/// let data: [u8; 8] = [
+///     0x00,                   // version = 0
+///     0x00, 0x00, 0x00,       // flags
+///     0x00, 0x00, 0x00, 0x2A, // sequence_number = 42
+/// ];
+///
+/// let mfhd = MfhdBox::decode(&data).unwrap();
+/// assert_eq!(mfhd.sequence_number, 42);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct MfhdBox {
-    /// The version of the box.
+    /// Box version (should be 0).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: MfhdFlags,
-    /// The sequence number.
+    /// Fragment sequence number (1-based, increments per fragment).
     pub sequence_number: u32,
 }
 

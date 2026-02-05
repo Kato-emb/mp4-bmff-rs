@@ -1,4 +1,29 @@
-/// Size of an instance in bytes.
+//! Variable-length size encoding for MPEG-4 Systems descriptors.
+
+/// Variable-length encoded size of a descriptor instance.
+///
+/// MPEG-4 Systems uses a variable-length encoding for descriptor sizes,
+/// where each byte uses 7 bits for the size value and the high bit
+/// indicates whether more bytes follow.
+///
+/// # Encoding Format
+///
+/// ```text
+/// Byte:  | 1xxxxxxx | 1xxxxxxx | 1xxxxxxx | 0xxxxxxx |
+///          ↑ more     ↑ more     ↑ more     ↑ last
+/// ```
+///
+/// - Bit 7 (0x80): Continuation flag (1 = more bytes follow)
+/// - Bits 0-6 (0x7F): Size value bits
+///
+/// # Size Ranges
+///
+/// | Bytes | Value Range |
+/// |-------|-------------|
+/// | 1 | 0 - 127 |
+/// | 2 | 128 - 16,383 |
+/// | 3 | 16,384 - 2,097,151 |
+/// | 4 | 2,097,152 - 268,435,455 |
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SizeOfInstance(u32);
 

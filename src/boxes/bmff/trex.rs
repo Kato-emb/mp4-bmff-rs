@@ -1,3 +1,13 @@
+//! Track Extends Defaults Box (`trex`) implementation.
+//!
+//! The Track Extends Box provides default values for sample properties
+//! in movie fragments. These defaults reduce redundancy in fragment headers
+//! by allowing fragments to inherit values rather than specifying them
+//! repeatedly.
+//!
+//! One `trex` box is required for each track that may be extended by
+//! movie fragments. This box resides within the Movie Extends Box (`mvex`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -9,25 +19,62 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for the Track Extends Defaults Box (`trex`).
+    ///
+    /// Reserved (should be 0).
     TrexFlags {}
 );
 
 /// Track Extends Defaults Box (`trex`).
+///
+/// Provides default sample properties for a track's movie fragments.
+/// Values here are used when not overridden by track fragment headers
+/// or track run boxes.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `track_id`: Identifies which track these defaults apply to.
+/// - `default_sample_description_index`: Default sample description.
+/// - `default_sample_duration`: Default sample duration in timescale units.
+/// - `default_sample_size`: Default sample size in bytes.
+/// - `default_sample_flags`: Default sample flags (sync, depends_on, etc.).
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::BoxDecode;
+/// use mp4_bmff::boxes::bmff::TrexBox;
+///
+/// let data: [u8; 24] = [
+///     0x00,                   // version = 0
+///     0x00, 0x00, 0x00,       // flags
+///     0x00, 0x00, 0x00, 0x01, // track_id = 1
+///     0x00, 0x00, 0x00, 0x01, // default_sample_description_index = 1
+///     0x00, 0x00, 0x03, 0xE8, // default_sample_duration = 1000
+///     0x00, 0x00, 0x00, 0x00, // default_sample_size = 0
+///     0x00, 0x01, 0x00, 0x00, // default_sample_flags
+/// ];
+///
+/// let trex = TrexBox::decode(&data).unwrap();
+/// assert_eq!(trex.track_id, 1);
+/// assert_eq!(trex.default_sample_duration, 1000);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct TrexBox {
-    /// The version of the box.
+    /// Box version (should be 0).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: TrexFlags,
-    /// The track ID.
+    /// Track ID this box applies to.
     pub track_id: u32,
-    /// The default sample description index.
+    /// Default index into sample description table.
     pub default_sample_description_index: u32,
-    /// The default sample duration.
+    /// Default sample duration in timescale units.
     pub default_sample_duration: u32,
-    /// The default sample size.
+    /// Default sample size in bytes.
     pub default_sample_size: u32,
-    /// The default sample flags.
+    /// Default sample flags (sync, dependency info, etc.).
     pub default_sample_flags: u32,
 }
 

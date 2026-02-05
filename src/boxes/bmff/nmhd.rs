@@ -1,3 +1,9 @@
+//! Null Media Header Box (`nmhd`) implementation.
+//!
+//! The Null Media Header Box is used for streams that have no media-specific
+//! header, such as timed metadata streams or subtitle tracks that don't use
+//! the text handler.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -9,10 +15,21 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for Null Media Header Box (`nmhd`).
+    ///
+    /// Reserved (should be 0).
     NmhdFlags {}
 );
 
-/// A Null Media Header Box (`nmhd`).
+/// Null Media Header Box (`nmhd`).
+///
+/// Used for tracks that do not have a specific media header type. This includes
+/// timed metadata tracks and other non-standard media types that don't fit into
+/// video, audio, or hint categories.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
 #[derive(Debug, Clone, Copy)]
 pub struct NmhdBox {
     /// Box version (should be 0).

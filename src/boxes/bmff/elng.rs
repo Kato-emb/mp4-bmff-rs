@@ -1,3 +1,9 @@
+//! Extended Language Tag Box (`elng`) implementation.
+//!
+//! The Extended Language Tag Box provides a more expressive language tag
+//! than the ISO-639-2/T code in the Media Header Box. It uses BCP-47/RFC 4646
+//! language tags which can express language variants, scripts, and regions.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -6,11 +12,23 @@ use crate::error::*;
 use crate::cursor::ReadCursor;
 
 define_box_flags!(
-    /// Flags for Extended language tag Box (`elng`).
+    /// Flags for Extended Language Tag Box (`elng`).
+    ///
+    /// Reserved (should be 0).
     ElngFlags {}
 );
 
-/// A reference to an Extended language tag Box (`elng`).
+/// A reference to an Extended Language Tag Box (`elng`).
+///
+/// Provides extended language information using BCP-47/RFC 4646 language tags.
+/// This supplements the basic ISO-639-2/T code in the Media Header Box with
+/// more specific language variant information.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `extended_language`: RFC 4646 language tag (e.g., "en-US", "zh-Hans-CN").
 #[derive(Debug)]
 pub struct ElngBoxView<'a> {
     /// Box version (should be 0).
@@ -66,14 +84,41 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    /// An owned Extended language tag Box (`elng`).
+    /// An owned Extended Language Tag Box (`elng`).
+    ///
+    /// This is the owned variant of [`ElngBoxView`] that stores the language
+    /// tag in a heap-allocated string.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved flags (should be 0).
+    /// - `extended_language`: RFC 4646/BCP-47 language tag.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::BoxDecode;
+    /// use mp4_bmff::boxes::bmff::ElngBox;
+    ///
+    /// // An extended language tag box for US English
+    /// let data: [u8; 10] = [
+    ///     0x00,                         // version = 0
+    ///     0x00, 0x00, 0x00,             // flags
+    ///     b'e', b'n', b'-', b'U', b'S', // "en-US"
+    ///     0x00,                         // null terminator
+    /// ];
+    ///
+    /// let elng = ElngBox::decode(&data).unwrap();
+    /// assert_eq!(elng.extended_language, "en-US");
+    /// ```
     #[derive(Debug, Clone)]
     pub struct ElngBox {
         /// Box version (should be 0).
         pub version: u8,
-        /// Box flags (should be 0).
+        /// Reserved flags (should be 0).
         pub flags: ElngFlags,
-        /// Extended language tag (RFC 4646).
+        /// RFC 4646/BCP-47 language tag (e.g., "en-US", "zh-Hans-CN").
         pub extended_language: String,
     }
 

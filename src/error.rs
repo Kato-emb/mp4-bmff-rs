@@ -1,4 +1,42 @@
-//! This module defines error types and result types for BMFF box operations.
+//! Error types for BMFF box operations.
+//!
+//! This module provides error handling types for parsing and encoding BMFF boxes.
+//! The error system is designed to provide detailed context about what went wrong
+//! and where the error occurred.
+//!
+//! # Error Types
+//!
+//! - [`Error`]: The main error type containing kind, location, and optional source
+//! - [`ErrorKind`]: An enum describing the specific type of error
+//! - [`Result<T>`]: A type alias for `Result<T, Error>`
+//!
+//! # Error Context
+//!
+//! Errors can include optional context:
+//! - **Offset**: The byte position where the error occurred
+//! - **Box type**: The box being processed when the error occurred
+//! - **Source**: An underlying error (with `std` feature)
+//!
+//! # Example
+//!
+//! ```
+//! use mp4_bmff::error::{Error, ErrorKind, Result};
+//!
+//! fn parse_data(data: &[u8]) -> Result<u32> {
+//!     if data.len() < 4 {
+//!         return Err(Error::new(ErrorKind::NotEnoughBytes {
+//!             expected: 4,
+//!             remaining: data.len(),
+//!         }));
+//!     }
+//!     Ok(u32::from_be_bytes([data[0], data[1], data[2], data[3]]))
+//! }
+//!
+//! let result = parse_data(&[0x00, 0x01]);
+//! assert!(result.is_err());
+//! let err = result.unwrap_err();
+//! assert!(matches!(err.kind(), ErrorKind::NotEnoughBytes { .. }));
+//! ```
 
 use core::error;
 use core::fmt;
@@ -13,90 +51,120 @@ use crate::cursor::ErrorKind as CursorErrorKind;
 /// Result type for BMFF box operations.
 pub type Result<T> = core::result::Result<T, Error>;
 
-/// Kinds of errors that can occur while processing BMFF boxes.
+/// Classification of errors that can occur while processing BMFF boxes.
+///
+/// This enum categorizes all possible error conditions when parsing or
+/// encoding BMFF data. Each variant provides specific context about
+/// what went wrong.
+///
+/// # Categories
+///
+/// - **Buffer errors**: `NotEnoughBytes`, `BufferTooLarge`, `Overflow`
+/// - **Box structure errors**: `MismatchedBoxSize`, `MismatchedBoxType`, `InvalidBoxSize`
+/// - **Box content errors**: `InvalidBoxVersion`, `InvalidBoxFlags`, `InvalidBoxField`
+/// - **Container errors**: `BoxMissing`, `BoxDuplicate`
+/// - **I/O errors**: `Io` (with `std` feature)
+/// - **Other**: `Other` for miscellaneous errors
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
-    /// An integer overflow occurred.
+    /// An integer overflow occurred during size calculation.
     Overflow,
-    /// There were not enough bytes to complete the operation.
+
+    /// Insufficient bytes available for the requested operation.
+    ///
+    /// This is the most common error when parsing truncated data.
     NotEnoughBytes {
-        /// Number of bytes expected.
+        /// Number of bytes required.
         expected: usize,
-        /// Number of bytes remaining.
+        /// Number of bytes actually available.
         remaining: usize,
     },
-    /// The provided buffer is too large.
+
+    /// The provided buffer exceeds the maximum allowed size.
     BufferTooLarge {
-        /// Number of bytes expected.
+        /// Size of the provided buffer.
         expected: u64,
         /// Maximum allowed size.
         max: u64,
     },
-    /// Mismatched box size.
+
+    /// Box size in header doesn't match actual content size.
     MismatchedBoxSize {
-        /// Expected size.
+        /// Size declared in the box header.
         expected: u64,
-        /// Found size.
+        /// Actual size of the box content.
         found: u64,
     },
-    /// Mismatched box type.
+
+    /// Box type in header doesn't match expected type.
     MismatchedBoxType {
         /// Expected box type.
         expected: BoxType,
-        /// Found box type.
+        /// Actual box type found.
         found: BoxType,
     },
-    /// Invalid box size.
+
+    /// Box size value is invalid or malformed.
     InvalidBoxSize {
-        /// A description of the invalid size.
+        /// Description of why the size is invalid.
         reason: &'static str,
-        /// The invalid size encountered.
+        /// The invalid size value.
         got: u64,
     },
-    /// Invalid box type.
+
+    /// Box type value is invalid or unsupported.
     InvalidBoxType {
-        /// A description of the invalid box type.
+        /// Description of why the type is invalid.
         reason: &'static str,
-        /// The invalid box type encountered.
+        /// The invalid type FourCC.
         got: FourCC,
     },
-    /// Invalid box version.
+
+    /// Box version is not supported or invalid for this box type.
     InvalidBoxVersion {
-        /// A description of the invalid version.
+        /// Description of why the version is invalid.
         reason: &'static str,
-        /// The invalid version encountered.
+        /// The invalid version number.
         got: u8,
     },
-    /// Invalid box flags.
+
+    /// Box flags contain invalid or unsupported values.
     InvalidBoxFlags {
-        /// A description of the invalid flags.
+        /// Description of why the flags are invalid.
         reason: &'static str,
-        /// The invalid flags encountered.
+        /// The invalid flags value (24-bit).
         got: u32,
     },
-    /// Invalid box field.
+
+    /// A box field contains an invalid value.
     InvalidBoxField {
-        /// The name of the invalid field.
+        /// Name of the invalid field.
         field: &'static str,
-        /// A description of the reason why the field is invalid.
+        /// Description of why the value is invalid.
         reason: &'static str,
     },
-    /// A required box is missing.
+
+    /// A required child box is missing from a container box.
     BoxMissing {
-        /// The type of the required box.
+        /// Type of the required box.
         required: BoxType,
     },
-    /// A duplicate box was found.
+
+    /// A box that should appear at most once was found multiple times.
     BoxDuplicate {
-        /// The type of the duplicate box.
+        /// Type of the duplicate box.
         duplicate: BoxType,
     },
+
+    /// An I/O error occurred during reading or writing.
+    ///
+    /// Only available with the `std` feature.
     #[cfg(feature = "std")]
-    /// An I/O error occurred.
     Io,
-    /// Some other kind of error.
+
+    /// An error that doesn't fit other categories.
     Other {
-        /// A description of the error.
+        /// Description of the error.
         description: &'static str,
     },
 }
@@ -155,7 +223,38 @@ impl fmt::Display for ErrorKind {
     }
 }
 
-/// Represents an error that occurred while processing a BMFF box.
+/// An error that occurred while processing a BMFF box.
+///
+/// This error type combines an [`ErrorKind`] with optional context about
+/// where the error occurred (byte offset and/or box type). This information
+/// helps diagnose issues in malformed or corrupted BMFF files.
+///
+/// # Context Methods
+///
+/// Use builder methods to add context to errors:
+/// - [`with_offset`](Self::with_offset): Add byte position
+/// - [`with_box_type`](Self::with_box_type): Add box type context
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::error::{Error, ErrorKind};
+/// use mp4_bmff::BoxType;
+///
+/// let err = Error::new(ErrorKind::InvalidBoxVersion {
+///     reason: "version must be 0 or 1",
+///     got: 2,
+/// })
+/// .with_box_type(BoxType::MVHD)
+/// .with_offset(100);
+///
+/// assert_eq!(err.kind(), ErrorKind::InvalidBoxVersion {
+///     reason: "version must be 0 or 1",
+///     got: 2,
+/// });
+/// assert_eq!(err.offset(), Some(100));
+/// assert_eq!(err.box_type(), Some(BoxType::MVHD));
+/// ```
 #[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
@@ -166,7 +265,12 @@ pub struct Error {
 }
 
 impl Error {
-    pub(crate) const fn new(kind: ErrorKind) -> Self {
+    /// Creates a new error with the given kind.
+    ///
+    /// The error will have no offset or box type context. Use
+    /// [`with_offset`](Self::with_offset) and [`with_box_type`](Self::with_box_type)
+    /// to add context.
+    pub const fn new(kind: ErrorKind) -> Self {
         Self {
             kind,
             offset: None,
@@ -176,6 +280,7 @@ impl Error {
         }
     }
 
+    /// Creates an error with the given kind and byte offset.
     pub(crate) const fn at(kind: ErrorKind, offset: u64) -> Self {
         Self {
             kind,
@@ -186,6 +291,7 @@ impl Error {
         }
     }
 
+    /// Creates an error with the given kind and box type context.
     pub(crate) const fn in_box(kind: ErrorKind, box_type: BoxType) -> Self {
         Self {
             kind,
@@ -196,6 +302,7 @@ impl Error {
         }
     }
 
+    /// Creates an error with kind, offset, and box type context.
     pub(crate) const fn at_in_box(kind: ErrorKind, offset: u64, box_type: BoxType) -> Self {
         Self {
             kind,
@@ -206,41 +313,51 @@ impl Error {
         }
     }
 
-    /// Sets the offset where the error occurred.
+    /// Adds byte offset context to this error.
+    ///
+    /// The offset typically represents the position in the input data
+    /// where the error was detected.
     #[must_use]
     pub fn with_offset(mut self, offset: u64) -> Self {
         self.offset = Some(offset);
         self
     }
 
-    /// Sets the box type where the error occurred.
+    /// Adds box type context to this error.
+    ///
+    /// This indicates which box was being processed when the error occurred.
     #[must_use]
     pub fn with_box_type(mut self, box_type: BoxType) -> Self {
         self.box_type = Some(box_type);
         self
     }
 
-    /// Returns the kind of error.
+    /// Returns the error kind.
+    #[inline]
     pub fn kind(&self) -> ErrorKind {
         self.kind
     }
 
-    /// Returns the offset where the error occurred, if available.
+    /// Returns the byte offset where the error occurred, if known.
+    #[inline]
     pub fn offset(&self) -> Option<u64> {
         self.offset
     }
 
-    /// Returns the box type where the error occurred, if available.
+    /// Returns the box type being processed when the error occurred, if known.
+    #[inline]
     pub fn box_type(&self) -> Option<BoxType> {
         self.box_type
     }
 
-    /// Returns `true` if the error has an associated offset.
+    /// Returns `true` if this error has an associated byte offset.
+    #[inline]
     pub fn has_offset(&self) -> bool {
         self.offset.is_some()
     }
 
-    /// Returns `true` if the error has an associated box type.
+    /// Returns `true` if this error has an associated box type.
+    #[inline]
     pub fn has_box_type(&self) -> bool {
         self.box_type.is_some()
     }

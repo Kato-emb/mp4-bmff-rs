@@ -1,3 +1,10 @@
+//! Progressive Download Information Box (`pdin`) implementation.
+//!
+//! The Progressive Download Information Box provides information about
+//! the rate at which data will be received and the initial playback delay
+//! that will be needed. This allows players to estimate when enough data
+//! will be available to begin playback.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -11,11 +18,21 @@ define_box_flags!(
 );
 
 /// An entry in the Progressive Download Information Box (`pdin`).
+///
+/// Each entry describes the playback characteristics at a specific download rate,
+/// allowing clients to determine the required buffering time before playback
+/// can begin without interruption.
+///
+/// # Structure
+///
+/// - `rate`: Download rate in bytes per second.
+/// - `initial_delay`: Required buffering delay in milliseconds at this rate.
 #[derive(Debug, Clone, Copy)]
 pub struct PdinEntry {
-    /// The rate at which data is downloaded.
+    /// The download rate in bytes per second.
     pub rate: u32,
-    /// The initial playback delay.
+    /// The initial playback delay in milliseconds required to buffer
+    /// enough data for uninterrupted playback at the given rate.
     pub initial_delay: u32,
 }
 
@@ -39,9 +56,23 @@ impl FixedSizeEntry for PdinEntry {
 }
 
 /// A reference to a Progressive Download Information Box (`pdin`).
+///
+/// This optional box provides information needed for progressive download
+/// playback. It contains pairs of download rate and initial delay values
+/// that allow clients to estimate when playback can begin based on the
+/// current network conditions.
+///
+/// This box should be placed as early as possible in the file, ideally
+/// before the Movie Box (`moov`), so clients can read it quickly.
+///
+/// # Structure
+///
+/// - `version`: Box version, should be 0.
+/// - `flags`: Box flags, should be 0.
+/// - `entries`: List of rate/delay pairs for different download scenarios.
 #[derive(Debug)]
 pub struct PdinBoxView<'a> {
-    /// Box version (0).
+    /// Box version (should be 0).
     pub version: u8,
     /// Box flags (should be 0).
     pub flags: PdinFlags,
@@ -103,13 +134,33 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Progressive Download Information Box (`pdin`).
+    ///
+    /// This is the owned variant of [`PdinBoxView`] that stores entries
+    /// in a heap-allocated vector.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::boxes::bmff::{PdinBox, PdinEntry};
+    /// use mp4_bmff::BoxDecode;
+    ///
+    /// // Decode from raw bytes
+    /// let data = [
+    ///     0x00,                   // version
+    ///     0x00, 0x00, 0x00,       // flags
+    ///     0x00, 0x01, 0x86, 0xA0, // rate = 100,000 bytes/sec
+    ///     0x00, 0x00, 0x07, 0xD0, // initial_delay = 2000 ms
+    /// ];
+    /// let pdin = PdinBox::decode(&data).unwrap();
+    /// assert_eq!(pdin.entries.len(), 1);
+    /// ```
     #[derive(Debug, Clone)]
     pub struct PdinBox {
-        /// Box version (0).
+        /// Box version (should be 0).
         pub version: u8,
         /// Box flags (should be 0).
         pub flags: PdinFlags,
-        /// The PDIN entries.
+        /// List of rate/delay pairs for progressive download estimation.
         pub entries: Vec<PdinEntry>,
     }
 

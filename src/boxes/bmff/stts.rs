@@ -1,3 +1,9 @@
+//! Decoding Time to Sample Box (`stts`) implementation.
+//!
+//! The Decoding Time to Sample Box contains a table mapping decoding timestamps
+//! to samples. It specifies the duration of each sample using run-length encoding
+//! to efficiently store sequences of samples with the same duration.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -8,11 +14,17 @@ use crate::iter::FixedSizeEntryIter;
 use crate::cursor::ReadCursor;
 
 define_box_flags!(
-    /// Flags for the Decoding Time to Sample Box ('stts')
+    /// Flags for the Decoding Time to Sample Box (`stts`).
+    ///
+    /// Reserved (should be 0).
     SttsFlags {}
 );
 
-/// An entry in the Decoding Time to Sample Box ('stts').
+/// An entry in the Decoding Time to Sample Box (`stts`).
+///
+/// Each entry describes a run of consecutive samples that share the same
+/// duration. The decoding timestamp of sample N is the sum of all sample
+/// deltas before it.
 #[derive(Debug, Clone, Copy)]
 pub struct SttsEntry {
     /// The number of consecutive samples having the same duration.
@@ -40,14 +52,24 @@ impl FixedSizeEntry for SttsEntry {
     }
 }
 
-/// A reference to a Decoding Time to Sample Box ('stts').
+/// A reference to a Decoding Time to Sample Box (`stts`).
+///
+/// Maps decoding timestamps to samples using run-length encoding. Required
+/// for calculating the decoding time of any sample in the track.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `entry_count`: Number of entries in the table.
+/// - `entries`: Array of (sample_count, sample_delta) pairs.
 #[derive(Debug)]
 pub struct SttsBoxView<'a> {
-    /// Box version.
+    /// Box version (should be 0).
     pub version: u8,
-    /// Box flags (should be 0).
+    /// Reserved flags (should be 0).
     pub flags: SttsFlags,
-    /// Number of entries.
+    /// Number of entries in the table.
     pub entry_count: u32,
     entries: &'a [u8],
 }
@@ -107,14 +129,23 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    /// An owned Decoding Time to Sample Box ('stts').
+    /// An owned Decoding Time to Sample Box (`stts`).
+    ///
+    /// This is the owned variant of [`SttsBoxView`] that stores entries
+    /// in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved (should be 0).
+    /// - `entries`: Run-length encoded sample durations.
     #[derive(Debug, Clone)]
     pub struct SttsBox {
-        /// Box version.
+        /// Box version (should be 0).
         pub version: u8,
-        /// Box flags (should be 0).
+        /// Reserved flags (should be 0).
         pub flags: SttsFlags,
-        /// STTS entries.
+        /// Entries mapping sample counts to their durations.
         pub entries: Vec<SttsEntry>,
     }
 

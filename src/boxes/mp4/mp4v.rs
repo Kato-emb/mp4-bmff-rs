@@ -1,3 +1,12 @@
+//! MPEG-4 Visual Sample Entry (`mp4v`) implementation.
+//!
+//! The MP4 Visual Sample Entry describes MPEG-4 Part 2 video streams.
+//! It extends the base Visual Sample Entry with an Elementary Stream
+//! Descriptor Box containing codec-specific configuration.
+//!
+//! This entry appears in the Sample Description Box (`stsd`) for video
+//! tracks using MPEG-4 Part 2 visual codecs.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -9,7 +18,16 @@ use crate::cursor::ReadCursor;
 use super::esds::EsdsBoxView;
 use crate::boxes::sample_entry::VisualSampleEntry;
 
-/// A reference to an MP4 Visual Sample Entry
+/// A reference to an MPEG-4 Visual Sample Entry (`mp4v`).
+///
+/// Describes MPEG-4 Part 2 video streams by combining the base Visual
+/// Sample Entry with an ES Descriptor for codec configuration.
+///
+/// # Structure
+///
+/// - `base`: Base Visual Sample Entry with width, height, resolution, etc.
+/// - Child boxes:
+///   - `esds` (required): Elementary Stream Descriptor with codec config.
 #[derive(Debug)]
 pub struct Mp4vSampleEntryView<'a> {
     base: VisualSampleEntry,
@@ -73,12 +91,20 @@ mod owned {
 
     use crate::boxes::mp4::EsdsBox;
 
-    /// An owned MP4V Sample Entry
+    /// An owned MPEG-4 Visual Sample Entry (`mp4v`).
+    ///
+    /// This is the owned variant of [`Mp4vSampleEntryView`] that stores
+    /// the ES Descriptor in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `base`: Base Visual Sample Entry with width, height, etc.
+    /// - `esds`: Elementary Stream Descriptor with MPEG-4 video configuration.
     #[derive(Debug, Clone)]
     pub struct Mp4vSampleEntry {
-        /// The base Visual Sample Entry
+        /// Base Visual Sample Entry with video format properties.
         pub base: VisualSampleEntry,
-        /// The ESDS box contained in this Mp4v Sample Entry.
+        /// Elementary Stream Descriptor Box with codec configuration.
         pub esds: EsdsBox,
     }
 

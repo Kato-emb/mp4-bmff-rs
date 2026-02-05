@@ -1,4 +1,17 @@
-//! Sample Entry bases and common fields.
+//! Sample Entry base types and common fields.
+//!
+//! This module provides base structures for sample entries that appear in
+//! the Sample Description Box (`stsd`). Sample entries describe the format
+//! of media samples and reference data sources.
+//!
+//! # Base Types
+//!
+//! - [`SampleEntry`]: Common fields for all sample entry types.
+//! - `VisualSampleEntry`: Base for video sample entries (requires feature).
+//! - `AudioSampleEntry`: Base for audio sample entries (requires feature).
+//!
+//! These base types are extended by codec-specific sample entries such as
+//! `avc1`, `mp4a`, `mp4v`, etc.
 
 use crate::error::*;
 
@@ -6,9 +19,18 @@ use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
 /// Fields common to all Sample Entry boxes.
+///
+/// This structure contains the base fields present in every sample entry
+/// regardless of media type (audio, video, etc.).
+///
+/// # Structure
+///
+/// - `data_reference_index`: 1-based index into the Data Reference Box (`dref`)
+///   identifying the data source for samples using this entry.
 #[derive(Debug, Clone, Copy)]
 pub struct SampleEntry {
-    /// The data reference index.
+    /// Index (1-based) into the Data Reference Box (`dref`) in the same track.
+    /// Identifies the data source containing the media samples.
     pub data_reference_index: u16,
 }
 
@@ -55,23 +77,42 @@ mod visual {
     use super::*;
     use crate::types::*;
 
-    /// Visual Sample Entry box (`avc1`, `mp4v`, etc.).
+    /// Base structure for Visual Sample Entries (`avc1`, `mp4v`, `hvc1`, etc.).
+    ///
+    /// Contains common fields for all video sample entries as defined in
+    /// ISO/IEC 14496-12. Codec-specific sample entries extend this base
+    /// with additional configuration boxes.
+    ///
+    /// # Structure
+    ///
+    /// - `base`: Common sample entry fields (data reference index).
+    /// - `width`: Video width in pixels.
+    /// - `height`: Video height in pixels.
+    /// - `horizresolution`: Horizontal resolution in pixels per inch (72 dpi typical).
+    /// - `vertresolution`: Vertical resolution in pixels per inch (72 dpi typical).
+    /// - `frame_count`: Number of frames per sample (usually 1).
+    /// - `compressorname`: 32-byte field with compressor name (length-prefixed).
+    /// - `depth`: Color depth in bits (typically 0x0018 = 24 for color video).
     #[derive(Debug, Clone, Copy)]
     pub struct VisualSampleEntry {
         base: SampleEntry,
-        /// The width of the video in pixels.
+        /// Video width in pixels.
         pub width: u16,
-        /// The height of the video in pixels.
+        /// Video height in pixels.
         pub height: u16,
-        /// The horizontal resolution.
+        /// Horizontal resolution in pixels per inch (16.16 fixed-point).
+        /// Default is 72 dpi (0x00480000).
         pub horizresolution: U16F16,
-        /// The vertical resolution.
+        /// Vertical resolution in pixels per inch (16.16 fixed-point).
+        /// Default is 72 dpi (0x00480000).
         pub vertresolution: U16F16,
-        /// The number of frames.
+        /// Number of frames per sample. Usually 1, but may be greater
+        /// for samples containing multiple video frames.
         pub frame_count: u16,
-        /// Compressor name field (32 bytes total: first byte is length, followed by 31 bytes of data).
+        /// Compressor name field (32 bytes total: first byte is length,
+        /// followed by up to 31 bytes of name data).
         compressorname: [u8; 32],
-        /// The color depth.
+        /// Color depth in bits. 0x0018 (24) indicates color video without alpha.
         pub depth: u16,
     }
 
@@ -227,15 +268,27 @@ mod audio {
     use super::*;
     use crate::types::*;
 
-    /// Audio Sample Entry box (`mp4a`, etc.).
+    /// Base structure for Audio Sample Entries (`mp4a`, etc.).
+    ///
+    /// Contains common fields for all audio sample entries as defined in
+    /// ISO/IEC 14496-12. Codec-specific sample entries extend this base
+    /// with additional configuration boxes (e.g., `esds` for AAC).
+    ///
+    /// # Structure
+    ///
+    /// - `base`: Common sample entry fields (data reference index).
+    /// - `channelcount`: Number of audio channels (1=mono, 2=stereo, etc.).
+    /// - `samplesize`: Bits per sample (typically 16).
+    /// - `samplerate`: Audio sample rate in Hz (stored as 16.16 fixed-point).
     #[derive(Debug, Clone, Copy)]
     pub struct AudioSampleEntry {
         base: SampleEntry,
-        /// The number of audio channels.
+        /// Number of audio channels (1=mono, 2=stereo, 6=5.1, etc.).
         pub channelcount: u16,
-        /// The number of bits per sample.
+        /// Bits per sample (typically 16 for PCM-like formats).
         pub samplesize: u16,
-        /// The sample rate.
+        /// Audio sample rate in Hz, stored as 16.16 fixed-point.
+        /// For example, 44100 Hz is stored as 44100 << 16.
         pub samplerate: U16F16,
     }
 

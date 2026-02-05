@@ -1,3 +1,11 @@
+//! Track Reference Box (`tref`) implementation.
+//!
+//! The Track Reference Box provides a mechanism to link tracks together.
+//! Each reference type indicates a specific relationship between the
+//! containing track and referenced tracks, such as hint tracks referencing
+//! their source media tracks, or content description tracks referencing
+//! the tracks they describe.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -5,6 +13,23 @@ use crate::error::*;
 use crate::iter::BoxIter;
 
 /// A reference to a Track Reference Type Box.
+///
+/// Track Reference Type boxes contain a list of track IDs that the
+/// containing track references for a specific purpose. The box type
+/// (FourCC) indicates the nature of the reference.
+///
+/// # Common Reference Types
+///
+/// - `hint`: The containing track references a hint track.
+/// - `cdsc`: The containing track describes the referenced track.
+/// - `hind`: The referenced track depends on this hint track.
+/// - `vdep`: This video track has dependencies on referenced tracks.
+/// - `vplx`: Specifies a complex video dependency.
+/// - `subt`: This track references subtitle track(s).
+///
+/// # Structure
+///
+/// - `track_ids`: Array of 32-bit track IDs being referenced.
 #[derive(Debug)]
 pub struct TrefTypeBoxView<'a> {
     track_ids: &'a [u8],
@@ -20,6 +45,17 @@ impl<'a> TrefTypeBoxView<'a> {
 }
 
 /// A reference to a Track Reference Box (`tref`).
+///
+/// The Track Reference Box is a container for track reference type boxes.
+/// It is used to declare relationships between tracks. For example, a hint
+/// track uses track references to indicate which media tracks it is hinting.
+///
+/// # Structure
+///
+/// The `tref` box contains one or more child boxes, each representing a
+/// different type of track reference. Each child box's type (FourCC) indicates
+/// the reference type, and its payload contains an array of referenced track IDs.
+#[derive(Debug)]
 pub struct TrefBoxView<'a> {
     content: &'a [u8],
 }
@@ -80,9 +116,16 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Track Reference Type Box.
+    ///
+    /// This is the owned variant of [`TrefTypeBoxView`] that stores track IDs
+    /// in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `track_ids`: List of track IDs that this track references.
     #[derive(Debug, Clone)]
     pub struct TrefTypeBox {
-        /// The track IDs contained in this box.
+        /// Track IDs that this track references for the given reference type.
         pub track_ids: Vec<u32>,
     }
 
@@ -101,9 +144,36 @@ mod owned {
     }
 
     /// An owned Track Reference Box (`tref`).
+    ///
+    /// This is the owned variant of [`TrefBoxView`] that stores all track
+    /// references in heap-allocated structures.
+    ///
+    /// # Structure
+    ///
+    /// - `references`: List of reference type boxes, each containing a reference
+    ///   type (BoxType/FourCC) and the associated track IDs.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::BoxDecode;
+    /// use mp4_bmff::boxes::bmff::TrefBox;
+    ///
+    /// // A tref box with a "hint" reference to track 1
+    /// let data: [u8; 12] = [
+    ///     0x00, 0x00, 0x00, 0x0C, // size = 12
+    ///     b'h', b'i', b'n', b't', // type = "hint"
+    ///     0x00, 0x00, 0x00, 0x01, // track_id = 1
+    /// ];
+    ///
+    /// let tref = TrefBox::decode(&data).unwrap();
+    /// assert_eq!(tref.references.len(), 1);
+    /// assert_eq!(tref.references[0].1.track_ids, vec![1]);
+    /// ```
     #[derive(Debug, Clone)]
     pub struct TrefBox {
-        /// The references contained in this box.
+        /// Track references organized by reference type.
+        /// Each tuple contains (reference_type, referenced_track_ids).
         pub references: Vec<(BoxType, TrefTypeBox)>,
     }
 

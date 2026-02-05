@@ -1,8 +1,42 @@
-//! UUID helper type used by `uuid` boxes and their user types.
+//! UUID type for extended box types.
+//!
+//! When a box type is "uuid", an additional 16-byte UUID follows the
+//! standard header to uniquely identify the box type. This allows vendors
+//! to define custom boxes without risk of FourCC collision.
+//!
+//! # UUID Format
+//!
+//! UUIDs are displayed in the standard hyphenated format:
+//! `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+//!
+//! # Example
+//!
+//! ```
+//! use mp4_bmff::types::Uuid;
+//!
+//! let uuid = Uuid::new([
+//!     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+//!     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+//! ]);
+//! assert_eq!(format!("{}", uuid), "12345678-9abc-def0-1234-56789abcdef0");
+//! ```
 
 use core::fmt;
 
-/// 16-byte UUID used by extended `uuid` box types.
+/// 16-byte UUID for extended box type identification.
+///
+/// Used when the box type FourCC is "uuid" to provide a unique identifier
+/// for vendor-specific or experimental box types.
+///
+/// # Structure
+///
+/// The UUID is stored as a 16-byte array in big-endian order, matching
+/// the wire format in BMFF files.
+///
+/// # Display
+///
+/// The `Display` implementation outputs the standard hyphenated UUID format:
+/// `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Uuid([u8; 16]);

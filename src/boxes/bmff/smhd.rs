@@ -1,3 +1,9 @@
+//! Sound Media Header Box (`smhd`) implementation.
+//!
+//! The Sound Media Header Box contains general presentation information
+//! independent of the audio's coding. It is used for audio tracks to
+//! specify stereo balance.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -9,10 +15,21 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for the Sound Media Header Box (`smhd`).
+    ///
+    /// Reserved (should be 0).
     SmhdFlags {}
 );
 
 /// Sound Media Header Box (`smhd`).
+///
+/// Contains information about audio presentation, specifically the stereo
+/// balance. Present in audio tracks within the Media Information Box.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `balance`: Stereo balance as 8.8 fixed-point (-1.0 = left, 0 = center, 1.0 = right).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SmhdBox {
     /// Box version.

@@ -1,17 +1,56 @@
-//! Date/time helpers for BMFF creation/modification stamps.
+//! QuickTime epoch timestamp type.
 //!
-//! BMFF stores timestamps as seconds since 1904-01-01T00:00:00Z, often
-//! called the "QuickTime" or "Mac" epoch. This module keeps that logic in
-//! one place.
+//! BMFF stores creation and modification timestamps as seconds since
+//! 1904-01-01T00:00:00Z, known as the "QuickTime" or "Mac" epoch. This
+//! predates the Unix epoch (1970-01-01) by 66 years.
+//!
+//! # Epoch Comparison
+//!
+//! | Epoch | Date | Seconds Offset |
+//! |-------|------|----------------|
+//! | QuickTime | 1904-01-01 00:00:00 UTC | 0 |
+//! | Unix | 1970-01-01 00:00:00 UTC | +2,082,844,800 |
+//!
+//! # Usage
+//!
+//! ```
+//! use mp4_bmff::types::QuickTimeDateTime;
+//!
+//! // Create from QuickTime seconds
+//! let timestamp = QuickTimeDateTime::from_quicktime_seconds(3_600_000_000);
+//!
+//! // Convert to Unix seconds
+//! if let Some(unix) = timestamp.to_unix_seconds() {
+//!     println!("Unix timestamp: {}", unix);
+//! }
+//! ```
 
 use core::fmt;
 
 /// Seconds offset between the QuickTime (1904) and Unix (1970) epochs.
 const QUICKTIME_UNIX_OFFSET: i64 = 2_082_844_800;
 
-/// Timestamp measured as seconds since 1904-01-01 UTC (QuickTime epoch).
+/// Timestamp as seconds since 1904-01-01 UTC (QuickTime epoch).
 ///
-/// This mirrors how BMFF stores creation/modification times across boxes.
+/// This type represents timestamps as stored in BMFF `mvhd`, `tkhd`, and
+/// `mdhd` boxes for creation and modification times.
+///
+/// # Conversions
+///
+/// - `from_quicktime_seconds()` / `to_quicktime_seconds()`: Raw epoch value.
+/// - `from_unix_seconds()` / `to_unix_seconds()`: Unix epoch conversion.
+/// - `now()`: Current time (requires `std` feature).
+/// - `From<SystemTime>` / `Into<SystemTime>`: System time conversion (requires `std`).
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::types::QuickTimeDateTime;
+///
+/// // Unix timestamp 1600000000 (2020-09-13)
+/// let qt = QuickTimeDateTime::from_unix_seconds(1_600_000_000).unwrap();
+/// assert_eq!(qt.to_unix_seconds(), Some(1_600_000_000));
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct QuickTimeDateTime(u64);
 

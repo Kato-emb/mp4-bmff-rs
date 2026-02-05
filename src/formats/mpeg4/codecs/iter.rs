@@ -1,6 +1,41 @@
 //! Iterators for codec parameter sets (SPS, PPS, etc.).
+//!
+//! This module provides iterators for parsing NAL unit parameter sets
+//! stored in codec configuration records. Parameter sets use a
+//! length-prefixed format where each entry has a 16-bit big-endian
+//! length followed by the NAL unit data.
 
-/// An iterator over parameter sets in a byte slice
+/// Iterator over length-prefixed parameter sets in a byte slice.
+///
+/// This iterator parses parameter sets (SPS, PPS, etc.) from codec
+/// configuration records where each set is prefixed with a 16-bit
+/// big-endian length.
+///
+/// # Format
+///
+/// ```text
+/// +--------+--------+------------------+
+/// | Length (16-bit) | NAL Unit Data    |
+/// | big-endian      | (Length bytes)   |
+/// +--------+--------+------------------+
+/// ```
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::formats::mpeg4::codecs::avc::AVCDecoderConfigurationRecordView;
+///
+/// // Parse an AVC configuration and iterate over SPS
+/// # let avc_config_data = [
+/// #     0x01, 0x42, 0xC0, 0x1E, 0xFF, 0xE1,
+/// #     0x00, 0x04, 0x67, 0x42, 0xC0, 0x1E,
+/// #     0x01, 0x00, 0x04, 0x68, 0xCE, 0x3C, 0x80,
+/// # ];
+/// let config = AVCDecoderConfigurationRecordView::parse(&avc_config_data).unwrap();
+/// for sps in config.sps() {
+///     println!("SPS NAL unit: {} bytes", sps.len());
+/// }
+/// ```
 #[cfg(any(feature = "avc", feature = "hevc"))]
 pub struct ParameterSetsIter<'a> {
     pub(super) data: &'a [u8],

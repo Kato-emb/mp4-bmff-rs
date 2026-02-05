@@ -1,3 +1,11 @@
+//! Track Run Box (`trun`) implementation.
+//!
+//! The Track Run Box contains per-sample information for a contiguous run
+//! of samples in a track fragment. Multiple `trun` boxes may appear in a
+//! single track fragment, each describing a separate run of samples.
+//!
+//! This box resides within the Track Fragment Box (`traf`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -7,18 +15,20 @@ use crate::cursor::ReadCursor;
 
 define_box_flags!(
     /// Flags for the Track Run Box (`trun`).
+    ///
+    /// Control which optional fields are present at box and sample level.
     TrunFlags {
-        /// Indicates that the data offset is present.
+        /// Data offset field is present (signed 32-bit offset from base).
         DATA_OFFSET_PRESENT = 0x000001,
-        /// Indicates that the first sample flags are present.
+        /// First sample flags field is present (overrides sample\[0\] flags).
         FIRST_SAMPLE_FLAGS_PRESENT = 0x000004,
-        /// Indicates that sample duration values are present.
+        /// Per-sample duration values are present.
         SAMPLE_DURATION_PRESENT = 0x000100,
-        /// Indicates that sample size values are present.
+        /// Per-sample size values are present.
         SAMPLE_SIZE_PRESENT = 0x000200,
-        /// Indicates that sample flags values are present.
+        /// Per-sample flags values are present.
         SAMPLE_FLAGS_PRESENT = 0x000400,
-        /// Indicates that sample composition time offset values are present.
+        /// Per-sample composition time offsets are present.
         SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT = 0x000800,
     }
 );
@@ -41,15 +51,18 @@ fn sample_data_size(flags: TrunFlags) -> usize {
 }
 
 /// Sample data from a Track Run Box (`trun`).
+///
+/// Contains per-sample properties. Fields are `Some` only when the
+/// corresponding flag is set in the parent `trun` box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrunSample {
-    /// The duration of the sample.
+    /// Sample duration in track timescale units.
     pub duration: Option<u32>,
-    /// The size of the sample in bytes.
+    /// Sample size in bytes.
     pub size: Option<u32>,
-    /// The sample flags.
+    /// Sample flags (sync, dependency info, degradation priority).
     pub flags: Option<u32>,
-    /// The composition time offset (signed in version 1, unsigned in version 0).
+    /// Composition time offset relative to decode time (signed in v1).
     pub composition_time_offset: Option<i32>,
 }
 
@@ -144,17 +157,29 @@ impl<'a> Iterator for TrunSampleIter<'a> {
 impl<'a> ExactSizeIterator for TrunSampleIter<'a> {}
 
 /// A reference to a Track Run Box (`trun`).
+///
+/// Describes a contiguous run of samples with optional per-sample data.
+/// Flags control which fields are present at both box and sample level.
+///
+/// # Structure
+///
+/// - `version`: Box version (0 or 1, affects composition time offset sign).
+/// - `flags`: Indicate which optional fields are present.
+/// - `sample_count`: Number of samples in this run.
+/// - `data_offset`: Offset from base to first sample's data.
+/// - `first_sample_flags`: Special flags for first sample only.
+/// - Per-sample: duration, size, flags, composition_time_offset.
 #[derive(Debug)]
 pub struct TrunBoxView<'a> {
-    /// The version of the box (0 or 1).
+    /// Box version (0 or 1; affects composition time offset interpretation).
     pub version: u8,
-    /// The flags of the box.
+    /// Flags indicating which fields are present.
     pub flags: TrunFlags,
-    /// The number of samples in the box.
+    /// Number of samples described in this run.
     pub sample_count: u32,
-    /// The data offset, if present.
+    /// Signed offset from base to first sample's data in `mdat`.
     pub data_offset: Option<i32>,
-    /// The first sample flags, if present.
+    /// Flags for first sample (overrides per-sample flags if both present).
     pub first_sample_flags: Option<u32>,
     samples: &'a [u8],
 }
@@ -242,17 +267,28 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Track Run Box (`trun`).
+    ///
+    /// This is the owned variant of [`TrunBoxView`] that stores samples
+    /// in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (0 or 1).
+    /// - `flags`: Indicate which per-sample fields are present.
+    /// - `data_offset`: Offset to first sample's data.
+    /// - `first_sample_flags`: Special flags for first sample.
+    /// - `samples`: Per-sample duration, size, flags, and composition offset.
     #[derive(Debug, Clone)]
     pub struct TrunBox {
-        /// The version of the box (0 or 1).
+        /// Box version (0 or 1; affects composition time offset sign).
         pub version: u8,
-        /// The flags of the box.
+        /// Flags indicating which fields are present.
         pub flags: TrunFlags,
-        /// The data offset, if present.
+        /// Signed offset from base to first sample's data.
         pub data_offset: Option<i32>,
-        /// The first sample flags, if present.
+        /// Flags for first sample (overrides sample\[0\].flags if present).
         pub first_sample_flags: Option<u32>,
-        /// The samples in the box.
+        /// Per-sample information for this run.
         pub samples: Vec<TrunSample>,
     }
 

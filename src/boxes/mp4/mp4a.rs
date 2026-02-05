@@ -1,3 +1,12 @@
+//! MPEG-4 Audio Sample Entry (`mp4a`) implementation.
+//!
+//! The MP4 Audio Sample Entry describes MPEG-4 audio streams such as AAC.
+//! It extends the base Audio Sample Entry with an Elementary Stream
+//! Descriptor Box containing codec-specific configuration.
+//!
+//! This entry appears in the Sample Description Box (`stsd`) for audio
+//! tracks using MPEG-4 audio codecs.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -9,7 +18,16 @@ use crate::cursor::ReadCursor;
 use super::EsdsBoxView;
 use crate::boxes::sample_entry::AudioSampleEntry;
 
-/// A reference to an MP4 Audio Sample Entry
+/// A reference to an MPEG-4 Audio Sample Entry (`mp4a`).
+///
+/// Describes MPEG-4 audio streams (typically AAC) by combining the base
+/// Audio Sample Entry with an ES Descriptor for codec configuration.
+///
+/// # Structure
+///
+/// - `base`: Base Audio Sample Entry with channel count, sample size, etc.
+/// - Child boxes:
+///   - `esds` (required): Elementary Stream Descriptor with codec config.
 #[derive(Debug)]
 pub struct Mp4aSampleEntryView<'a> {
     base: AudioSampleEntry,
@@ -73,12 +91,20 @@ mod owned {
 
     use crate::boxes::mp4::EsdsBox;
 
-    /// An owned MP4 Audio Sample Entry (`mp4a`).
+    /// An owned MPEG-4 Audio Sample Entry (`mp4a`).
+    ///
+    /// This is the owned variant of [`Mp4aSampleEntryView`] that stores
+    /// the ES Descriptor in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `base`: Base Audio Sample Entry with channel count, sample size, etc.
+    /// - `esds`: Elementary Stream Descriptor with AAC configuration.
     #[derive(Debug, Clone)]
     pub struct Mp4aSampleEntry {
-        /// The base Audio Sample Entry.
+        /// Base Audio Sample Entry with audio format properties.
         pub base: AudioSampleEntry,
-        /// The ESDS box contained in this Mp4a Sample Entry.
+        /// Elementary Stream Descriptor Box with codec configuration.
         pub esds: EsdsBox,
     }
 

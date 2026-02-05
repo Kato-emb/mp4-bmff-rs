@@ -1,3 +1,11 @@
+//! Movie Extends Header Box (`mehd`) implementation.
+//!
+//! The Movie Extends Header Box declares the overall duration of the
+//! fragmented movie when all fragments are considered. This is optional
+//! but useful for players to know the total duration upfront.
+//!
+//! This box is optional and resides within the Movie Extends Box (`mvex`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -9,17 +17,44 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for the Movie Extends Header Box (`mehd`).
+    ///
+    /// Reserved (should be 0).
     MehdFlags {}
 );
 
 /// Movie Extends Header Box (`mehd`).
+///
+/// Declares the total duration of the fragmented movie including all
+/// movie fragments. The duration is in the timescale of the Movie Header.
+///
+/// # Structure
+///
+/// - `version`: Box version (0 for 32-bit duration, 1 for 64-bit).
+/// - `flags`: Reserved (should be 0).
+/// - `fragment_duration`: Total duration of all fragments combined.
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::BoxDecode;
+/// use mp4_bmff::boxes::bmff::MehdBox;
+///
+/// let data: [u8; 8] = [
+///     0x00,                   // version = 0
+///     0x00, 0x00, 0x00,       // flags
+///     0x00, 0x01, 0x51, 0x80, // fragment_duration = 86400
+/// ];
+///
+/// let mehd = MehdBox::decode(&data).unwrap();
+/// assert_eq!(mehd.fragment_duration, 86400);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct MehdBox {
-    /// The version of the box.
+    /// Box version (0 for 32-bit duration, 1 for 64-bit).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: MehdFlags,
-    /// The fragment duration.
+    /// Total duration of all movie fragments combined.
     pub fragment_duration: u64,
 }
 

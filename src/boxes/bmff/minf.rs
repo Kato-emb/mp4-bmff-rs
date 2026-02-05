@@ -1,3 +1,10 @@
+//! Media Information Box (`minf`) implementation.
+//!
+//! The Media Information Box contains all objects necessary for defining the
+//! characteristics of media in a track, and for maintaining media-specific
+//! information. It includes a media header specific to the media type, data
+//! information, and the sample table.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -11,6 +18,19 @@ use super::StblBoxView;
 use super::VmhdBox;
 
 /// A reference to a Media Information Box (`minf`).
+///
+/// The Media Information Box is a container for all information required to
+/// access and decode media samples within a track. It contains a media-specific
+/// header box, the sample table, and data location information.
+///
+/// # Structure
+///
+/// - Media header (one of the following is required):
+///   - `vmhd`: Video Media Header Box - for video tracks.
+///   - `smhd`: Sound Media Header Box - for audio tracks.
+///   - `nmhd`: Null Media Header Box - for streams with no media-specific header.
+/// - `dinf`: Data Information Box (required) - declares location of media data.
+/// - `stbl`: Sample Table Box (required) - sample timing and location info.
 #[derive(Debug)]
 pub struct MinfBoxView<'a> {
     content: &'a [u8],
@@ -123,25 +143,37 @@ mod owned {
     use crate::boxes::bmff::StblBox;
 
     /// An owned Media Header Box.
+    ///
+    /// The media header varies depending on the type of media in the track.
+    /// Exactly one media header box must be present in the Media Information Box.
     #[derive(Debug, Clone)]
     pub enum MediaHeaderBox {
-        /// Null Media Header Box (`nmhd`).
+        /// Null Media Header Box (`nmhd`) - for generic or non-standard media.
         Nmhd(NmhdBox),
-        /// Video Media Header Box (`vmhd`).
+        /// Video Media Header Box (`vmhd`) - for video tracks.
         Vmhd(VmhdBox),
-        /// Sound Media Header Box (`smhd`).
+        /// Sound Media Header Box (`smhd`) - for audio tracks.
         Smhd(SmhdBox),
-        // Hmhd,
+        // Hmhd - Hint Media Header Box (not yet implemented)
     }
 
     /// An owned Media Information Box (`minf`).
+    ///
+    /// This is the owned variant of [`MinfBoxView`] that stores child boxes
+    /// in heap-allocated structures.
+    ///
+    /// # Structure
+    ///
+    /// - `media_header`: Type-specific media header (vmhd/smhd/nmhd).
+    /// - `stbl`: Sample Table Box with timing and location information.
+    /// - `dinf`: Data Information Box declaring where media data is stored.
     #[derive(Debug, Clone)]
     pub struct MinfBox {
-        /// Media Header Box.
+        /// Media-type-specific header (video, audio, or null).
         pub media_header: MediaHeaderBox,
-        /// Sample Table Box (`stbl`).
+        /// Sample Table Box containing sample timing and location info.
         pub stbl: StblBox,
-        /// Data Information Box (`dinf`).
+        /// Data Information Box declaring media data location.
         pub dinf: DinfBox,
     }
 

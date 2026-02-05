@@ -1,3 +1,9 @@
+//! Decoder Configuration Descriptor (DecoderConfigDescr) structures.
+//!
+//! This module provides types for the Decoder Configuration Descriptor,
+//! which specifies the configuration of a decoder required to decode
+//! an elementary stream.
+
 use crate::error::*;
 
 use crate::cursor::ReadCursor;
@@ -5,48 +11,81 @@ use crate::cursor::ReadCursor;
 use super::RawDescriptorRef;
 use super::iter::DescriptorIter;
 
-/// Object Type Indication
+/// Object Type Indication identifying the codec or stream type.
+///
+/// This value indicates the type of media (audio, video, etc.) and the
+/// specific codec used to encode the elementary stream.
+///
+/// # Common Values
+///
+/// | Constant | Value | Description |
+/// |----------|-------|-------------|
+/// | `MPEG4_AUDIO` | 0x40 | MPEG-4 Audio (AAC) |
+/// | `MPEG4_VISUAL` | 0x20 | MPEG-4 Visual |
+/// | `AVC_VIDEO` | 0x21 | AVC (H.264) Video |
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObjectTypeIndication(u8);
 
 impl ObjectTypeIndication {
-    /// Object Type Indication for MPEG-4 Audio
+    /// MPEG-4 Audio (AAC) object type (0x40).
     pub const MPEG4_AUDIO: ObjectTypeIndication = ObjectTypeIndication(0x40);
-    /// Object Type Indication for MPEG-4 Visual
+    /// MPEG-4 Visual object type (0x20).
     pub const MPEG4_VISUAL: ObjectTypeIndication = ObjectTypeIndication(0x20);
-    /// Object Type Indication for AVC Video
+    /// AVC (H.264) Video object type (0x21).
     pub const AVC_VIDEO: ObjectTypeIndication = ObjectTypeIndication(0x21);
 }
 
-/// Stream Type
+/// Stream type indicating the nature of the elementary stream.
+///
+/// # Common Values
+///
+/// | Constant | Value | Description |
+/// |----------|-------|-------------|
+/// | `VISUAL_STREAM` | 0x04 | Video stream |
+/// | `AUDIO_STREAM` | 0x05 | Audio stream |
+/// | `TEXT_STREAM` | 0x06 | Text/subtitle stream |
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamType(u8);
 
 impl StreamType {
-    /// Stream Type for Audio Stream
+    /// Audio stream type (0x05).
     pub const AUDIO_STREAM: StreamType = StreamType(0x05);
-    /// Stream Type for Visual Stream
+    /// Visual (video) stream type (0x04).
     pub const VISUAL_STREAM: StreamType = StreamType(0x04);
-    /// Stream Type for Text Stream
+    /// Text stream type (0x06).
     pub const TEXT_STREAM: StreamType = StreamType(0x06);
 }
 
-/// A reference to a Decoder Config Descriptor (`DecoderConfigDescriptor`).
+/// Zero-copy view of a Decoder Configuration Descriptor.
+///
+/// This descriptor specifies how to configure a decoder for an elementary
+/// stream. It contains information about the codec type, bitrates, and
+/// decoder-specific configuration data.
+///
+/// # Structure (ISO/IEC 14496-1)
+///
+/// - `object_type_indication`: Codec identifier
+/// - `stream_type`: Type of stream (audio, video, etc.)
+/// - `up_stream`: Whether stream is upstream
+/// - `buffer_size_db`: Decoder buffer size in bytes (24-bit)
+/// - `max_bitrate`: Maximum bitrate in bits/second
+/// - `avg_bitrate`: Average bitrate in bits/second
+/// - Child descriptors (DecoderSpecificInfo, etc.)
 #[derive(Debug)]
 pub struct DecoderConfigDescriptorView<'a> {
-    /// Object Type Indication
+    /// Codec identifier.
     pub object_type_indication: ObjectTypeIndication,
-    /// Stream Type
+    /// Type of elementary stream.
     pub stream_type: StreamType,
-    /// Used for upstream information
+    /// Whether this is an upstream stream.
     pub up_stream: bool,
-    /// Decoding buffer for this elementary stream in byte
+    /// Decoder buffer size in bytes (24-bit big-endian).
     pub buffer_size_db: [u8; 3],
-    /// Maximum bitrate in bits per second
+    /// Maximum bitrate in bits per second.
     pub max_bitrate: u32,
-    /// Average bitrate in bits per second
+    /// Average bitrate in bits per second.
     pub avg_bitrate: u32,
-    /// Descriptors
+    /// Raw bytes containing child descriptors.
     descs: &'a [u8],
 }
 
@@ -108,24 +147,50 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    /// Owned Decoder Config Descriptor
+    /// Owned Decoder Configuration Descriptor with heap-allocated data.
+    ///
+    /// This is the owned version of [`DecoderConfigDescriptorView`], suitable
+    /// for modification and storage independent of the source buffer.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::formats::mpeg4::systems::descriptor::{
+    ///     DecoderConfigDescriptor,
+    ///     ObjectTypeIndication,
+    ///     StreamType,
+    /// };
+    ///
+    /// // Parse from bytes
+    /// let data = [
+    ///     0x40,                   // object_type_indication (MPEG4_AUDIO)
+    ///     0x15,                   // stream_type (AUDIO_STREAM) | reserved
+    ///     0x00, 0x00, 0x10,       // buffer_size_db
+    ///     0x00, 0x01, 0x00, 0x00, // max_bitrate
+    ///     0x00, 0x00, 0x80, 0x00, // avg_bitrate
+    /// ];
+    ///
+    /// let desc = DecoderConfigDescriptor::parse(&data).unwrap();
+    /// assert_eq!(desc.object_type_indication, ObjectTypeIndication::MPEG4_AUDIO);
+    /// assert_eq!(desc.stream_type, StreamType::AUDIO_STREAM);
+    /// ```
     #[derive(Debug, Clone)]
     pub struct DecoderConfigDescriptor {
-        /// Object Type Indication
+        /// Codec identifier.
         pub object_type_indication: ObjectTypeIndication,
-        /// Stream Type
+        /// Type of elementary stream.
         pub stream_type: StreamType,
-        /// Used for upstream information
+        /// Whether this is an upstream stream.
         pub up_stream: bool,
-        /// Decoding buffer for this elementary stream in byte
+        /// Decoder buffer size in bytes (24-bit big-endian).
         pub buffer_size_db: [u8; 3],
-        /// Maximum bitrate in bits per second
+        /// Maximum bitrate in bits per second.
         pub max_bitrate: u32,
-        /// Average bitrate in bits per second
+        /// Average bitrate in bits per second.
         pub avg_bitrate: u32,
-        /// Decoder Specific Info descriptor
+        /// Decoder-specific configuration data (codec initialization).
         pub dec_specific_info: Option<RawDescriptorOwned>,
-        /// extentions
+        /// Extension descriptors.
         pub extentions: Vec<RawDescriptorOwned>,
     }
 

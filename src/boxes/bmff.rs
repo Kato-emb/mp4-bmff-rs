@@ -1,4 +1,77 @@
-//! ISO/IEC 14496-12 Box Structures
+//! ISO/IEC 14496-12 (BMFF) Box Structures.
+//!
+//! This module provides types for working with boxes defined in ISO/IEC 14496-12,
+//! the ISO Base Media File Format (BMFF). BMFF is the foundation for MP4, MOV,
+//! and other related container formats.
+//!
+//! # Box Categories
+//!
+//! ## File Structure Boxes
+//! - `FtypBox`/[`FtypBoxView`]: File Type Box - identifies file format and compatibility.
+//! - `MdatBox`/[`MdatBoxView`]: Media Data Box - contains actual media samples.
+//! - `FreeBox`/[`FreeBoxView`]: Free Space Box - padding/placeholder.
+//! - `PdinBox`/[`PdinBoxView`]: Progressive Download Information Box.
+//!
+//! ## Movie Structure Boxes
+//! - `MoovBox`/[`MoovBoxView`]: Movie Box - top-level container for movie metadata.
+//! - [`MvhdBox`]: Movie Header Box - global movie information (timescale, duration).
+//!
+//! ## Track Structure Boxes
+//! - `TrakBox`/[`TrakBoxView`]: Track Box - container for a single track.
+//! - [`TkhdBox`]: Track Header Box - track properties (dimensions, volume).
+//! - `TrefBox`/[`TrefBoxView`]: Track Reference Box - track relationships.
+//! - `TrgrBox`/[`TrgrBoxView`]: Track Group Box - track grouping.
+//! - `EdtsBox`/[`EdtsBoxView`]: Edit Box - edit list container.
+//! - `ElstBox`/[`ElstBoxView`]: Edit List Box - time remapping entries.
+//!
+//! ## Media Structure Boxes
+//! - `MdiaBox`/[`MdiaBoxView`]: Media Box - media information container.
+//! - [`MdhdBox`]: Media Header Box - media timescale and duration.
+//! - `HdlrBox`/[`HdlrBoxView`]: Handler Reference Box - media handler type.
+//! - `MinfBox`/[`MinfBoxView`]: Media Information Box.
+//! - [`VmhdBox`]: Video Media Header Box.
+//! - [`SmhdBox`]: Sound Media Header Box.
+//! - [`NmhdBox`]: Null Media Header Box (for hint/metadata tracks).
+//! - `ElngBox`/[`ElngBoxView`]: Extended Language Tag Box.
+//!
+//! ## Sample Table Boxes
+//! - `StblBox`/[`StblBoxView`]: Sample Table Box - sample metadata container.
+//! - `StsdBox`/[`StsdBoxView`]: Sample Description Box - codec configurations.
+//! - `SttsBox`/[`SttsBoxView`]: Decoding Time to Sample Box.
+//! - `CttsBox`/[`CttsBoxView`]: Composition Time to Sample Box.
+//! - [`CslgBox`]: Composition to Decode Box.
+//! - `StscBox`/[`StscBoxView`]: Sample to Chunk Box.
+//! - `StszBox`/[`StszBoxView`]: Sample Size Box.
+//! - `StcoBox`/[`StcoBoxView`]: Chunk Offset Box.
+//! - `StssBox`/[`StssBoxView`]: Sync Sample Box (keyframes).
+//! - `StshBox`/[`StshBoxView`]: Shadow Sync Sample Box.
+//! - `SdtpBox`/[`SdtpBoxView`]: Sample Dependency Type Box.
+//! - `StdpBox`/[`StdpBoxView`]: Degradation Priority Box.
+//!
+//! ## Data Reference Boxes
+//! - `DinfBox`/[`DinfBoxView`]: Data Information Box.
+//! - `DrefBox`/[`DrefBoxView`]: Data Reference Box.
+//! - `UrlBox`/[`UrlBoxView`]: URL Data Entry Box.
+//! - `UrnBox`/[`UrnBoxView`]: URN Data Entry Box.
+//!
+//! ## Movie Fragment Boxes
+//! - `MvexBox`/[`MvexBoxView`]: Movie Extends Box - enables fragmentation.
+//! - [`MehdBox`]: Movie Extends Header Box.
+//! - [`TrexBox`]: Track Extends Box - default sample values.
+//! - `MoofBox`/[`MoofBoxView`]: Movie Fragment Box.
+//! - [`MfhdBox`]: Movie Fragment Header Box.
+//! - `TrafBox`/[`TrafBoxView`]: Track Fragment Box.
+//! - [`TfhdBox`]: Track Fragment Header Box.
+//! - [`TfdtBox`]: Track Fragment Decode Time Box.
+//! - `TrunBox`/[`TrunBoxView`]: Track Run Box - sample timing/sizes.
+//!
+//! ## Random Access Boxes
+//! - `MfraBox`/[`MfraBoxView`]: Movie Fragment Random Access Box.
+//! - `TfraBox`/[`TfraBoxView`]: Track Fragment Random Access Box.
+//! - [`MfroBox`]: Movie Fragment Random Access Offset Box.
+//!
+//! ## Segment Boxes
+//! - `StypBox`/[`StypBoxView`]: Segment Type Box - segment branding.
 
 mod free;
 mod ftyp;
