@@ -1,4 +1,4 @@
-//!
+//! Iterators for codec parameter sets (SPS, PPS, etc.).
 
 /// An iterator over parameter sets in a byte slice
 #[cfg(any(feature = "avc", feature = "hevc"))]

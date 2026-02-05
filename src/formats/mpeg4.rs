@@ -1,4 +1,4 @@
-//!
+//! MPEG-4 (ISO/IEC 14496) specific structures and types.
 
 #[cfg(feature = "systems")]
 pub mod systems;

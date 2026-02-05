@@ -272,25 +272,48 @@ mod tests {
 
         // 3バイト: 16384 - 2097151
         assert_eq!(SizeOfInstance::from_u32(16384).unwrap().size_in_bytes(), 3);
-        assert_eq!(SizeOfInstance::from_u32(2097151).unwrap().size_in_bytes(), 3);
+        assert_eq!(
+            SizeOfInstance::from_u32(2097151).unwrap().size_in_bytes(),
+            3
+        );
 
         // 4バイト: 2097152 - 0x0FFFFFFF
-        assert_eq!(SizeOfInstance::from_u32(2097152).unwrap().size_in_bytes(), 4);
-        assert_eq!(SizeOfInstance::from_u32(0x0FFFFFFF).unwrap().size_in_bytes(), 4);
+        assert_eq!(
+            SizeOfInstance::from_u32(2097152).unwrap().size_in_bytes(),
+            4
+        );
+        assert_eq!(
+            SizeOfInstance::from_u32(0x0FFFFFFF)
+                .unwrap()
+                .size_in_bytes(),
+            4
+        );
     }
 
     #[test]
     fn test_roundtrip() {
         // 様々な値でシリアライズ→デシリアライズの往復テスト
-        let test_values = [0, 1, 127, 128, 255, 16383, 16384, 2097151, 2097152, 0x0FFFFFFF];
+        let test_values = [
+            0, 1, 127, 128, 255, 16383, 16384, 2097151, 2097152, 0x0FFFFFFF,
+        ];
 
         for &value in &test_values {
             let original = SizeOfInstance::from_u32(value).unwrap();
             let (bytes, num_bytes) = original.to_bytes();
-            let (restored, restored_num_bytes) = SizeOfInstance::from_bytes(&bytes[..num_bytes]).unwrap();
+            let (restored, restored_num_bytes) =
+                SizeOfInstance::from_bytes(&bytes[..num_bytes]).unwrap();
 
-            assert_eq!(original.get(), restored.get(), "Roundtrip failed for value {}", value);
-            assert_eq!(num_bytes, restored_num_bytes, "Byte count mismatch for value {}", value);
+            assert_eq!(
+                original.get(),
+                restored.get(),
+                "Roundtrip failed for value {}",
+                value
+            );
+            assert_eq!(
+                num_bytes, restored_num_bytes,
+                "Byte count mismatch for value {}",
+                value
+            );
         }
     }
 

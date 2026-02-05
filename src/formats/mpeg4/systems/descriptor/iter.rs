@@ -1,4 +1,4 @@
-//!
+//! Descriptor iterator for MPEG-4 Systems descriptors.
 
 use crate::error::*;
 

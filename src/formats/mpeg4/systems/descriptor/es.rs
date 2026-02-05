@@ -214,7 +214,7 @@ mod owned {
 
     impl EsDescriptor {
         /// Returns the length of the EsDescriptor when encoded.
-        pub fn len(&self) -> usize {
+        pub fn encoded_len(&self) -> usize {
             let mut len = 3; // es_id(2) + flags(1)
 
             if self.stream_dependence_flag {
@@ -229,11 +229,12 @@ mod owned {
                 len += 2; // ocr_es_id(2)
             }
 
-            let size_of_instance = SizeOfInstance::from_u32(self.dec_config_descr.len() as u32)
-                .expect("Decoder Config Descriptor length too large");
+            let size_of_instance =
+                SizeOfInstance::from_u32(self.dec_config_descr.encoded_len() as u32)
+                    .expect("Decoder Config Descriptor length too large");
             let dec_len = size_of_instance.to_bytes().1;
 
-            len += 1 + dec_len + self.dec_config_descr.len();
+            len += 1 + dec_len + self.dec_config_descr.encoded_len();
             len += self.sl_config_descr.len();
 
             for descr in &self.descriptors {
@@ -285,11 +286,11 @@ mod owned {
 
             // Write DecoderConfigDescriptor as RawDescriptor format (tag + size + content)
             cur.write_u8(Tag::DECODER_CONFIG_DESCR_TAG.0)?;
-            let dec_size = SizeOfInstance::from_u32(self.dec_config_descr.len() as u32)
+            let dec_size = SizeOfInstance::from_u32(self.dec_config_descr.encoded_len() as u32)
                 .expect("Decoder Config Descriptor length too large");
             let (size_bytes, size_len) = dec_size.to_bytes();
             cur.write_slice(&size_bytes[..size_len])?;
-            let buf = cur.take_mut(self.dec_config_descr.len())?;
+            let buf = cur.take_mut(self.dec_config_descr.encoded_len())?;
             self.dec_config_descr.write(buf)?;
 
             let buf = cur.take_mut(self.sl_config_descr.len())?;
@@ -546,7 +547,7 @@ mod tests {
         let desc = EsDescriptor::parse(&original_data).unwrap();
 
         // Calculate expected size and create buffer
-        let expected_size = 3 + desc.dec_config_descr.len() + desc.sl_config_descr.len();
+        let expected_size = 3 + desc.dec_config_descr.encoded_len() + desc.sl_config_descr.len();
         let mut buffer = vec![0u8; expected_size + 10];
 
         let written = desc.write(&mut buffer).unwrap();

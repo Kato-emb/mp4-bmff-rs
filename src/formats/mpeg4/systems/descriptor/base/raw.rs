@@ -57,7 +57,7 @@ impl<T: AsRef<[u8]>> RawDescriptor<T> {
     /// Creates a new RawDescriptor
     pub fn new(tag: Tag, instance: T) -> Self {
         let instance_len = instance.as_ref().len() as u32;
-        let Some(size_of_instance) = SizeOfInstance::from_u32(instance_len as u32) else {
+        let Some(size_of_instance) = SizeOfInstance::from_u32(instance_len) else {
             panic!("Descriptor instance size exceeds maximum (0x0FFFFFFF)");
         };
 

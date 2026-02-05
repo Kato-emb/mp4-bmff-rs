@@ -160,7 +160,7 @@ mod owned {
 
     impl DecoderConfigDescriptor {
         /// Returns the length of the DecoderConfigDescriptor when serialized.
-        pub fn len(&self) -> usize {
+        pub fn encoded_len(&self) -> usize {
             let mut len = 13; // Fixed size fields
 
             if let Some(dec_specific_info) = &self.dec_specific_info {
@@ -246,7 +246,10 @@ mod tests {
 
         let view = DecoderConfigDescriptorView::parse(&data).unwrap();
 
-        assert_eq!(view.object_type_indication, ObjectTypeIndication::MPEG4_AUDIO);
+        assert_eq!(
+            view.object_type_indication,
+            ObjectTypeIndication::MPEG4_AUDIO
+        );
         assert_eq!(view.stream_type, StreamType::AUDIO_STREAM);
         assert!(!view.up_stream);
         assert_eq!(view.buffer_size_db, [0x00, 0x00, 0x10]);
@@ -288,7 +291,10 @@ mod tests {
         let dec_specific = view.dec_specific_info().unwrap();
         assert!(dec_specific.is_some());
         let dec_specific = dec_specific.unwrap();
-        assert_eq!(dec_specific.tag(), super::super::Tag::DECODER_SPECIFIC_INFO_TAG);
+        assert_eq!(
+            dec_specific.tag(),
+            super::super::Tag::DECODER_SPECIFIC_INFO_TAG
+        );
         assert_eq!(dec_specific.instance(), &[0x11, 0x90]);
     }
 
@@ -333,7 +339,10 @@ mod tests {
 
         let desc = DecoderConfigDescriptor::parse(&data).unwrap();
 
-        assert_eq!(desc.object_type_indication, ObjectTypeIndication::MPEG4_AUDIO);
+        assert_eq!(
+            desc.object_type_indication,
+            ObjectTypeIndication::MPEG4_AUDIO
+        );
         assert_eq!(desc.stream_type, StreamType::AUDIO_STREAM);
         assert!(!desc.up_stream);
         assert!(desc.dec_specific_info.is_some());
@@ -344,33 +353,27 @@ mod tests {
     #[test]
     fn test_decoder_config_descriptor_len() {
         let data = [
-            0x40, 0x15,
-            0x00, 0x00, 0x10,
-            0x00, 0x01, 0x00, 0x00,
-            0x00, 0x00, 0x80, 0x00,
-            0x05, 0x02, 0x11, 0x90,
+            0x40, 0x15, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x05,
+            0x02, 0x11, 0x90,
         ];
 
         let desc = DecoderConfigDescriptor::parse(&data).unwrap();
 
         // 13 (fixed) + 4 (DecoderSpecificInfo: tag + size + 2 bytes)
-        assert_eq!(desc.len(), 17);
+        assert_eq!(desc.encoded_len(), 17);
     }
 
     #[cfg(feature = "alloc")]
     #[test]
     fn test_decoder_config_descriptor_write() {
         let data = [
-            0x40, 0x15,
-            0x00, 0x00, 0x10,
-            0x00, 0x01, 0x00, 0x00,
-            0x00, 0x00, 0x80, 0x00,
-            0x05, 0x02, 0x11, 0x90,
+            0x40, 0x15, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x05,
+            0x02, 0x11, 0x90,
         ];
 
         let desc = DecoderConfigDescriptor::parse(&data).unwrap();
 
-        let mut buffer = vec![0u8; desc.len()];
+        let mut buffer = vec![0u8; desc.encoded_len()];
         let written = desc.write(&mut buffer).unwrap();
 
         assert_eq!(written, data.len());
@@ -385,20 +388,20 @@ mod tests {
     #[test]
     fn test_decoder_config_descriptor_roundtrip() {
         let original_data = [
-            0x40, 0x15,
-            0x00, 0x00, 0x10,
-            0x00, 0x01, 0x00, 0x00,
-            0x00, 0x00, 0x80, 0x00,
+            0x40, 0x15, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00,
         ];
 
         let desc = DecoderConfigDescriptor::parse(&original_data).unwrap();
 
-        let mut buffer = vec![0u8; desc.len()];
+        let mut buffer = vec![0u8; desc.encoded_len()];
         desc.write(&mut buffer).unwrap();
 
         let parsed_again = DecoderConfigDescriptor::parse(&buffer).unwrap();
 
-        assert_eq!(desc.object_type_indication, parsed_again.object_type_indication);
+        assert_eq!(
+            desc.object_type_indication,
+            parsed_again.object_type_indication
+        );
         assert_eq!(desc.stream_type, parsed_again.stream_type);
         assert_eq!(desc.up_stream, parsed_again.up_stream);
         assert_eq!(desc.buffer_size_db, parsed_again.buffer_size_db);

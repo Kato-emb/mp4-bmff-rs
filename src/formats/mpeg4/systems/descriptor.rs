@@ -1,4 +1,4 @@
-//!
+//! MPEG-4 Systems descriptor structures (ISO/IEC 14496-1).
 
 mod base;
 pub mod iter;

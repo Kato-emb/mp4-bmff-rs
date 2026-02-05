@@ -166,7 +166,7 @@ mod tests {
             0x00, 0x00, 0x00, 0x27, // size = 39
             b'e', b's', b'd', b's', // type
             // ESDS box payload
-            0x00,             // version
+            0x00, // version
             0x00, 0x00, 0x00, // flags
             // ES Descriptor (tag=0x03)
             0x03, // ES_DESCR_TAG

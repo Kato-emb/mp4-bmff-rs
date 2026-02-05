@@ -648,8 +648,7 @@ mod tests {
             0xFF, // reserved (6 bits) + length_size_minus_one (2 bits) = 3
             0xE1, // reserved (3 bits) + num_of_sps (5 bits) = 1
             // SPS: length=8
-            0x00, 0x08, 0x67, 0x42, 0xC0, 0x1E, 0xD9, 0x00, 0x68, 0x24,
-            0x01, // num_of_pps = 1
+            0x00, 0x08, 0x67, 0x42, 0xC0, 0x1E, 0xD9, 0x00, 0x68, 0x24, 0x01, // num_of_pps = 1
             // PPS: length=4
             0x00, 0x04, 0x68, 0xCE, 0x3C, 0x80,
         ]
@@ -735,7 +734,10 @@ mod tests {
 
         let sps_list: Vec<&[u8]> = view.avc_config.sps().collect();
         assert_eq!(sps_list.len(), 1);
-        assert_eq!(sps_list[0], &[0x67, 0x42, 0xC0, 0x1E, 0xD9, 0x00, 0x68, 0x24]);
+        assert_eq!(
+            sps_list[0],
+            &[0x67, 0x42, 0xC0, 0x1E, 0xD9, 0x00, 0x68, 0x24]
+        );
 
         let pps_list: Vec<&[u8]> = view.avc_config.pps().collect();
         assert_eq!(pps_list.len(), 1);
@@ -841,9 +843,18 @@ mod tests {
         let view = AvcCBoxView::decode(&payload).unwrap();
         let owned = view.to_owned();
 
-        assert_eq!(owned.avc_config.avc_profile_indication, view.avc_config.avc_profile_indication);
-        assert_eq!(owned.avc_config.sps.len(), view.avc_config.num_of_sps as usize);
-        assert_eq!(owned.avc_config.pps.len(), view.avc_config.num_of_pps as usize);
+        assert_eq!(
+            owned.avc_config.avc_profile_indication,
+            view.avc_config.avc_profile_indication
+        );
+        assert_eq!(
+            owned.avc_config.sps.len(),
+            view.avc_config.num_of_sps as usize
+        );
+        assert_eq!(
+            owned.avc_config.pps.len(),
+            view.avc_config.num_of_pps as usize
+        );
     }
 
     #[cfg(feature = "alloc")]
