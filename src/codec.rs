@@ -156,7 +156,7 @@ pub trait BoxEncode {
     ///
     /// # Errors
     ///
-    /// Returns [`ErrorKind::NotEnoughBytes`](crate::error::ErrorKind::NotEnoughBytes)
+    /// Returns [`ErrorKind::NotEnoughBytes`]
     /// if the buffer is smaller than [`encoded_len`](Self::encoded_len).
     fn encode(&self, bytes: &mut [u8]) -> Result<()> {
         let expected = self.encoded_len();
@@ -230,7 +230,7 @@ where
 ///
 /// # Errors
 ///
-/// - [`ErrorKind::NotEnoughBytes`](crate::error::ErrorKind::NotEnoughBytes):
+/// - [`ErrorKind::NotEnoughBytes`]:
 ///   Input is too short for the box header or payload
 /// - Other errors from the box's [`BoxDecode::decode`] implementation
 ///
@@ -277,7 +277,7 @@ where
 ///
 /// # Errors
 ///
-/// - [`ErrorKind::NotEnoughBytes`](crate::error::ErrorKind::NotEnoughBytes):
+/// - [`ErrorKind::NotEnoughBytes`]:
 ///   Buffer is too small for the complete box
 /// - Other errors from the box's [`BoxEncode::encode`] implementation
 ///

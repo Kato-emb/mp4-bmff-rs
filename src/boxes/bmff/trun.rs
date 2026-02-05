@@ -20,7 +20,7 @@ define_box_flags!(
     TrunFlags {
         /// Data offset field is present (signed 32-bit offset from base).
         DATA_OFFSET_PRESENT = 0x000001,
-        /// First sample flags field is present (overrides sample[0] flags).
+        /// First sample flags field is present (overrides sample\[0\] flags).
         FIRST_SAMPLE_FLAGS_PRESENT = 0x000004,
         /// Per-sample duration values are present.
         SAMPLE_DURATION_PRESENT = 0x000100,
@@ -286,7 +286,7 @@ mod owned {
         pub flags: TrunFlags,
         /// Signed offset from base to first sample's data.
         pub data_offset: Option<i32>,
-        /// Flags for first sample (overrides sample[0].flags if present).
+        /// Flags for first sample (overrides sample\[0\].flags if present).
         pub first_sample_flags: Option<u32>,
         /// Per-sample information for this run.
         pub samples: Vec<TrunSample>,

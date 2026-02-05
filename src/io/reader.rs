@@ -12,7 +12,7 @@ use crate::error::Result;
 
 /// A reader for BMFF boxes from a stream.
 ///
-/// `BoxReader` wraps any [`Read`](std::io::Read) implementor and provides
+/// `BoxReader` wraps any [`Read`] implementor and provides
 /// methods to read boxes sequentially. It handles compact boxes, extended
 /// size boxes, and EOF boxes (size = 0) automatically.
 ///
@@ -48,7 +48,7 @@ impl<R> BoxReader<R> {
     ///
     /// # Arguments
     ///
-    /// * `inner` - Any type implementing [`Read`](std::io::Read)
+    /// * `inner` - Any type implementing [`Read`]
     pub fn new(inner: R) -> Self {
         BoxReader { inner }
     }

@@ -14,7 +14,7 @@ use crate::write_box;
 
 /// A writer for BMFF boxes to a stream.
 ///
-/// `BoxWriter` wraps any [`Write`](std::io::Write) implementor and provides
+/// `BoxWriter` wraps any [`Write`] implementor and provides
 /// methods to write encoded boxes. It maintains an internal buffer to
 /// minimize allocations when writing multiple boxes.
 ///
@@ -50,7 +50,7 @@ impl<W> BoxWriter<W> {
     ///
     /// # Arguments
     ///
-    /// * `inner` - Any type implementing [`Write`](std::io::Write)
+    /// * `inner` - Any type implementing [`Write`]
     pub fn new(inner: W) -> Self {
         BoxWriter {
             inner,
