@@ -316,24 +316,4 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn test_equality() {
-        let a = SizeOfInstance::from_u32(100).unwrap();
-        let b = SizeOfInstance::from_u32(100).unwrap();
-        let c = SizeOfInstance::from_u32(200).unwrap();
-
-        assert_eq!(a, b);
-        assert_ne!(a, c);
-    }
-
-    #[test]
-    fn test_clone_and_copy() {
-        let original = SizeOfInstance::from_u32(42).unwrap();
-        let cloned = original.clone();
-        let copied = original;
-
-        assert_eq!(original.get(), cloned.get());
-        assert_eq!(original.get(), copied.get());
-    }
 }

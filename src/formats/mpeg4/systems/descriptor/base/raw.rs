@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_instance_mut() {
-        let mut instance = vec![0x01, 0x02, 0x03];
+        let mut instance = [0x01, 0x02, 0x03];
         let mut descriptor = RawDescriptor::new(Tag::ES_DESCR_TAG, &mut instance[..]);
 
         descriptor.instance_mut()[0] = 0xFF;
