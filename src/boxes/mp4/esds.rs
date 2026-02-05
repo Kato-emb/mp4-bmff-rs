@@ -5,16 +5,14 @@ use crate::error::*;
 
 use crate::cursor::ReadCursor;
 
-use super::descriptor::DescriptorView;
-use super::descriptor::EsDescriptorView;
-use super::descriptor::Tag;
+use crate::formats::mpeg4::systems::descriptor::*;
 
 define_box_flags!(
     /// Flags for the ESDS Box (`esds`).
     EsdsFlags {}
 );
 
-/// A reference to an ESDS box's contents.
+/// A reference to an ESD Box (`esds`).
 #[derive(Debug)]
 pub struct EsdsBoxView<'a> {
     /// The version of this ESDS box.
@@ -38,9 +36,11 @@ impl<'de> BoxDecode<'de> for EsdsBoxView<'de> {
         let version = cur.read_u8()?;
         let flags = EsdsFlags::from_be_bytes(cur.read_array::<3>()?);
 
-        let es_descr = DescriptorView::parse_in(&mut cur)?;
-        let esd = if es_descr.tag == Tag::ES_DESCR_TAG {
-            EsDescriptorView::parse(es_descr.instance)?
+        let remaining = cur.take(cur.remaining())?;
+        let descr = RawDescriptorRef::parse(remaining)?;
+
+        let esd = if descr.tag() == Tag::ES_DESCR_TAG {
+            EsDescriptorView::parse(descr.into_instance())?
         } else {
             return Err(Error::at(
                 ErrorKind::Other {
@@ -58,22 +58,12 @@ impl<'de> BoxDecode<'de> for EsdsBoxView<'de> {
     }
 }
 
-impl<'a> TryFrom<&'a [u8]> for EsdsBoxView<'a> {
-    type Error = Error;
-
-    fn try_from(value: &'a [u8]) -> Result<Self> {
-        EsdsBoxView::decode(value)
-    }
-}
-
 #[cfg(feature = "alloc")]
 mod owned {
     use super::*;
     use crate::BoxEncode;
 
     use crate::cursor::WriteCursor;
-
-    use crate::boxes::mp4::descriptor::EsDescriptor;
 
     /// An owned ESDS box.
     #[derive(Debug, Clone)]
@@ -90,7 +80,7 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &EsdsBoxView<'_>) -> Result<Self> {
-            let esd = EsDescriptor::from_view(&view.esd)?;
+            let esd = EsDescriptor::try_from(&view.esd)?;
             Ok(EsdsBox {
                 version: view.version,
                 flags: view.flags,
@@ -116,7 +106,12 @@ mod owned {
         #[inline]
         fn encoded_len(&self) -> usize {
             let base_len = 4; // version(1) + flags(3)
-            let esd_len = self.esd.size(); // ES Descriptor length
+
+            let size_of_instance = SizeOfInstance::from_u32(self.esd.encoded_len() as u32)
+                .expect("ES Descriptor length too large");
+            let size_len = size_of_instance.to_bytes().1;
+            let esd_len = 1 + size_len + self.esd.encoded_len(); // ES Descriptor length
+
             base_len + esd_len
         }
 
@@ -130,8 +125,15 @@ mod owned {
             cur.write_array(&self.flags.to_be_bytes())?;
 
             // Write ES Descriptor
-            self.esd.write_in(&mut cur)?;
+            let len = self.esd.encoded_len();
+            cur.write_u8(Tag::ES_DESCR_TAG.0)?;
+            let size_of_instance =
+                SizeOfInstance::from_u32(len as u32).expect("ES Descriptor length too large");
+            let (bytes, size) = size_of_instance.to_bytes();
+            cur.write_slice(&bytes[..size])?;
 
+            let buf = cur.take_mut(len)?;
+            self.esd.write(buf)?;
             Ok(cur.position())
         }
     }

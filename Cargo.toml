@@ -11,11 +11,15 @@ default = ["std", "avc", "mp4"]
 alloc = []
 std = ["alloc"]
 
-# ISO/IEC 14496-14
-mp4 = []
+# ISO/IEC 14496-1
+systems = []
 
-avc = []
-hevc = []
+# ISO/IEC 14496-14
+mp4 = ["systems"]
+
+# ISO/IEC 14496-15
+avc = ["systems"]
+hevc = ["systems"]
 
 [dependencies]
 

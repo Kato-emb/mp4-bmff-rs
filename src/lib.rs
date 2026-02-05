@@ -84,6 +84,7 @@ pub use iter::iter_boxes;
 // Layer 2 - Typed Box Representations (requires alloc)
 // =============================================================================
 pub mod boxes;
+pub mod formats;
 
 // Re-export owned box types
 #[cfg(feature = "alloc")]
@@ -94,3 +95,8 @@ pub use base::rawbox::RawBoxOwned;
 // =============================================================================
 #[cfg(feature = "std")]
 pub mod io;
+
+// =============================================================================
+// Prelude - Convenient imports
+// =============================================================================
+pub mod prelude;
