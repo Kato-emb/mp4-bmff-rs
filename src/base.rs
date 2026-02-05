@@ -12,7 +12,7 @@
 //! - [`rawbox`]: Raw box representation with header and uninterpreted payload.
 //!   - [`RawBox`]: Generic raw box with configurable payload storage.
 //!   - [`RawBoxRef`]: Zero-copy reference to a raw box.
-//!   - [`RawBoxOwned`]: Owned raw box with heap-allocated payload.
+//!   - `RawBoxOwned`: Owned raw box with heap-allocated payload (requires `alloc`).
 //!
 //! # Box Structure
 //!
@@ -32,7 +32,6 @@
 //! [`BoxType`]: header::BoxType
 //! [`RawBox`]: rawbox::RawBox
 //! [`RawBoxRef`]: rawbox::RawBoxRef
-//! [`RawBoxOwned`]: rawbox::RawBoxOwned
 
 pub mod header;
 pub mod rawbox;

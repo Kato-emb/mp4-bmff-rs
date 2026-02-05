@@ -11,7 +11,7 @@
 //! # Type Aliases
 //!
 //! - [`RawBoxRef`]: Zero-copy reference to a box (`RawBox<&[u8]>`).
-//! - [`RawBoxOwned`]: Owned box with heap-allocated payload (`RawBox<Vec<u8>>`).
+//! - `RawBoxOwned`: Owned box with heap-allocated payload (`RawBox<Vec<u8>>`, requires `alloc`).
 //!
 //! # Parsing
 //!
@@ -42,7 +42,7 @@ use crate::lib::Vec;
 ///
 /// The type parameter `T` determines how the payload is stored:
 /// - `&[u8]`: Zero-copy reference (see [`RawBoxRef`]).
-/// - `Vec<u8>`: Owned heap allocation (see [`RawBoxOwned`]).
+/// - `Vec<u8>`: Owned heap allocation (see `RawBoxOwned`, requires `alloc`).
 ///
 /// # Structure
 ///

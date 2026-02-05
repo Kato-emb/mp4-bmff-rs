@@ -5,12 +5,12 @@
 //!
 //! # Submodules
 //!
-//! - [`systems`]: MPEG-4 Systems (ISO/IEC 14496-1) descriptor structures
+//! - `systems`: MPEG-4 Systems (ISO/IEC 14496-1) descriptor structures
 //!   - Elementary Stream Descriptors
 //!   - Decoder Configuration Descriptors
 //!   - Requires the `systems` feature
 //!
-//! - [`codecs`]: Codec-specific configuration records
+//! - `codecs`: Codec-specific configuration records
 //!   - AVC (H.264) decoder configuration (ISO/IEC 14496-15)
 //!   - Requires `mp4`, `avc`, or `hevc` features
 

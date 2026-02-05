@@ -7,8 +7,8 @@
 //! # Base Types
 //!
 //! - [`SampleEntry`]: Common fields for all sample entry types.
-//! - [`VisualSampleEntry`]: Base for video sample entries (requires feature).
-//! - [`AudioSampleEntry`]: Base for audio sample entries (requires feature).
+//! - `VisualSampleEntry`: Base for video sample entries (requires feature).
+//! - `AudioSampleEntry`: Base for audio sample entries (requires feature).
 //!
 //! These base types are extended by codec-specific sample entries such as
 //! `avc1`, `mp4a`, `mp4v`, etc.

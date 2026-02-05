@@ -84,7 +84,7 @@
 //! | 0 | [`types`] | Primitive types (FourCC, fixed-point, timestamps) |
 //! | 1 | [`base`], [`codec`], [`error`], [`iter`] | Core BMFF structures (`no_std` compatible) |
 //! | 2 | [`boxes`], [`formats`] | Typed box representations (requires `alloc`) |
-//! | 3 | [`io`] | Stream-based I/O (requires `std`) |
+//! | 3 | `io` | Stream-based I/O (requires `std`) |
 //!
 //! # Key Types
 //!
@@ -103,8 +103,8 @@
 //!
 //! ## I/O Types (with `std` feature)
 //!
-//! - [`io::BoxReader`]: Reads boxes from any [`std::io::Read`]
-//! - [`io::BoxWriter`]: Writes boxes to any [`std::io::Write`]
+//! - `io::BoxReader`: Reads boxes from any `std::io::Read`
+//! - `io::BoxWriter`: Writes boxes to any `std::io::Write`
 //!
 //! # Feature Flags
 //!
@@ -122,7 +122,7 @@
 //! mp4-bmff = { version = "0.1", default-features = false, features = ["alloc"] }
 //! ```
 //!
-//! In `no_std` mode, the [`io`] module is unavailable, but all parsing and
+//! In `no_std` mode, the `io` module is unavailable, but all parsing and
 //! encoding functionality works with byte slices.
 //!
 //! # Box Type Reference
