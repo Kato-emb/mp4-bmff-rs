@@ -2,12 +2,14 @@
 
 mod esds;
 mod mp4a;
+mod mp4s;
 mod mp4v;
 
 pub use esds::EsdsBoxView;
 pub use esds::EsdsFlags;
 
 pub use mp4a::Mp4aSampleEntryView;
+pub use mp4s::MpegSampleEntryView;
 pub use mp4v::Mp4vSampleEntryView;
 
 #[cfg(feature = "alloc")]
@@ -16,6 +18,7 @@ mod owned_exports {
 
     pub use esds::EsdsBox;
     pub use mp4a::Mp4aSampleEntry;
+    pub use mp4s::MpegSampleEntry;
     pub use mp4v::Mp4vSampleEntry;
 }
 
@@ -29,4 +32,6 @@ define_box_types!(
     MP4V = b"mp4v",
     /// MPEG-4 Audio Sample Entry Box
     MP4A = b"mp4a",
+    /// MPEG-4 Sample Entry Box
+    MP4S = b"mp4s",
 );

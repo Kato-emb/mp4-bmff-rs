@@ -27,6 +27,9 @@ pub mod avc {
     pub use nal::avc::Avc1SampleEntryView;
     pub use nal::avc::Avc3SampleEntryView;
 
+    pub use nal::avc::Avc2SampleEntryView;
+    pub use nal::avc::Avc4SampleEntryView;
+
     #[cfg(feature = "alloc")]
     mod owned_exports {
         use super::*;
@@ -36,6 +39,9 @@ pub mod avc {
 
         pub use nal::avc::Avc1SampleEntry;
         pub use nal::avc::Avc3SampleEntry;
+
+        pub use nal::avc::Avc2SampleEntry;
+        pub use nal::avc::Avc4SampleEntry;
     }
 
     #[cfg(feature = "alloc")]
