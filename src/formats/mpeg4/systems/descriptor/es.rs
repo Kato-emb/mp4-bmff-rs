@@ -1,0 +1,593 @@
+use crate::error::*;
+
+use crate::cursor::ReadCursor;
+
+use super::RawDescriptorRef;
+use super::Tag;
+use super::iter::DescriptorIter;
+
+use super::DecoderConfigDescriptorView;
+
+/// A reference to an Elementary Stream Descriptor (ES_Descriptor).
+#[derive(Debug)]
+pub struct EsDescriptorView<'a> {
+    /// Elementary Stream ID
+    pub es_id: u16,
+    /// Flags
+    pub stream_dependence_flag: bool,
+    /// URL Flag
+    pub url_flag: bool,
+    /// OCR Stream Flag
+    pub ocr_stream_flag: bool,
+    /// Stream Priority
+    pub stream_priority: u8,
+    /// Optional fields
+    pub depends_on_es_id: Option<u16>,
+    /// URL String
+    pub url_string: Option<&'a str>,
+    /// Optional OCR ES ID
+    pub ocr_es_id: Option<u16>,
+    /// Descriptors
+    descs: &'a [u8],
+}
+
+impl<'a> EsDescriptorView<'a> {
+    /// Returns an iterator over the descriptors contained in this ES Descriptor.
+    pub fn descriptors(&self) -> DescriptorIter<'a> {
+        DescriptorIter::new(self.descs)
+    }
+
+    /// Returns the Decoder Config Descriptor contained in this ES Descriptor.
+    pub fn dec_config_descr(&self) -> Result<DecoderConfigDescriptorView<'a>> {
+        for result in self.descriptors() {
+            let descr = result?;
+            if descr.tag() == Tag::DECODER_CONFIG_DESCR_TAG {
+                let dec_config_descr = DecoderConfigDescriptorView::parse(descr.into_instance())?;
+                return Ok(dec_config_descr);
+            }
+        }
+
+        Err(Error::new(ErrorKind::Other {
+            description: "Decoder Config Descriptor not found in ES Descriptor",
+        }))
+    }
+
+    /// Returns the SL Config Descriptor contained in this ES Descriptor.
+    pub fn sl_config_descr(&self) -> Result<RawDescriptorRef<'a>> {
+        for result in self.descriptors() {
+            let descr = result?;
+            if descr.tag() == Tag::SL_CONFIG_DESCR_TAG {
+                return Ok(descr);
+            }
+        }
+
+        Err(Error::new(ErrorKind::Other {
+            description: "SL Config Descriptor not found in ES Descriptor",
+        }))
+    }
+
+    /// Parses an ES Descriptor from the given byte slice.
+    pub fn parse(instance: &'a [u8]) -> Result<Self> {
+        let mut cur = ReadCursor::new(instance);
+
+        let es_id = cur.read_u16_be()?;
+
+        let flags = cur.read_u8()?;
+        let stream_dependence_flag = (flags & 0x80) != 0;
+        let url_flag = (flags & 0x40) != 0;
+        let ocr_stream_flag = (flags & 0x20) != 0;
+        let stream_priority = flags & 0x1F;
+
+        let depends_on_es_id = if stream_dependence_flag {
+            Some(cur.read_u16_be()?)
+        } else {
+            None
+        };
+
+        let url_string = if url_flag {
+            let url_length = cur.read_u8()? as usize;
+            let url_bytes = cur.take(url_length)?;
+            Some(core::str::from_utf8(url_bytes).map_err(|_| {
+                Error::new(ErrorKind::Other {
+                    description: "Invalid UTF-8 in URL string",
+                })
+            })?)
+        } else {
+            None
+        };
+
+        let ocr_es_id = if ocr_stream_flag {
+            Some(cur.read_u16_be()?)
+        } else {
+            None
+        };
+
+        let descs = cur.take(cur.remaining())?;
+
+        Ok(EsDescriptorView {
+            es_id,
+            stream_dependence_flag,
+            url_flag,
+            ocr_stream_flag,
+            stream_priority,
+            depends_on_es_id,
+            url_string,
+            ocr_es_id,
+            descs,
+        })
+    }
+}
+
+#[cfg(feature = "alloc")]
+mod owned {
+    use crate::lib::Vec;
+    use crate::lib::{String, ToString};
+
+    use super::*;
+
+    use crate::cursor::WriteCursor;
+
+    use crate::formats::mpeg4::systems::descriptor::RawDescriptorOwned;
+    use crate::formats::mpeg4::systems::descriptor::SizeOfInstance;
+    use crate::formats::mpeg4::systems::descriptor::dec::DecoderConfigDescriptor;
+
+    /// An owned Elementary Stream Descriptor (ES_Descriptor).
+    #[derive(Debug, Clone)]
+    pub struct EsDescriptor {
+        /// Elementary Stream ID
+        pub es_id: u16,
+        /// Flags
+        pub stream_dependence_flag: bool,
+        /// URL Flag
+        pub url_flag: bool,
+        /// OCR Stream Flag
+        pub ocr_stream_flag: bool,
+        /// Stream Priority
+        pub stream_priority: u8,
+        /// Optional fields
+        pub depends_on_es_id: Option<u16>,
+        /// URL String
+        pub url_string: Option<String>,
+        /// Optional OCR ES ID
+        pub ocr_es_id: Option<u16>,
+        /// Decoder Config Descriptor
+        pub dec_config_descr: DecoderConfigDescriptor,
+        /// SL Config Descriptor
+        pub sl_config_descr: RawDescriptorOwned,
+        /// Descriptors
+        pub descriptors: Vec<RawDescriptorOwned>,
+    }
+
+    impl TryFrom<&EsDescriptorView<'_>> for EsDescriptor {
+        type Error = Error;
+
+        fn try_from(value: &EsDescriptorView<'_>) -> Result<Self> {
+            let mut dec_config_descr = None;
+            let mut sl_config_descr = None;
+            let mut descriptors = Vec::new();
+
+            for result in value.descriptors() {
+                let descr = result?;
+
+                match descr.tag() {
+                    Tag::DECODER_CONFIG_DESCR_TAG => {
+                        dec_config_descr = Some(DecoderConfigDescriptor::try_from(
+                            &DecoderConfigDescriptorView::parse(descr.into_instance())?,
+                        )?);
+                    }
+                    Tag::SL_CONFIG_DESCR_TAG => {
+                        sl_config_descr = Some(descr.to_owned());
+                    }
+                    _ => {
+                        descriptors.push(descr.to_owned());
+                    }
+                }
+            }
+
+            let dec_config_descr = dec_config_descr.ok_or_else(|| {
+                Error::new(ErrorKind::Other {
+                    description: "Decoder Config Descriptor not found in ES Descriptor",
+                })
+            })?;
+
+            let sl_config_descr = sl_config_descr.ok_or_else(|| {
+                Error::new(ErrorKind::Other {
+                    description: "SL Config Descriptor not found in ES Descriptor",
+                })
+            })?;
+
+            Ok(EsDescriptor {
+                es_id: value.es_id,
+                stream_dependence_flag: value.stream_dependence_flag,
+                url_flag: value.url_flag,
+                ocr_stream_flag: value.ocr_stream_flag,
+                stream_priority: value.stream_priority,
+                depends_on_es_id: value.depends_on_es_id,
+                url_string: value.url_string.map(|s| s.to_string()),
+                ocr_es_id: value.ocr_es_id,
+                dec_config_descr,
+                sl_config_descr,
+                descriptors,
+            })
+        }
+    }
+
+    impl EsDescriptor {
+        /// Returns the length of the EsDescriptor when encoded.
+        pub fn len(&self) -> usize {
+            let mut len = 3; // es_id(2) + flags(1)
+
+            if self.stream_dependence_flag {
+                len += 2; // depends_on_es_id(2)
+            }
+
+            if let Some(url_string) = &self.url_string {
+                len += 1 + url_string.len(); // url_length(1) + url_string
+            }
+
+            if self.ocr_stream_flag {
+                len += 2; // ocr_es_id(2)
+            }
+
+            let size_of_instance = SizeOfInstance::from_u32(self.dec_config_descr.len() as u32)
+                .expect("Decoder Config Descriptor length too large");
+            let dec_len = size_of_instance.to_bytes().1;
+
+            len += 1 + dec_len + self.dec_config_descr.len();
+            len += self.sl_config_descr.len();
+
+            for descr in &self.descriptors {
+                len += descr.len();
+            }
+
+            len
+        }
+
+        /// Parses EsDescriptor from a byte slice
+        pub fn parse(instance: &[u8]) -> Result<Self> {
+            let view = EsDescriptorView::parse(instance)?;
+            Self::try_from(&view)
+        }
+
+        /// Writes the EsDescriptor into the given byte slice.
+        pub fn write(&self, bytes: &mut [u8]) -> Result<usize> {
+            let mut cur = WriteCursor::new(bytes);
+
+            cur.write_u16_be(self.es_id)?;
+
+            let mut flags = 0u8;
+            if self.stream_dependence_flag {
+                flags |= 0x80;
+            }
+            if self.url_flag {
+                flags |= 0x40;
+            }
+            if self.ocr_stream_flag {
+                flags |= 0x20;
+            }
+            flags |= self.stream_priority & 0x1F;
+
+            cur.write_u8(flags)?;
+
+            if let Some(depends_on_es_id) = self.depends_on_es_id {
+                cur.write_u16_be(depends_on_es_id)?;
+            }
+
+            if let Some(url_string) = &self.url_string {
+                let url_bytes = url_string.as_bytes();
+                cur.write_u8(url_bytes.len() as u8)?;
+                cur.write_slice(url_bytes)?;
+            }
+
+            if let Some(ocr_es_id) = self.ocr_es_id {
+                cur.write_u16_be(ocr_es_id)?;
+            }
+
+            // Write DecoderConfigDescriptor as RawDescriptor format (tag + size + content)
+            cur.write_u8(Tag::DECODER_CONFIG_DESCR_TAG.0)?;
+            let dec_size = SizeOfInstance::from_u32(self.dec_config_descr.len() as u32)
+                .expect("Decoder Config Descriptor length too large");
+            let (size_bytes, size_len) = dec_size.to_bytes();
+            cur.write_slice(&size_bytes[..size_len])?;
+            let buf = cur.take_mut(self.dec_config_descr.len())?;
+            self.dec_config_descr.write(buf)?;
+
+            let buf = cur.take_mut(self.sl_config_descr.len())?;
+            self.sl_config_descr.write(buf)?;
+
+            for descr in &self.descriptors {
+                let buf = cur.take_mut(descr.len())?;
+                descr.write(buf)?;
+            }
+
+            Ok(cur.position())
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+pub use owned::*;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper function to create a minimal DecoderConfigDescriptor bytes
+    fn minimal_dec_config_descr() -> Vec<u8> {
+        vec![
+            0x40, // object_type_indication = MPEG4_AUDIO
+            0x15, // stream_type = AUDIO_STREAM
+            0x00, 0x00, 0x10, // buffer_size_db
+            0x00, 0x01, 0x00, 0x00, // max_bitrate
+            0x00, 0x00, 0x80, 0x00, // avg_bitrate
+        ]
+    }
+
+    // Helper function to create a minimal SL Config Descriptor bytes
+    fn minimal_sl_config_descr() -> Vec<u8> {
+        vec![0x06, 0x01, 0x02] // tag + size + predefined
+    }
+
+    // Helper to wrap bytes as a descriptor
+    fn wrap_as_descriptor(tag: u8, data: &[u8]) -> Vec<u8> {
+        let mut result = vec![tag, data.len() as u8];
+        result.extend_from_slice(data);
+        result
+    }
+
+    #[test]
+    fn test_es_descriptor_view_parse_minimal() {
+        // ES_ID(2) + flags(1) + DecoderConfigDescr + SLConfigDescr
+        let dec_config = minimal_dec_config_descr();
+        let dec_config_wrapped = wrap_as_descriptor(0x04, &dec_config);
+        let sl_config = minimal_sl_config_descr();
+
+        let mut data = vec![
+            0x00, 0x01, // es_id = 1
+            0x00, // flags: no dependencies, no url, no ocr
+        ];
+        data.extend_from_slice(&dec_config_wrapped);
+        data.extend_from_slice(&sl_config);
+
+        let view = EsDescriptorView::parse(&data).unwrap();
+
+        assert_eq!(view.es_id, 1);
+        assert!(!view.stream_dependence_flag);
+        assert!(!view.url_flag);
+        assert!(!view.ocr_stream_flag);
+        assert_eq!(view.stream_priority, 0);
+        assert!(view.depends_on_es_id.is_none());
+        assert!(view.url_string.is_none());
+        assert!(view.ocr_es_id.is_none());
+    }
+
+    #[test]
+    fn test_es_descriptor_view_parse_with_stream_priority() {
+        let dec_config = minimal_dec_config_descr();
+        let dec_config_wrapped = wrap_as_descriptor(0x04, &dec_config);
+        let sl_config = minimal_sl_config_descr();
+
+        let mut data = vec![
+            0x00, 0x01, // es_id = 1
+            0x0F, // flags: stream_priority = 15
+        ];
+        data.extend_from_slice(&dec_config_wrapped);
+        data.extend_from_slice(&sl_config);
+
+        let view = EsDescriptorView::parse(&data).unwrap();
+
+        assert_eq!(view.stream_priority, 15);
+    }
+
+    #[test]
+    fn test_es_descriptor_view_parse_with_depends_on() {
+        let dec_config = minimal_dec_config_descr();
+        let dec_config_wrapped = wrap_as_descriptor(0x04, &dec_config);
+        let sl_config = minimal_sl_config_descr();
+
+        let mut data = vec![
+            0x00, 0x01, // es_id = 1
+            0x80, // flags: stream_dependence_flag = 1
+            0x00, 0x02, // depends_on_es_id = 2
+        ];
+        data.extend_from_slice(&dec_config_wrapped);
+        data.extend_from_slice(&sl_config);
+
+        let view = EsDescriptorView::parse(&data).unwrap();
+
+        assert!(view.stream_dependence_flag);
+        assert_eq!(view.depends_on_es_id, Some(2));
+    }
+
+    #[test]
+    fn test_es_descriptor_view_parse_with_url() {
+        let dec_config = minimal_dec_config_descr();
+        let dec_config_wrapped = wrap_as_descriptor(0x04, &dec_config);
+        let sl_config = minimal_sl_config_descr();
+
+        let url = "http://example.com";
+        let mut data = vec![
+            0x00,
+            0x01,            // es_id = 1
+            0x40,            // flags: url_flag = 1
+            url.len() as u8, // url length
+        ];
+        data.extend_from_slice(url.as_bytes());
+        data.extend_from_slice(&dec_config_wrapped);
+        data.extend_from_slice(&sl_config);
+
+        let view = EsDescriptorView::parse(&data).unwrap();
+
+        assert!(view.url_flag);
+        assert_eq!(view.url_string, Some("http://example.com"));
+    }
+
+    #[test]
+    fn test_es_descriptor_view_parse_with_ocr() {
+        let dec_config = minimal_dec_config_descr();
+        let dec_config_wrapped = wrap_as_descriptor(0x04, &dec_config);
+        let sl_config = minimal_sl_config_descr();
+
+        let mut data = vec![
+            0x00, 0x01, // es_id = 1
+            0x20, // flags: ocr_stream_flag = 1
+            0x00, 0x03, // ocr_es_id = 3
+        ];
+        data.extend_from_slice(&dec_config_wrapped);
+        data.extend_from_slice(&sl_config);
+
+        let view = EsDescriptorView::parse(&data).unwrap();
+
+        assert!(view.ocr_stream_flag);
+        assert_eq!(view.ocr_es_id, Some(3));
+    }
+
+    #[test]
+    fn test_es_descriptor_view_dec_config_descr() {
+        let dec_config = minimal_dec_config_descr();
+        let dec_config_wrapped = wrap_as_descriptor(0x04, &dec_config);
+        let sl_config = minimal_sl_config_descr();
+
+        let mut data = vec![0x00, 0x01, 0x00];
+        data.extend_from_slice(&dec_config_wrapped);
+        data.extend_from_slice(&sl_config);
+
+        let view = EsDescriptorView::parse(&data).unwrap();
+        let dec_config_view = view.dec_config_descr().unwrap();
+
+        assert_eq!(
+            dec_config_view.object_type_indication,
+            super::super::ObjectTypeIndication::MPEG4_AUDIO
+        );
+    }
+
+    #[test]
+    fn test_es_descriptor_view_sl_config_descr() {
+        let dec_config = minimal_dec_config_descr();
+        let dec_config_wrapped = wrap_as_descriptor(0x04, &dec_config);
+        let sl_config = minimal_sl_config_descr();
+
+        let mut data = vec![0x00, 0x01, 0x00];
+        data.extend_from_slice(&dec_config_wrapped);
+        data.extend_from_slice(&sl_config);
+
+        let view = EsDescriptorView::parse(&data).unwrap();
+        let sl_descr = view.sl_config_descr().unwrap();
+
+        assert_eq!(sl_descr.tag(), Tag::SL_CONFIG_DESCR_TAG);
+        assert_eq!(sl_descr.instance(), &[0x02]);
+    }
+
+    #[test]
+    fn test_es_descriptor_view_missing_dec_config() {
+        let sl_config = minimal_sl_config_descr();
+
+        let mut data = vec![0x00, 0x01, 0x00];
+        data.extend_from_slice(&sl_config);
+
+        let view = EsDescriptorView::parse(&data).unwrap();
+        let result = view.dec_config_descr();
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_es_descriptor_view_missing_sl_config() {
+        let dec_config = minimal_dec_config_descr();
+        let dec_config_wrapped = wrap_as_descriptor(0x04, &dec_config);
+
+        let mut data = vec![0x00, 0x01, 0x00];
+        data.extend_from_slice(&dec_config_wrapped);
+
+        let view = EsDescriptorView::parse(&data).unwrap();
+        let result = view.sl_config_descr();
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_es_descriptor_view_parse_too_short() {
+        let data = [0x00, 0x01]; // Only es_id, missing flags
+
+        let result = EsDescriptorView::parse(&data);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_es_descriptor_parse() {
+        let dec_config = minimal_dec_config_descr();
+        let dec_config_wrapped = wrap_as_descriptor(0x04, &dec_config);
+        let sl_config = minimal_sl_config_descr();
+
+        let mut data = vec![0x00, 0x01, 0x00];
+        data.extend_from_slice(&dec_config_wrapped);
+        data.extend_from_slice(&sl_config);
+
+        let desc = EsDescriptor::parse(&data).unwrap();
+
+        assert_eq!(desc.es_id, 1);
+        assert!(!desc.stream_dependence_flag);
+        assert!(!desc.url_flag);
+        assert!(!desc.ocr_stream_flag);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_es_descriptor_write() {
+        let dec_config = minimal_dec_config_descr();
+        let dec_config_wrapped = wrap_as_descriptor(0x04, &dec_config);
+        let sl_config = minimal_sl_config_descr();
+
+        let mut original_data = vec![0x00, 0x01, 0x00];
+        original_data.extend_from_slice(&dec_config_wrapped);
+        original_data.extend_from_slice(&sl_config);
+
+        let desc = EsDescriptor::parse(&original_data).unwrap();
+
+        // Calculate expected size and create buffer
+        let expected_size = 3 + desc.dec_config_descr.len() + desc.sl_config_descr.len();
+        let mut buffer = vec![0u8; expected_size + 10];
+
+        let written = desc.write(&mut buffer).unwrap();
+
+        // Verify basic structure
+        assert_eq!(buffer[0], 0x00); // es_id high byte
+        assert_eq!(buffer[1], 0x01); // es_id low byte
+        assert_eq!(buffer[2], 0x00); // flags
+        assert!(written > 0);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_es_descriptor_with_all_optional_fields() {
+        let dec_config = minimal_dec_config_descr();
+        let dec_config_wrapped = wrap_as_descriptor(0x04, &dec_config);
+        let sl_config = minimal_sl_config_descr();
+
+        let url = "test";
+        let mut data = vec![
+            0x00,
+            0x05, // es_id = 5
+            0xE5, // flags: all flags set + priority = 5
+            0x00,
+            0x02, // depends_on_es_id = 2
+            url.len() as u8,
+        ];
+        data.extend_from_slice(url.as_bytes());
+        data.extend_from_slice(&[0x00, 0x03]); // ocr_es_id = 3
+        data.extend_from_slice(&dec_config_wrapped);
+        data.extend_from_slice(&sl_config);
+
+        let desc = EsDescriptor::parse(&data).unwrap();
+
+        assert_eq!(desc.es_id, 5);
+        assert!(desc.stream_dependence_flag);
+        assert!(desc.url_flag);
+        assert!(desc.ocr_stream_flag);
+        assert_eq!(desc.stream_priority, 5);
+        assert_eq!(desc.depends_on_es_id, Some(2));
+        assert_eq!(desc.url_string.as_deref(), Some("test"));
+        assert_eq!(desc.ocr_es_id, Some(3));
+    }
+}

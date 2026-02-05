@@ -1,7 +1,5 @@
 //! ISO/IEC 14496-14 Box Structures
 
-pub mod descriptor;
-
 mod esds;
 mod mp4a;
 mod mp4v;

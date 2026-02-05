@@ -84,6 +84,7 @@ pub use iter::iter_boxes;
 // Layer 2 - Typed Box Representations (requires alloc)
 // =============================================================================
 pub mod boxes;
+pub mod formats;
 
 // Re-export owned box types
 #[cfg(feature = "alloc")]

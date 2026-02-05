@@ -1,4 +1,4 @@
-/// Descriptor Tag (ISO/IEC 14496-1 Table 1 - List of Class Tags for Descriptors)
+/// Tag of a descriptor
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tag(pub(crate) u8);
 
