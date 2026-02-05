@@ -1,3 +1,10 @@
+//! Media Header Box (`mdhd`) implementation.
+//!
+//! The Media Header Box contains overall information about the media data
+//! within a track. Unlike the Movie Header Box (`mvhd`) which describes
+//! the entire presentation, each `mdhd` describes a single media track's
+//! timescale, duration, and language.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -10,10 +17,25 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for Media Header Box (`mdhd`).
+    ///
+    /// Reserved (should be 0).
     MdhdFlags {}
 );
 
 /// Media Header Box (`mdhd`).
+///
+/// The Media Header Box declares information about the media in a track,
+/// independent of its coding. It is required within the Media Box (`mdia`).
+///
+/// # Structure
+///
+/// - `version`: 0 uses 32-bit time fields, 1 uses 64-bit time fields.
+/// - `flags`: Reserved (should be 0).
+/// - `creation_time`: When the media was created (QuickTime epoch: 1904-01-01).
+/// - `modification_time`: When the media was last modified.
+/// - `timescale`: Number of time units per second for this media.
+/// - `duration`: Duration of the media in timescale units.
+/// - `language`: ISO-639-2/T three-character language code.
 #[derive(Debug, Clone, Copy)]
 pub struct MdhdBox {
     /// Box version (0 or 1).

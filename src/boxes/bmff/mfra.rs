@@ -1,3 +1,13 @@
+//! Movie Fragment Random Access Box (`mfra`) implementation.
+//!
+//! The Movie Fragment Random Access Box provides a table that allows random
+//! access to movie fragments without parsing the entire file. It maps times
+//! to byte offsets of movie fragments, enabling efficient seeking.
+//!
+//! This box is typically located at the end of a fragmented MP4 file and
+//! is optional. The `mfro` child box allows finding `mfra` by reading from
+//! the file end.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -8,6 +18,17 @@ use super::MfroBox;
 use super::TfraBoxView;
 
 /// A reference to a Movie Fragment Random Access Box (`mfra`).
+///
+/// Provides random access index for fragmented movies. Located at file end
+/// to enable seeking by reading backwards from EOF.
+///
+/// # Structure
+///
+/// Optional child boxes:
+/// - `tfra`: Track Fragment Random Access Box - per-track seek table.
+///
+/// Required child boxes:
+/// - `mfro`: Movie Fragment Random Access Offset Box - size of `mfra`.
 #[derive(Debug)]
 pub struct MfraBoxView<'a> {
     content: &'a [u8],
@@ -75,11 +96,19 @@ mod owned {
     use crate::boxes::bmff::TfraBox;
 
     /// An owned Movie Fragment Random Access Box (`mfra`).
+    ///
+    /// This is the owned variant of [`MfraBoxView`] that stores child boxes
+    /// in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `tfras`: Track Fragment Random Access boxes (one per track).
+    /// - `mfro`: Movie Fragment Random Access Offset with `mfra` size.
     #[derive(Debug, Clone)]
     pub struct MfraBox {
-        /// The Track Fragment Random Access Boxes contained in this `mfra` box.
+        /// Track Fragment Random Access Boxes (one per track with seek points).
         pub tfras: Vec<TfraBox>,
-        /// The Movie Fragment Random Access Offset Box contained in this `mfra` box.
+        /// Movie Fragment Random Access Offset Box (contains `mfra` size).
         pub mfro: MfroBox,
     }
 

@@ -1,9 +1,42 @@
-//! Four-character code (FourCC) core type and helpers.
+//! Four-character code (FourCC) type.
+//!
+//! FourCC is a 4-byte identifier used extensively in BMFF and related formats
+//! to identify box types, brands, and codecs. Common examples include:
+//!
+//! - Box types: `ftyp`, `moov`, `mdat`, `trak`
+//! - Brands: `isom`, `iso2`, `mp41`, `avc1`
+//! - Handlers: `vide`, `soun`, `hint`
+//!
+//! # Display and Debug
+//!
+//! FourCC values display as ASCII when printable, with non-printable bytes
+//! shown as `\xNN` escape sequences:
+//!
+//! ```
+//! use mp4_bmff::types::FourCC;
+//!
+//! let ftyp = FourCC::new(*b"ftyp");
+//! assert_eq!(format!("{}", ftyp), "ftyp");
+//! ```
 
 use core::fmt;
 use core::slice;
 
-/// 4-byte Four Character Code (FourCC) used as a box identifier.
+/// 4-byte Four Character Code (FourCC) identifier.
+///
+/// FourCC codes identify box types, file brands, codec types, and other
+/// entities in BMFF files. While often ASCII text, any 4-byte sequence
+/// is valid.
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::types::FourCC;
+///
+/// let brand = FourCC::new(*b"isom");
+/// assert_eq!(brand.as_bytes(), b"isom");
+/// assert_eq!(brand.as_ascii(), Some("isom"));
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct FourCC([u8; 4]);

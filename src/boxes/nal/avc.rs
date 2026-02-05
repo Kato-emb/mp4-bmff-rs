@@ -1,4 +1,17 @@
-//! AVC (H.264) related boxes
+//! AVC (H.264) Sample Entry and Configuration Box implementation.
+//!
+//! This module provides types for working with AVC/H.264 video content in
+//! ISO Base Media File Format. AVC sample entries (`avc1`, `avc2`, `avc3`,
+//! `avc4`) describe video streams encoded using H.264/MPEG-4 Part 10.
+//!
+//! # Sample Entry Types
+//!
+//! - `avc1`/`avc3`: Standard AVC sample entries. `avc3` indicates parameter
+//!   sets may be stored in-band rather than in the configuration record.
+//! - `avc2`/`avc4`: AVC sample entries with additional parsing requirements.
+//!
+//! These entries appear in the Sample Description Box (`stsd`) for video
+//! tracks using H.264/AVC codecs.
 
 use core::marker::PhantomData;
 
@@ -14,10 +27,17 @@ use crate::formats::mpeg4::systems::descriptor::iter::DescriptorIter;
 
 use crate::cursor::ReadCursor;
 
-/// A reference to an AVC Decoder Configuration Box
+/// A reference to an AVC Decoder Configuration Box (`avcC`).
+///
+/// Contains the AVC Decoder Configuration Record with profile, level,
+/// and parameter set information needed to initialize an H.264 decoder.
+///
+/// # Structure
+///
+/// - `avc_config`: The AVC Decoder Configuration Record containing SPS/PPS.
 #[derive(Debug)]
 pub struct AvcCBoxView<'a> {
-    /// The AVC Decoder Configuration Record
+    /// The AVC Decoder Configuration Record with profile/level and parameter sets.
     pub avc_config: AVCDecoderConfigurationRecordView<'a>,
 }
 
@@ -34,7 +54,15 @@ impl<'de> BoxDecode<'de> for AvcCBoxView<'de> {
     }
 }
 
-/// A reference to an MPEG-4 Extension Descriptors Box
+/// A reference to an MPEG-4 Extension Descriptors Box (`m4ds`).
+///
+/// Contains additional MPEG-4 descriptors that extend the sample entry.
+/// This box is optional within AVC sample entries and provides extra
+/// metadata when needed for MPEG-4 Systems integration.
+///
+/// # Structure
+///
+/// - `descriptors`: A sequence of MPEG-4 descriptors.
 #[derive(Debug)]
 pub struct M4dsBoxView<'a> {
     content: &'a [u8],
@@ -59,7 +87,19 @@ impl<'de> BoxDecode<'de> for M4dsBoxView<'de> {
     }
 }
 
-/// A reference to an AVC Sample Entry
+/// A reference to an AVC Sample Entry (`avc1` or `avc3`).
+///
+/// Describes H.264/AVC video streams by combining the base Visual Sample
+/// Entry with the AVC Configuration Box containing decoder parameters.
+///
+/// The type parameter `S` distinguishes between `avc1` and `avc3` variants.
+///
+/// # Structure
+///
+/// - `base`: Base Visual Sample Entry with width, height, resolution, etc.
+/// - Child boxes:
+///   - `avcC` (required): AVC Configuration Box with decoder parameters.
+///   - `m4ds` (optional): MPEG-4 Extension Descriptors Box.
 #[derive(Debug)]
 pub struct AVCSampleEntryView<'a, S> {
     base: VisualSampleEntry,
@@ -121,9 +161,14 @@ impl<'de, S> BoxDecode<'de> for AVCSampleEntryView<'de, S> {
     }
 }
 
-/// A marker type for AVC1 Sample Entry
+/// Marker type for AVC1 Sample Entry (`avc1`).
+///
+/// AVC1 stores all parameter sets (SPS/PPS) in the configuration record.
 pub struct Avc1;
-/// A reference to an AVC1 Sample Entry
+
+/// A reference to an AVC1 Sample Entry (`avc1`).
+///
+/// Standard AVC sample entry where parameter sets are stored in `avcC`.
 pub type Avc1SampleEntryView<'a> = AVCSampleEntryView<'a, Avc1>;
 
 impl BoxCodec for Avc1SampleEntryView<'_> {
@@ -132,9 +177,14 @@ impl BoxCodec for Avc1SampleEntryView<'_> {
     }
 }
 
-/// A marker type for AVC3 Sample Entry
+/// Marker type for AVC3 Sample Entry (`avc3`).
+///
+/// AVC3 indicates parameter sets may be stored in-band within samples.
 pub struct Avc3;
-/// A reference to an AVC3 Sample Entry
+
+/// A reference to an AVC3 Sample Entry (`avc3`).
+///
+/// AVC sample entry where parameter sets may appear in-band.
 pub type Avc3SampleEntryView<'a> = AVCSampleEntryView<'a, Avc3>;
 
 impl BoxCodec for Avc3SampleEntryView<'_> {
@@ -143,7 +193,17 @@ impl BoxCodec for Avc3SampleEntryView<'_> {
     }
 }
 
-/// A reference to an AVC2 Sample Entry
+/// A reference to an AVC2 Sample Entry (`avc2` or `avc4`).
+///
+/// Similar to [`AVCSampleEntryView`] but for `avc2`/`avc4` sample entry types.
+/// The type parameter `S` distinguishes between variants.
+///
+/// # Structure
+///
+/// - `base`: Base Visual Sample Entry with width, height, resolution, etc.
+/// - Child boxes:
+///   - `avcC` (required): AVC Configuration Box with decoder parameters.
+///   - `m4ds` (optional): MPEG-4 Extension Descriptors Box.
 #[derive(Debug)]
 pub struct AVC2SampleEntryView<'a, S> {
     base: VisualSampleEntry,
@@ -205,9 +265,12 @@ impl<'de, S> BoxDecode<'de> for AVC2SampleEntryView<'de, S> {
     }
 }
 
-/// A marker type for AVC2 Sample Entry
+/// Marker type for AVC2 Sample Entry (`avc2`).
+///
+/// AVC2 stores all parameter sets in the configuration record.
 pub struct Avc2;
-/// A reference to an AVC2 Sample Entry
+
+/// A reference to an AVC2 Sample Entry (`avc2`).
 pub type Avc2SampleEntryView<'a> = AVC2SampleEntryView<'a, Avc2>;
 
 impl BoxCodec for Avc2SampleEntryView<'_> {
@@ -216,9 +279,12 @@ impl BoxCodec for Avc2SampleEntryView<'_> {
     }
 }
 
-/// A marker type for AVC4 Sample Entry
+/// Marker type for AVC4 Sample Entry (`avc4`).
+///
+/// AVC4 indicates parameter sets may be stored in-band within samples.
 pub struct Avc4;
-/// A reference to an AVC4 Sample Entry
+
+/// A reference to an AVC4 Sample Entry (`avc4`).
 pub type Avc4SampleEntryView<'a> = AVC2SampleEntryView<'a, Avc4>;
 
 impl BoxCodec for Avc4SampleEntryView<'_> {
@@ -243,10 +309,17 @@ mod owned {
     use crate::formats::mpeg4::codecs::avc::AVCDecoderConfigurationRecord;
     use crate::formats::mpeg4::systems::descriptor::*;
 
-    /// An owned AVC Configuration Box
+    /// An owned AVC Decoder Configuration Box (`avcC`).
+    ///
+    /// This is the owned variant of [`AvcCBoxView`] that stores the
+    /// configuration record in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `avc_config`: The AVC Decoder Configuration Record with SPS/PPS.
     #[derive(Debug, Clone)]
     pub struct AvcCBox {
-        /// The AVC Decoder Configuration Record
+        /// The AVC Decoder Configuration Record with profile/level and parameter sets.
         pub avc_config: AVCDecoderConfigurationRecord,
     }
 
@@ -292,10 +365,17 @@ mod owned {
         }
     }
 
-    /// An owned MPEG-4 Extension Descriptors Box
+    /// An owned MPEG-4 Extension Descriptors Box (`m4ds`).
+    ///
+    /// This is the owned variant of [`M4dsBoxView`] that stores
+    /// descriptors in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `descriptors`: List of MPEG-4 descriptors.
     #[derive(Debug, Clone)]
     pub struct M4dsBox {
-        /// The descriptors contained in this box
+        /// List of MPEG-4 descriptors in this box.
         pub descriptors: Vec<RawDescriptorOwned>,
     }
 
@@ -342,14 +422,23 @@ mod owned {
         }
     }
 
-    /// An owned AVC Sample Entry
+    /// An owned AVC Sample Entry (`avc1` or `avc3`).
+    ///
+    /// This is the owned variant of [`AVCSampleEntryView`] that stores
+    /// child boxes in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `base`: Base Visual Sample Entry with video format properties.
+    /// - `avcc`: AVC Configuration Box with decoder parameters.
+    /// - `m4ds`: Optional MPEG-4 Extension Descriptors.
     #[derive(Debug, Clone)]
     pub struct AVCSampleEntry<S> {
-        /// The base Visual Sample Entry
+        /// Base Visual Sample Entry with width, height, resolution, etc.
         pub base: VisualSampleEntry,
-        /// The AVC Configuration Box (`avcC`)
+        /// AVC Configuration Box with decoder initialization data.
         pub avcc: AvcCBox,
-        /// The MPEG-4 Extension Descriptors Box (`m4ds`)
+        /// Optional MPEG-4 Extension Descriptors Box.
         pub m4ds: Option<M4dsBox>,
         _marker: PhantomData<S>,
     }
@@ -448,7 +537,10 @@ mod owned {
         }
     }
 
-    /// An owned AVC1 Sample Entry
+    /// An owned AVC1 Sample Entry (`avc1`).
+    ///
+    /// Standard AVC sample entry where parameter sets are stored in `avcC`.
+    /// Provides `codec_string()` method for generating codec parameter strings.
     pub type Avc1SampleEntry = AVCSampleEntry<Avc1>;
 
     impl Avc1SampleEntry {
@@ -467,7 +559,10 @@ mod owned {
         }
     }
 
-    /// An owned AVC3 Sample Entry
+    /// An owned AVC3 Sample Entry (`avc3`).
+    ///
+    /// AVC sample entry where parameter sets may appear in-band.
+    /// Provides `codec_string()` method for generating codec parameter strings.
     pub type Avc3SampleEntry = AVCSampleEntry<Avc3>;
 
     impl BoxCodec for Avc3SampleEntry {
@@ -486,14 +581,23 @@ mod owned {
         }
     }
 
-    /// An owned AVC2 Sample Entry
+    /// An owned AVC2 Sample Entry (`avc2` or `avc4`).
+    ///
+    /// This is the owned variant of [`AVC2SampleEntryView`] that stores
+    /// child boxes in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `base`: Base Visual Sample Entry with video format properties.
+    /// - `avcc`: AVC Configuration Box with decoder parameters.
+    /// - `m4ds`: Optional MPEG-4 Extension Descriptors.
     #[derive(Debug, Clone)]
     pub struct AVC2SampleEntry<S> {
-        /// The base Visual Sample Entry
+        /// Base Visual Sample Entry with width, height, resolution, etc.
         pub base: VisualSampleEntry,
-        /// The AVC Configuration Box (`avcC`)
+        /// AVC Configuration Box with decoder initialization data.
         pub avcc: AvcCBox,
-        /// The MPEG-4 Extension Descriptors Box (`m4ds`)
+        /// Optional MPEG-4 Extension Descriptors Box.
         pub m4ds: Option<M4dsBox>,
         _marker: PhantomData<S>,
     }
@@ -592,7 +696,9 @@ mod owned {
         }
     }
 
-    /// An owned AVC2 Sample Entry
+    /// An owned AVC2 Sample Entry (`avc2`).
+    ///
+    /// Provides `codec_string()` method for generating codec parameter strings.
     pub type Avc2SampleEntry = AVC2SampleEntry<Avc2>;
 
     impl Avc2SampleEntry {
@@ -611,7 +717,10 @@ mod owned {
         }
     }
 
-    /// An owned AVC4 Sample Entry
+    /// An owned AVC4 Sample Entry (`avc4`).
+    ///
+    /// AVC sample entry where parameter sets may appear in-band.
+    /// Provides `codec_string()` method for generating codec parameter strings.
     pub type Avc4SampleEntry = AVC2SampleEntry<Avc4>;
 
     impl Avc4SampleEntry {

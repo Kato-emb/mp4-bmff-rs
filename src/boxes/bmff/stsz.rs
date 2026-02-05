@@ -1,3 +1,10 @@
+//! Sample Size Box (`stsz`) implementation.
+//!
+//! The Sample Size Box contains the size of every sample in the track.
+//! If all samples have the same size, a default size can be specified
+//! to avoid storing individual sizes. Otherwise, each sample's size
+//! is stored in the entries table.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -7,10 +14,14 @@ use crate::iter::FixedSizeEntryIter;
 
 define_box_flags!(
     /// Flags for the Sample Size Box (`stsz`).
+    ///
+    /// Reserved (should be 0).
     StszFlags {}
 );
 
 /// An entry in the Sample Size Box (`stsz`).
+///
+/// Represents the size of a single sample in bytes.
 #[derive(Debug, Clone, Copy)]
 pub struct StszEntry {
     /// The size of the sample in bytes.
@@ -35,15 +46,26 @@ impl FixedSizeEntry for StszEntry {
 }
 
 /// A reference to a Sample Size Box (`stsz`).
+///
+/// Provides the size of each sample in the track. If `sample_size` is non-zero,
+/// all samples have that size and the entries table is empty.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `sample_size`: Default size if all samples are equal, 0 otherwise.
+/// - `sample_count`: Total number of samples.
+/// - `entries`: Individual sample sizes (only when `sample_size` is 0).
 #[derive(Debug)]
 pub struct StszBoxView<'a> {
-    /// The version of the box (0).
+    /// Box version (should be 0).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: StszFlags,
-    /// The sample size if all samples have the same size, or 0.
+    /// Default sample size if uniform, 0 for variable sizes.
     pub sample_size: u32,
-    /// The number of samples.
+    /// Total number of samples in the track.
     pub sample_count: u32,
     entries: &'a [u8],
 }
@@ -105,15 +127,25 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Sample Size Box (`stsz`).
+    ///
+    /// This is the owned variant of [`StszBoxView`] that stores sample sizes
+    /// in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved (should be 0).
+    /// - `sample_size`: Default size if uniform, 0 for variable sizes.
+    /// - `entries`: Individual sample sizes (when `sample_size` is 0).
     #[derive(Debug, Clone)]
     pub struct StszBox {
-        /// The version of the box (0).
+        /// Box version (should be 0).
         pub version: u8,
-        /// The flags of the box.
+        /// Reserved flags (should be 0).
         pub flags: StszFlags,
-        /// The sample size if all samples have the same size, or 0.
+        /// Default sample size if all samples are equal, 0 for variable.
         pub sample_size: u32,
-        /// The sizes of the samples.
+        /// Individual sample sizes (empty when sample_size is non-zero).
         pub entries: Vec<StszEntry>,
     }
 

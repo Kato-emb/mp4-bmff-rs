@@ -1,7 +1,54 @@
+//! ISO-639-2/T language code type.
+//!
+//! BMFF uses ISO-639-2/T three-letter language codes to identify the
+//! language of media tracks. These codes are stored in a packed 16-bit
+//! format using 5 bits per character.
+//!
+//! # Packed Format
+//!
+//! Each character is encoded as its ASCII value minus 0x60 (so 'a' = 1),
+//! packed into a 16-bit value:
+//!
+//! ```text
+//! Bit:  15 14 13 12 11 | 10  9  8  7  6 |  5  4  3  2  1  0
+//!       [ pad (1 bit) ] [ char 1 (5b)  ] [ char 2 (5b)   ] [ char 3 (5b)   ]
+//! ```
+//!
+//! # Common Codes
+//!
+//! - `und`: Undetermined
+//! - `eng`: English
+//! - `jpn`: Japanese
+//! - `fra`/`fre`: French
+//! - `deu`/`ger`: German
+
 use core::fmt;
 use core::slice;
 
-/// An ISO-639-2/T language code represented as 3 ASCII bytes.
+/// ISO-639-2/T language code (3 lowercase ASCII letters).
+///
+/// Represents a language using the ISO-639-2/T standard three-letter codes.
+/// The code is stored as 3 ASCII bytes internally but can be converted to/from
+/// the packed 16-bit format used in BMFF media headers.
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::types::LanguageCode;
+///
+/// // Create from bytes
+/// let english = LanguageCode::new(*b"eng");
+/// assert_eq!(english.as_str(), Some("eng"));
+///
+/// // Use the undetermined constant
+/// let unknown = LanguageCode::UNDETERMINED;
+/// assert_eq!(unknown.as_str(), Some("und"));
+///
+/// // Convert to/from packed format
+/// let packed = english.to_packed();
+/// let decoded = LanguageCode::from_packed(packed).unwrap();
+/// assert_eq!(decoded, english);
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LanguageCode(pub(crate) [u8; 3]);
 

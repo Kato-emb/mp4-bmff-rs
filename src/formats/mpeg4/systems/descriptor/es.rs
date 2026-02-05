@@ -1,3 +1,9 @@
+//! Elementary Stream Descriptor (ES_Descriptor) structures.
+//!
+//! This module provides types for the Elementary Stream Descriptor,
+//! the top-level descriptor in an `esds` box that identifies an
+//! elementary stream and its configuration.
+
 use crate::error::*;
 
 use crate::cursor::ReadCursor;
@@ -8,26 +14,40 @@ use super::iter::DescriptorIter;
 
 use super::DecoderConfigDescriptorView;
 
-/// A reference to an Elementary Stream Descriptor (ES_Descriptor).
+/// Zero-copy view of an Elementary Stream Descriptor.
+///
+/// The ES_Descriptor is the primary descriptor in an `esds` box, containing
+/// stream identification and linking to decoder configuration. It can
+/// optionally reference other streams for dependencies or synchronization.
+///
+/// # Structure (ISO/IEC 14496-1)
+///
+/// - `es_id`: Unique identifier for this elementary stream
+/// - `stream_dependence_flag`: Whether this stream depends on another
+/// - `url_flag`: Whether a URL is provided
+/// - `ocr_stream_flag`: Whether OCR (clock reference) stream is specified
+/// - `stream_priority`: Priority for resource allocation (0-31)
+/// - Optional: `depends_on_es_id`, `url_string`, `ocr_es_id`
+/// - Child descriptors: DecoderConfigDescriptor, SLConfigDescriptor
 #[derive(Debug)]
 pub struct EsDescriptorView<'a> {
-    /// Elementary Stream ID
+    /// Unique identifier for this elementary stream.
     pub es_id: u16,
-    /// Flags
+    /// Whether this stream depends on another stream.
     pub stream_dependence_flag: bool,
-    /// URL Flag
+    /// Whether a URL is provided for remote stream access.
     pub url_flag: bool,
-    /// OCR Stream Flag
+    /// Whether an OCR (Object Clock Reference) stream is specified.
     pub ocr_stream_flag: bool,
-    /// Stream Priority
+    /// Stream priority for resource allocation (0-31, higher = more important).
     pub stream_priority: u8,
-    /// Optional fields
+    /// ES ID of the stream this depends on (if `stream_dependence_flag` is set).
     pub depends_on_es_id: Option<u16>,
-    /// URL String
+    /// URL for remote stream access (if `url_flag` is set).
     pub url_string: Option<&'a str>,
-    /// Optional OCR ES ID
+    /// ES ID of the OCR stream (if `ocr_stream_flag` is set).
     pub ocr_es_id: Option<u16>,
-    /// Descriptors
+    /// Raw bytes containing child descriptors.
     descs: &'a [u8],
 }
 
@@ -131,30 +151,46 @@ mod owned {
     use crate::formats::mpeg4::systems::descriptor::SizeOfInstance;
     use crate::formats::mpeg4::systems::descriptor::dec::DecoderConfigDescriptor;
 
-    /// An owned Elementary Stream Descriptor (ES_Descriptor).
+    /// Owned Elementary Stream Descriptor with heap-allocated data.
+    ///
+    /// This is the owned version of [`EsDescriptorView`], suitable for
+    /// modification and storage independent of the source buffer.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use mp4_bmff::formats::mpeg4::systems::descriptor::EsDescriptor;
+    ///
+    /// // Parse ES_Descriptor from the instance data of a RawDescriptor
+    /// // (In practice, this comes from an esds box)
+    /// # let es_instance_data: &[u8] = &[];
+    /// let es_descr = EsDescriptor::parse(es_instance_data).unwrap();
+    /// println!("ES ID: {}", es_descr.es_id);
+    /// println!("Codec: {:?}", es_descr.dec_config_descr.object_type_indication);
+    /// ```
     #[derive(Debug, Clone)]
     pub struct EsDescriptor {
-        /// Elementary Stream ID
+        /// Unique identifier for this elementary stream.
         pub es_id: u16,
-        /// Flags
+        /// Whether this stream depends on another stream.
         pub stream_dependence_flag: bool,
-        /// URL Flag
+        /// Whether a URL is provided for remote stream access.
         pub url_flag: bool,
-        /// OCR Stream Flag
+        /// Whether an OCR (Object Clock Reference) stream is specified.
         pub ocr_stream_flag: bool,
-        /// Stream Priority
+        /// Stream priority for resource allocation (0-31).
         pub stream_priority: u8,
-        /// Optional fields
+        /// ES ID of the stream this depends on.
         pub depends_on_es_id: Option<u16>,
-        /// URL String
+        /// URL for remote stream access.
         pub url_string: Option<String>,
-        /// Optional OCR ES ID
+        /// ES ID of the OCR stream.
         pub ocr_es_id: Option<u16>,
-        /// Decoder Config Descriptor
+        /// Decoder configuration descriptor.
         pub dec_config_descr: DecoderConfigDescriptor,
-        /// SL Config Descriptor
+        /// Sync Layer configuration descriptor.
         pub sl_config_descr: RawDescriptorOwned,
-        /// Descriptors
+        /// Additional extension descriptors.
         pub descriptors: Vec<RawDescriptorOwned>,
     }
 

@@ -1,3 +1,5 @@
+//! Raw descriptor type for MPEG-4 Systems descriptors.
+
 use crate::error::*;
 
 use super::size::SizeOfInstance;
@@ -6,21 +8,45 @@ use super::tag::Tag;
 #[cfg(feature = "alloc")]
 use crate::lib::Vec;
 
-/// Raw Descriptor View
+/// Generic MPEG-4 Systems descriptor with tag, size, and instance data.
+///
+/// This type represents a descriptor in its raw form, without interpreting
+/// the instance data according to the descriptor type. It can be used to
+/// iterate over descriptors or to handle unknown descriptor types.
+///
+/// # Type Parameter
+///
+/// - `T`: The storage type for instance data (e.g., `&[u8]` or `Vec<u8>`)
+///
+/// # Structure
+///
+/// ```text
+/// +------+------------------+------------------+
+/// | Tag  | SizeOfInstance   | Instance Data    |
+/// | 1B   | 1-4B (variable)  | N bytes          |
+/// +------+------------------+------------------+
+/// ```
 #[derive(Debug)]
 pub struct RawDescriptor<T> {
-    /// Descriptor Tag
+    /// Descriptor tag identifying the type.
     tag: Tag,
-    /// Size of the descriptor instance
+    /// Variable-length encoded size of the instance data.
     size_of_instance: SizeOfInstance,
-    /// Descriptor instance bytes
+    /// Descriptor-specific payload data.
     instance: T,
 }
 
-/// A reference to a RawDescriptor's contents.
+/// Zero-copy reference to a descriptor's contents.
+///
+/// This type alias provides efficient access to descriptor data without
+/// copying, suitable for parsing and inspection.
 pub type RawDescriptorRef<'a> = RawDescriptor<&'a [u8]>;
 
-/// An owned RawDescriptor with a `Vec<u8>` instance.
+/// Owned descriptor with heap-allocated instance data.
+///
+/// This type alias is available with the `alloc` feature and allows
+/// descriptors to be stored and manipulated independently of the
+/// source buffer.
 #[cfg(feature = "alloc")]
 pub type RawDescriptorOwned = RawDescriptor<Vec<u8>>;
 

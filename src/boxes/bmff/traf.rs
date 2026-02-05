@@ -1,3 +1,12 @@
+//! Track Fragment Box (`traf`) implementation.
+//!
+//! The Track Fragment Box contains all metadata for a single track within
+//! a movie fragment. It describes the samples for one track that are stored
+//! in the associated `mdat` box.
+//!
+//! This box resides within the Movie Fragment Box (`moof`) and there may be
+//! one `traf` box per track that has data in this fragment.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -9,6 +18,17 @@ use super::TfhdBox;
 use super::TrunBoxView;
 
 /// A reference to a Track Fragment Box (`traf`).
+///
+/// Contains metadata for samples of one track in a movie fragment.
+///
+/// # Structure
+///
+/// Required child boxes:
+/// - `tfhd`: Track Fragment Header Box - track identification and defaults.
+///
+/// Optional child boxes:
+/// - `tfdt`: Track Fragment Decode Time Box - base decode time.
+/// - `trun`: Track Run Box - sample-level details (zero or more).
 #[derive(Debug)]
 pub struct TrafBoxView<'a> {
     content: &'a [u8],
@@ -89,13 +109,22 @@ mod owned {
     use crate::boxes::bmff::TrunBox;
 
     /// An owned Track Fragment Box (`traf`).
+    ///
+    /// This is the owned variant of [`TrafBoxView`] that stores child boxes
+    /// in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `tfhd`: Track Fragment Header with track ID and sample defaults.
+    /// - `tfdt`: Optional base decode time for this fragment.
+    /// - `truns`: Track Run boxes with per-sample information.
     #[derive(Debug, Clone)]
     pub struct TrafBox {
-        /// The Track Fragment Header Box (`tfhd`).
+        /// Track Fragment Header Box (`tfhd`) - track ID and defaults.
         pub tfhd: TfhdBox,
-        /// The Track Fragment Decode Time Box (`tfdt`), if present.
+        /// Track Fragment Decode Time Box (`tfdt`), if present.
         pub tfdt: Option<TfdtBox>,
-        /// The Track Fragment Run Boxes (`trun`).
+        /// Track Fragment Run Boxes (`trun`) - per-sample data.
         pub truns: Vec<TrunBox>,
     }
 

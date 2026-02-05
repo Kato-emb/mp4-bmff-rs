@@ -1,7 +1,27 @@
-//! ISOBMFF box header structures.
+//! BMFF box header structures.
 //!
-//! Includes definitions and implementations for box size and type,
-//! as well as the box header itself.
+//! This module provides types for working with box headers as defined in
+//! ISO/IEC 14496-12. Every BMFF box begins with a header containing:
+//!
+//! - **Size field** (4 bytes): Total box size, or markers for extended/EOF.
+//! - **Type field** (4 bytes): FourCC identifying the box type.
+//! - **Extended size** (8 bytes, optional): 64-bit size for large boxes.
+//! - **User type** (16 bytes, optional): UUID for custom box types.
+//!
+//! # Types
+//!
+//! - [`BoxHeader`]: Complete header with size and type information.
+//! - [`BoxSize`]: Type-safe representation of box sizes.
+//! - [`BoxType`]: Type-safe representation of box types (FourCC or UUID).
+//! - [`UserType`]: Alias for UUID used in extended box types.
+//!
+//! # Size Encoding
+//!
+//! | Size Field | Meaning |
+//! |------------|---------|
+//! | 0 | Box extends to end of file |
+//! | 1 | 64-bit size follows in extended size field |
+//! | 8+ | Actual box size (minimum valid size) |
 
 use core::fmt;
 
@@ -22,7 +42,22 @@ use crate::error::*;
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
-/// Represents the header of a BMFF box, including its size and type.
+/// Represents the header of a BMFF box.
+///
+/// The header contains the box's size and type, and handles both compact
+/// (32-bit) and extended (64-bit) size encodings, as well as standard
+/// FourCC and UUID-based box types.
+///
+/// # Structure
+///
+/// - `size`: Box size (compact, extended, or to-end-of-file).
+/// - `type_`: Box type (FourCC or UUID).
+///
+/// # Header Sizes
+///
+/// - **Base header**: 8 bytes (4-byte size + 4-byte type).
+/// - **Extended size**: +8 bytes when size > u32::MAX.
+/// - **UUID type**: +16 bytes when type is "uuid".
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BoxHeader {
     size: BoxSize,

@@ -1,3 +1,10 @@
+//! Composition Time to Sample Box (`ctts`) implementation.
+//!
+//! The Composition Time to Sample Box provides the offset between decoding
+//! time and composition (presentation) time. This is required when the
+//! presentation order differs from the decoding order, which is common
+//! in codecs with B-frames (bidirectional prediction).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -9,10 +16,15 @@ use crate::cursor::ReadCursor;
 
 define_box_flags!(
     /// Flags for the Composition Time to Sample Box (`ctts`).
+    ///
+    /// Reserved (should be 0).
     CttsFlags {}
 );
 
 /// An entry in the Composition Time to Sample Box (`ctts`).
+///
+/// Each entry describes a run of consecutive samples with the same composition
+/// time offset. The composition time is calculated as: decode_time + offset.
 #[derive(Debug, Clone, Copy)]
 pub struct CttsEntry {
     /// The number of consecutive samples with the same offset.
@@ -45,13 +57,23 @@ impl FixedSizeEntry for CttsEntry {
 }
 
 /// A reference to a Composition Time to Sample Box (`ctts`).
+///
+/// This box is optional and only present when composition times differ from
+/// decoding times (e.g., in video with B-frames).
+///
+/// # Structure
+///
+/// - `version`: 0 for unsigned offsets, 1 for signed (supports negative offsets).
+/// - `flags`: Reserved (should be 0).
+/// - `entry_count`: Number of entries.
+/// - `entries`: Array of (sample_count, sample_offset) pairs.
 #[derive(Debug)]
 pub struct CttsBoxView<'a> {
-    /// The version of the box (0 or 1).
+    /// Box version (0 = unsigned offsets, 1 = signed offsets).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: CttsFlags,
-    /// The number of entries in the box.
+    /// Number of entries in the table.
     pub entry_count: u32,
     entries: &'a [u8],
 }
@@ -115,13 +137,22 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Composition Time to Sample Box (`ctts`).
+    ///
+    /// This is the owned variant of [`CttsBoxView`] that stores entries
+    /// in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: 0 for unsigned offsets, 1 for signed offsets.
+    /// - `flags`: Reserved (should be 0).
+    /// - `entries`: Run-length encoded composition time offsets.
     #[derive(Debug, Clone)]
     pub struct CttsBox {
-        /// The version of the box.
+        /// Box version (0 = unsigned, 1 = signed offsets).
         pub version: u8,
-        /// The flags of the box.
+        /// Reserved flags (should be 0).
         pub flags: CttsFlags,
-        /// The entries in the box.
+        /// Entries mapping sample counts to their composition time offsets.
         pub entries: Vec<CttsEntry>,
     }
 

@@ -1,6 +1,21 @@
-//! This module defines the `BoxSize` type, which represents the size of a BMFF box,
-//! including support for 32-bit sizes, 64-bit extended sizes, and sizes that extend
-//! to the end of the file.
+//! BMFF box size representation.
+//!
+//! This module defines the [`BoxSize`] type, which represents the size of a
+//! BMFF box. It supports three encoding variants:
+//!
+//! - **Compact** (32-bit): Standard size field for boxes up to ~4GB.
+//! - **Extended** (64-bit): Large size field for boxes > 4GB.
+//! - **To-End**: Special marker indicating the box extends to EOF.
+//!
+//! # Size Field Encoding
+//!
+//! | Value | Meaning |
+//! |-------|---------|
+//! | 0 | Box extends to end of file |
+//! | 1 | 64-bit size in extended field |
+//! | 8+ | Actual 32-bit box size |
+//!
+//! Values 2-7 are invalid (box must be at least 8 bytes for header).
 
 use core::fmt;
 
@@ -8,18 +23,30 @@ use core::fmt;
 /// Private to enforce validation through constructors.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum BoxSizeInner {
-    /// 32-bit compact size (8 <= size <= u32::MAX, size != 1)
+    /// 32-bit compact size (8 <= size <= u32::MAX, size != 1).
     Compact(u32),
-    /// 64-bit extended size (size >= 16)
+    /// 64-bit extended size (size >= 16).
     Extended(u64),
-    /// Box extends to end of file (size field = 0)
+    /// Box extends to end of file (size field = 0).
     ToEnd,
 }
 
-/// Type-safe representation of BMFF `boxsize` values.
+/// Type-safe representation of BMFF box size values.
 ///
 /// This type preserves the original encoding format (compact vs extended)
-/// to ensure accurate round-trip serialization.
+/// to ensure accurate round-trip serialization. Two `BoxSize` values with
+/// the same numeric size but different encodings are considered unequal.
+///
+/// # Variants
+///
+/// - **Compact**: 32-bit size stored directly in the size field.
+/// - **Extended**: 64-bit size stored in an additional largesize field.
+/// - **ToEnd**: Box extends to end of file (size field = 0).
+///
+/// # Minimum Sizes
+///
+/// - Compact boxes: minimum 8 bytes (4-byte size + 4-byte type).
+/// - Extended boxes: minimum 16 bytes (includes 8-byte largesize field).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BoxSize(BoxSizeInner);
 

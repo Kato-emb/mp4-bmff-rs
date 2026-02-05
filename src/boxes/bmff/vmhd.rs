@@ -1,3 +1,9 @@
+//! Video Media Header Box (`vmhd`) implementation.
+//!
+//! The Video Media Header Box contains general presentation information
+//! independent of the video's coding. It is used for video tracks to
+//! specify compositing options like graphics mode and color.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -9,10 +15,22 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for the Video Media Header Box (`vmhd`).
+    ///
+    /// The default value is 1 for QuickTime compatibility.
     VmhdFlags {}
 );
 
 /// Video Media Header Box (`vmhd`).
+///
+/// Contains information about video presentation such as compositing mode
+/// and background color. Present in video tracks within the Media Information Box.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Should be 1 for QuickTime compatibility.
+/// - `graphics_mode`: Compositing mode for video (0 = copy).
+/// - `opcolor`: RGB color values used with certain graphics modes.
 #[derive(Debug, Clone, Copy)]
 pub struct VmhdBox {
     /// Box version.

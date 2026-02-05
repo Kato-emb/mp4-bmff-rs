@@ -1,10 +1,35 @@
+//! Track Group Box (`trgr`) implementation.
+//!
+//! The Track Group Box enables grouping of tracks that share a common
+//! characteristic. Tracks with the same track group ID for a given track
+//! group type belong to the same group. This is useful for indicating
+//! tracks that are alternatives to each other or have some other logical
+//! relationship.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
 use crate::iter::BoxIter;
 
-/// A reference to a Track Group Type Box (`trgr`).
+/// A Track Group Type Box entry.
+///
+/// Contains a track group ID that, when combined with the track group type
+/// (the FourCC of the containing box), identifies which group this track
+/// belongs to.
+///
+/// # Common Track Group Types
+///
+/// - `msrc`: Multi-source presentation group. Tracks with the same ID
+///   originated from the same source.
+/// - `cstg`: CMAF switching track group. Tracks with the same ID can be
+///   switched between during adaptive streaming.
+/// - `alte`: Alternate group. Tracks with the same ID are alternatives
+///   (e.g., different bitrates or languages).
+///
+/// # Structure
+///
+/// - `track_group_id`: 32-bit identifier for the group within this type.
 #[derive(Debug, Clone, Copy)]
 pub struct TrgrTypeBox {
     /// The track group ID.
@@ -12,6 +37,16 @@ pub struct TrgrTypeBox {
 }
 
 /// A reference to a Track Group Box (`trgr`).
+///
+/// The Track Group Box is a container for track group type boxes. Each child
+/// box indicates that this track belongs to a particular group identified by
+/// the combination of the child box's type (FourCC) and the track group ID
+/// in its payload.
+///
+/// # Structure
+///
+/// Contains zero or more track group type boxes, each defining membership
+/// in a specific track group.
 #[derive(Debug)]
 pub struct TrgrBoxView<'a> {
     content: &'a [u8],
@@ -76,10 +111,37 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    /// An owned Track Group Type Box.
+    /// An owned Track Group Box (`trgr`).
+    ///
+    /// This is the owned variant of [`TrgrBoxView`] that stores track group
+    /// memberships in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `track_groups`: List of track group memberships, each containing
+    ///   the group type (BoxType/FourCC) and the track group ID.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::BoxDecode;
+    /// use mp4_bmff::boxes::bmff::TrgrBox;
+    ///
+    /// // A trgr box with an "msrc" group membership
+    /// let data: [u8; 12] = [
+    ///     0x00, 0x00, 0x00, 0x0C, // size = 12
+    ///     b'm', b's', b'r', b'c', // type = "msrc"
+    ///     0x00, 0x00, 0x00, 0x01, // track_group_id = 1
+    /// ];
+    ///
+    /// let trgr = TrgrBox::decode(&data).unwrap();
+    /// assert_eq!(trgr.track_groups.len(), 1);
+    /// assert_eq!(trgr.track_groups[0].1.track_group_id, 1);
+    /// ```
     #[derive(Debug, Clone)]
     pub struct TrgrBox {
-        /// The track groups contained in this box.
+        /// Track group memberships organized by group type.
+        /// Each tuple contains (group_type, track_group_id).
         pub track_groups: Vec<(BoxType, TrgrTypeBox)>,
     }
 

@@ -1,11 +1,69 @@
 //! Iterators for BMFF structures.
+//!
+//! This module provides iterators for traversing BMFF data structures
+//! in a memory-efficient, zero-copy manner.
+//!
+//! # Box Iteration
+//!
+//! The primary iterator is [`BoxIter`], which parses consecutive boxes
+//! from a byte slice. Use [`iter_boxes`] for convenient access:
+//!
+//! ```
+//! use mp4_bmff::iter_boxes;
+//!
+//! let data = [
+//!     0x00, 0x00, 0x00, 0x08, b'f', b'r', b'e', b'e', // free box (8 bytes)
+//!     0x00, 0x00, 0x00, 0x08, b's', b'k', b'i', b'p', // skip box (8 bytes)
+//! ];
+//!
+//! let boxes: Vec<_> = iter_boxes(&data)
+//!     .filter_map(|r| r.ok())
+//!     .collect();
+//!
+//! assert_eq!(boxes.len(), 2);
+//! ```
+//!
+//! # Fixed-Size Entry Iteration
+//!
+//! For boxes containing arrays of fixed-size entries (like sample tables),
+//! [`FixedSizeEntryIter`] provides efficient iteration over entries
+//! without individual allocations.
 
 use crate::base::rawbox::RawBoxRef;
 use crate::cursor::ReadCursor;
 
 use crate::error::*;
 
-/// An iterator over BMFF boxes in a byte slice.
+/// Zero-copy iterator over consecutive BMFF boxes in a byte slice.
+///
+/// This iterator parses boxes one at a time from the underlying byte slice,
+/// returning each as a [`RawBoxRef`]. It handles all box size formats:
+/// - Compact size (32-bit)
+/// - Extended size (64-bit, when size field = 1)
+/// - EOF marker (size = 0, consumes remaining data)
+///
+/// # Error Handling
+///
+/// Parsing errors are returned as `Err` items rather than panicking.
+/// After an error, subsequent calls to `next()` may return more errors
+/// or `None` depending on the remaining data.
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::iter_boxes;
+///
+/// let data = [
+///     0x00, 0x00, 0x00, 0x0C, // size = 12
+///     b'f', b't', b'y', b'p', // type = "ftyp"
+///     b'i', b's', b'o', b'm', // payload
+/// ];
+///
+/// for result in iter_boxes(&data) {
+///     let raw_box = result.unwrap();
+///     println!("Box: {} ({} bytes)", raw_box.boxtype(), raw_box.len());
+/// }
+/// ```
 pub struct BoxIter<'a> {
     cur: ReadCursor<'a>,
 }
@@ -42,22 +100,171 @@ impl<'a> Iterator for BoxIter<'a> {
 }
 
 /// Creates an iterator over BMFF boxes in the given byte slice.
+///
+/// This is a convenience function that creates a [`BoxIter`] for parsing
+/// consecutive boxes from raw bytes. It's commonly used to iterate over
+/// top-level boxes in a file or child boxes within a container box.
+///
+/// # Arguments
+///
+/// * `data` - Byte slice containing one or more consecutive BMFF boxes
+///
+/// # Returns
+///
+/// An iterator yielding `Result<RawBoxRef>` for each box.
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::iter_boxes;
+/// use mp4_bmff::BoxType;
+///
+/// // Two consecutive boxes
+/// let data = [
+///     // ftyp box (8 bytes, header only)
+///     0x00, 0x00, 0x00, 0x08, b'f', b't', b'y', b'p',
+///     // free box (8 bytes, header only)
+///     0x00, 0x00, 0x00, 0x08, b'f', b'r', b'e', b'e',
+/// ];
+///
+/// let types: Vec<_> = iter_boxes(&data)
+///     .filter_map(|r| r.ok())
+///     .map(|b| b.boxtype())
+///     .collect();
+///
+/// assert_eq!(types, vec![BoxType::FTYP, BoxType::FREE]);
+/// ```
 pub fn iter_boxes(data: &[u8]) -> BoxIter<'_> {
     BoxIter::new(data)
 }
 
 /// A trait for entries with fixed size that can be converted to and from bytes.
+///
+/// This trait enables zero-copy iteration over arrays of fixed-size entries
+/// commonly found in BMFF sample tables (stts, stss, stsc, etc.). Types
+/// implementing this trait can be efficiently parsed from and written to
+/// byte slices without intermediate allocations.
+///
+/// # Requirements
+///
+/// Implementors must:
+/// - Be `Sized` and `Copy` (typically small structs)
+/// - Define a constant `ENTRY_SIZE` for the byte representation
+/// - Implement bidirectional conversion between bytes and the type
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::iter::FixedSizeEntry;
+///
+/// #[derive(Debug, Clone, Copy, PartialEq)]
+/// struct TimeEntry {
+///     sample_count: u32,
+///     sample_delta: u32,
+/// }
+///
+/// impl FixedSizeEntry for TimeEntry {
+///     const ENTRY_SIZE: usize = 8;
+///
+///     fn from_bytes(bytes: &[u8]) -> Self {
+///         Self {
+///             sample_count: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+///             sample_delta: u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
+///         }
+///     }
+///
+///     fn to_bytes(&self, bytes: &mut [u8]) {
+///         bytes[0..4].copy_from_slice(&self.sample_count.to_be_bytes());
+///         bytes[4..8].copy_from_slice(&self.sample_delta.to_be_bytes());
+///     }
+/// }
+///
+/// let data = [0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x10, 0x00];
+/// let entry = TimeEntry::from_bytes(&data);
+/// assert_eq!(entry.sample_count, 10);
+/// assert_eq!(entry.sample_delta, 4096);
+/// ```
 pub trait FixedSizeEntry: Sized + Copy {
     /// The size of the entry in bytes.
+    ///
+    /// This constant defines how many bytes each entry occupies in the
+    /// serialized form. The iterator uses this to split the byte slice
+    /// into individual entries.
     const ENTRY_SIZE: usize;
 
     /// Creates an entry from the given byte slice.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - A byte slice with at least `ENTRY_SIZE` bytes
+    ///
+    /// # Panics
+    ///
+    /// May panic if `bytes.len() < ENTRY_SIZE`.
     fn from_bytes(bytes: &[u8]) -> Self;
+
     /// Writes the entry into the given byte slice.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - A mutable byte slice with at least `ENTRY_SIZE` bytes
+    ///
+    /// # Panics
+    ///
+    /// May panic if `bytes.len() < ENTRY_SIZE`.
     fn to_bytes(&self, bytes: &mut [u8]);
 }
 
-/// An iterator over fixed-size entries in a byte slice.
+/// Zero-copy iterator over fixed-size entries in a byte slice.
+///
+/// This iterator efficiently parses arrays of fixed-size entries without
+/// allocating memory for each entry. It's designed for BMFF sample table
+/// boxes that contain arrays of uniform entries.
+///
+/// # How It Works
+///
+/// The iterator divides the input byte slice into chunks of `E::ENTRY_SIZE`
+/// bytes and converts each chunk to type `E` on demand. Any trailing bytes
+/// that don't form a complete entry are ignored.
+///
+/// # Type Parameters
+///
+/// * `'a` - Lifetime of the underlying byte slice
+/// * `E` - Entry type implementing [`FixedSizeEntry`]
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::iter::{FixedSizeEntry, FixedSizeEntryIter};
+///
+/// #[derive(Debug, Clone, Copy, PartialEq)]
+/// struct SyncSample(u32);
+///
+/// impl FixedSizeEntry for SyncSample {
+///     const ENTRY_SIZE: usize = 4;
+///
+///     fn from_bytes(bytes: &[u8]) -> Self {
+///         Self(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+///     }
+///
+///     fn to_bytes(&self, bytes: &mut [u8]) {
+///         bytes[0..4].copy_from_slice(&self.0.to_be_bytes());
+///     }
+/// }
+///
+/// // Data containing 3 sync sample entries
+/// let data = [
+///     0x00, 0x00, 0x00, 0x01, // sample 1
+///     0x00, 0x00, 0x00, 0x0A, // sample 10
+///     0x00, 0x00, 0x00, 0x14, // sample 20
+/// ];
+///
+/// let samples: Vec<_> = FixedSizeEntryIter::<SyncSample>::new(&data).collect();
+/// assert_eq!(samples.len(), 3);
+/// assert_eq!(samples[0].0, 1);
+/// assert_eq!(samples[1].0, 10);
+/// assert_eq!(samples[2].0, 20);
+/// ```
 pub struct FixedSizeEntryIter<'a, E: FixedSizeEntry> {
     bytes: &'a [u8],
     remaining: usize,
@@ -66,7 +273,14 @@ pub struct FixedSizeEntryIter<'a, E: FixedSizeEntry> {
 
 impl<'a, E: FixedSizeEntry> FixedSizeEntryIter<'a, E> {
     /// Creates a new `FixedSizeEntryIter` from the given byte slice.
-    pub(crate) fn new(data: &'a [u8]) -> Self {
+    ///
+    /// The iterator will yield `data.len() / E::ENTRY_SIZE` entries.
+    /// Any trailing bytes that don't form a complete entry are ignored.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Byte slice containing zero or more serialized entries
+    pub fn new(data: &'a [u8]) -> Self {
         Self {
             bytes: data,
             remaining: data.len() / E::ENTRY_SIZE,

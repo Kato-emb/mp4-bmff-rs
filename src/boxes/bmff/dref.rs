@@ -1,3 +1,12 @@
+//! Data Reference Box (`dref`) and Data Entry Box implementations.
+//!
+//! The Data Reference Box declares the location(s) of the media data used
+//! within the presentation. Each data entry (URL or URN box) describes a
+//! data source. Most commonly, media data is contained in the same file,
+//! indicated by the `SELF_CONTAINED` flag in a URL box with no location string.
+//!
+//! This box resides within the Data Information Box (`dinf`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -10,18 +19,29 @@ define_box_flags!(
     /// Flags for the Data Entry URL Box (`url `).
     UrlFlags {
         /// Indicates that the data is in the same file as the containing box.
+        /// When set, no location string is present.
         SELF_CONTAINED = 0x000001,
     }
 );
 
 /// A reference to a Data Entry URL Box (`url `).
+///
+/// Specifies a URL location where the media data can be found.
+/// If `SELF_CONTAINED` flag is set, the data is in the same file
+/// and no location string is present.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Contains `SELF_CONTAINED` flag if data is local.
+/// - `location`: URL string (only when not self-contained).
 #[derive(Debug)]
 pub struct UrlBoxView<'a> {
-    /// The version of the box.
+    /// Box version (should be 0).
     pub version: u8,
-    /// The flags of the box.
+    /// Flags indicating data location (SELF_CONTAINED if in same file).
     pub flags: UrlFlags,
-    /// The location string, if present.
+    /// URL location string (None when SELF_CONTAINED flag is set).
     pub location: Option<&'a str>,
 }
 
@@ -75,21 +95,33 @@ impl<'de> BoxDecode<'de> for UrlBoxView<'de> {
 
 define_box_flags!(
     /// Flags for the Data Entry URN Box (`urn `).
+    ///
+    /// Reserved (no flags currently defined).
     UrnFlags {
-        // Currently, no specific flags are defined for the URN box.
     }
 );
 
 /// A reference to a Data Entry URN Box (`urn `).
+///
+/// Specifies a URN (Uniform Resource Name) identifying the data source.
+/// Unlike URL, URN provides a persistent identifier that may require
+/// resolution to obtain the actual location.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `name`: URN string identifying the resource.
+/// - `location`: Optional URL string for resolving the URN.
 #[derive(Debug)]
 pub struct UrnBoxView<'a> {
-    /// The version of the box.
+    /// Box version (should be 0).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: UrnFlags,
-    /// The name string.
+    /// URN string identifying the data resource.
     pub name: &'a str,
-    /// The location string, if present.
+    /// Optional URL location for resolving the URN.
     pub location: Option<&'a str>,
 }
 
@@ -144,11 +176,14 @@ impl<'de> BoxDecode<'de> for UrnBoxView<'de> {
 }
 
 /// A reference to a Data Entry Box, which can be either a URL or URN box.
+///
+/// Represents one entry in the Data Reference Box, specifying where
+/// media data can be found.
 #[derive(Debug)]
 pub enum DataEntryBoxView<'a> {
-    /// A Data Entry URL Box.
+    /// A Data Entry URL Box - references data by URL.
     Url(UrlBoxView<'a>),
-    /// A Data Entry URN Box.
+    /// A Data Entry URN Box - references data by URN.
     Urn(UrnBoxView<'a>),
 }
 
@@ -212,17 +247,30 @@ impl ExactSizeIterator for DataEntryBoxIter<'_> {}
 
 define_box_flags!(
     /// Flags for the Data Reference Box (`dref`).
+    ///
+    /// Reserved (should be 0).
     DrefFlags {}
 );
 
 /// A reference to a Data Reference Box (`dref`).
+///
+/// Contains a list of data entry boxes (URL or URN) that describe where
+/// the media data is located. Sample descriptions reference these entries
+/// by 1-based index.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `entry_count`: Number of data entry boxes.
+/// - `data_entries`: URL and/or URN boxes describing data locations.
 #[derive(Debug)]
 pub struct DrefBoxView<'a> {
-    /// The version of the box.
+    /// Box version (should be 0).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: DrefFlags,
-    /// The number of entries in the box.
+    /// Number of data entry boxes contained.
     pub entry_count: u32,
     data_entries: &'a [u8],
 }
@@ -275,13 +323,22 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Data Entry URL Box (`url `).
+    ///
+    /// This is the owned variant of [`UrlBoxView`] that stores the
+    /// location string in a heap-allocated String.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Contains `SELF_CONTAINED` if data is in same file.
+    /// - `location`: URL string (None when self-contained).
     #[derive(Debug, Clone)]
     pub struct UrlBox {
-        /// The version of the box.
+        /// Box version (should be 0).
         pub version: u8,
-        /// The flags of the box.
+        /// Flags indicating data location.
         pub flags: UrlFlags,
-        /// The location string, if present.
+        /// URL location string (None when SELF_CONTAINED).
         pub location: Option<String>,
     }
 
@@ -334,15 +391,25 @@ mod owned {
     }
 
     /// An owned Data Entry URN Box (`urn `).
+    ///
+    /// This is the owned variant of [`UrnBoxView`] that stores strings
+    /// in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved (should be 0).
+    /// - `name`: URN identifying the resource.
+    /// - `location`: Optional URL for resolving the URN.
     #[derive(Debug, Clone)]
     pub struct UrnBox {
-        /// The version of the box.
+        /// Box version (should be 0).
         pub version: u8,
-        /// The flags of the box.
+        /// Reserved flags (should be 0).
         pub flags: UrnFlags,
-        /// The name string.
+        /// URN string identifying the data resource.
         pub name: String,
-        /// The location string, if present.
+        /// Optional URL for resolving the URN.
         pub location: Option<String>,
     }
 
@@ -400,11 +467,13 @@ mod owned {
     }
 
     /// An owned Data Entry Box, which can be either a URL or URN box.
+    ///
+    /// This is the owned variant of [`DataEntryBoxView`].
     #[derive(Debug, Clone)]
     pub enum DataEntryBox {
-        /// A Data Entry URL Box.
+        /// A Data Entry URL Box - references data by URL.
         Url(UrlBox),
-        /// A Data Entry URN Box.
+        /// A Data Entry URN Box - references data by URN.
         Urn(UrnBox),
     }
 
@@ -418,13 +487,22 @@ mod owned {
     }
 
     /// An owned Data Reference Box (`dref`).
+    ///
+    /// This is the owned variant of [`DrefBoxView`] that stores data
+    /// entry boxes in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved (should be 0).
+    /// - `entries`: URL and/or URN boxes describing data locations.
     #[derive(Debug, Clone)]
     pub struct DrefBox {
-        /// The version of the box.
+        /// Box version (should be 0).
         pub version: u8,
-        /// The flags of the box.
+        /// Reserved flags (should be 0).
         pub flags: DrefFlags,
-        /// The entries in the box.
+        /// Data entry boxes (URL or URN) describing media locations.
         pub entries: Vec<DataEntryBox>,
     }
 

@@ -1,3 +1,12 @@
+//! MPEG-4 Systems Sample Entry (`mp4s`) implementation.
+//!
+//! The MPEG-4 Systems Sample Entry describes MPEG-4 systems streams
+//! such as BIFS (Binary Format for Scenes), OD (Object Descriptor),
+//! and other non-audio/video MPEG-4 content.
+//!
+//! This entry appears in the Sample Description Box (`stsd`) for tracks
+//! containing MPEG-4 systems data.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -9,7 +18,16 @@ use crate::cursor::ReadCursor;
 use super::esds::EsdsBoxView;
 use crate::boxes::sample_entry::SampleEntry;
 
-/// A reference to an All other Mpeg stream Sample Entry
+/// A reference to an MPEG-4 Systems Sample Entry (`mp4s`).
+///
+/// Describes MPEG-4 systems streams (scene descriptions, object descriptors,
+/// etc.) by combining the base Sample Entry with an ES Descriptor.
+///
+/// # Structure
+///
+/// - `base`: Base Sample Entry with data reference index.
+/// - Child boxes:
+///   - `esds` (required): Elementary Stream Descriptor with stream config.
 #[derive(Debug)]
 pub struct MpegSampleEntryView<'a> {
     base: SampleEntry,
@@ -17,7 +35,7 @@ pub struct MpegSampleEntryView<'a> {
 }
 
 impl<'a> MpegSampleEntryView<'a> {
-    /// Returns the base Visual Sample Entry.
+    /// Returns the base Sample Entry.
     pub fn base(&self) -> &SampleEntry {
         &self.base
     }
@@ -73,12 +91,20 @@ mod owned {
 
     use crate::boxes::mp4::EsdsBox;
 
-    /// An owned All other Mpeg stream Sample Entry
+    /// An owned MPEG-4 Systems Sample Entry (`mp4s`).
+    ///
+    /// This is the owned variant of [`MpegSampleEntryView`] that stores
+    /// the ES Descriptor in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `base`: Base Sample Entry with data reference index.
+    /// - `esds`: Elementary Stream Descriptor with systems stream configuration.
     #[derive(Debug, Clone)]
     pub struct MpegSampleEntry {
-        /// The base Sample Entry
+        /// Base Sample Entry with data reference.
         pub base: SampleEntry,
-        /// The ESDS box contained in this Mpeg Sample Entry.
+        /// Elementary Stream Descriptor Box with stream configuration.
         pub esds: EsdsBox,
     }
 

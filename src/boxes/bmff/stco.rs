@@ -1,3 +1,9 @@
+//! Chunk Offset Box (`stco`) implementation.
+//!
+//! The Chunk Offset Box provides the file offset of each chunk within the
+//! media data. Combined with the sample-to-chunk mapping, this allows
+//! locating any sample in the file. Use `co64` for files larger than 4GB.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -9,10 +15,14 @@ use crate::cursor::ReadCursor;
 
 define_box_flags!(
     /// Flags for the Chunk Offset Box (`stco`).
+    ///
+    /// Reserved (should be 0).
     StcoFlags {}
 );
 
 /// An entry in the Chunk Offset Box (`stco`).
+///
+/// Contains the 32-bit file offset of a single chunk.
 #[derive(Debug, Clone, Copy)]
 pub struct StcoEntry {
     /// The chunk offset.
@@ -37,13 +47,23 @@ impl FixedSizeEntry for StcoEntry {
 }
 
 /// A reference to a Chunk Offset Box (`stco`).
+///
+/// Provides the file position of each chunk (32-bit offsets). For files
+/// larger than 4GB, use `co64` instead.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `entry_count`: Number of chunks.
+/// - `entries`: Array of 32-bit chunk offsets.
 #[derive(Debug)]
 pub struct StcoBoxView<'a> {
-    /// The version of the box.
+    /// Box version (should be 0).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: StcoFlags,
-    /// The number of entries in the box.
+    /// Number of chunks in the track.
     pub entry_count: u32,
     entries: &'a [u8],
 }
@@ -102,13 +122,22 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Chunk Offset Box (`stco`).
+    ///
+    /// This is the owned variant of [`StcoBoxView`] that stores chunk offsets
+    /// in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved (should be 0).
+    /// - `entries`: File offsets for each chunk.
     #[derive(Debug, Clone)]
     pub struct StcoBox {
-        /// The version of the box.
+        /// Box version (should be 0).
         pub version: u8,
-        /// The flags of the box.
+        /// Reserved flags (should be 0).
         pub flags: StcoFlags,
-        /// The entries in the box.
+        /// File offsets of each chunk (32-bit).
         pub entries: Vec<StcoEntry>,
     }
 

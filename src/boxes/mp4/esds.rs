@@ -1,3 +1,12 @@
+//! Elementary Stream Descriptor Box (`esds`) implementation.
+//!
+//! The Elementary Stream Descriptor Box contains an ES Descriptor as defined
+//! in ISO/IEC 14496-1. This descriptor provides codec configuration and
+//! stream metadata for MPEG-4 audio and video streams.
+//!
+//! This box appears within MPEG-4 sample entries (`mp4a`, `mp4v`, `mp4s`)
+//! in the Sample Description Box (`stsd`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -8,11 +17,23 @@ use crate::cursor::ReadCursor;
 use crate::formats::mpeg4::systems::descriptor::*;
 
 define_box_flags!(
-    /// Flags for the ESDS Box (`esds`).
+    /// Flags for the Elementary Stream Descriptor Box (`esds`).
+    ///
+    /// Reserved (should be 0).
     EsdsFlags {}
 );
 
-/// A reference to an ESD Box (`esds`).
+/// A reference to an Elementary Stream Descriptor Box (`esds`).
+///
+/// Contains an ES Descriptor that provides codec-specific configuration
+/// for MPEG-4 streams including decoder configuration, buffer requirements,
+/// and bitrate information.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved flags (should be 0).
+/// - `esd`: The ES Descriptor containing stream configuration.
 #[derive(Debug)]
 pub struct EsdsBoxView<'a> {
     /// The version of this ESDS box.
@@ -65,14 +86,23 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    /// An owned ESDS box.
+    /// An owned Elementary Stream Descriptor Box (`esds`).
+    ///
+    /// This is the owned variant of [`EsdsBoxView`] that stores the
+    /// ES Descriptor in heap-allocated memory.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved flags (should be 0).
+    /// - `esd`: The ES Descriptor containing stream configuration.
     #[derive(Debug, Clone)]
     pub struct EsdsBox {
-        /// The version of this ESDS box.
+        /// Box version (should be 0).
         pub version: u8,
-        /// The flags of this ESDS box.
+        /// Reserved flags (should be 0).
         pub flags: EsdsFlags,
-        /// The ES Descriptor contained in this ESDS box.
+        /// The ES Descriptor containing codec configuration and stream metadata.
         pub esd: EsDescriptor,
     }
 

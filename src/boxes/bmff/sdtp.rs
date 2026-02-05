@@ -1,3 +1,10 @@
+//! Sample Dependency Type Box (`sdtp`) implementation.
+//!
+//! The Sample Dependency Type Box (also known as Independent and Disposable
+//! Samples Box) provides dependency information for each sample. This enables
+//! efficient seeking and intelligent stream switching by indicating which
+//! samples can be decoded independently or safely discarded.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -8,11 +15,16 @@ use crate::iter::FixedSizeEntryIter;
 use crate::cursor::ReadCursor;
 
 define_box_flags!(
-    /// Flags for the Independent and Disposable Samples Box (`sdtp`).
+    /// Flags for the Sample Dependency Type Box (`sdtp`).
+    ///
+    /// Reserved (should be 0).
     SdtpFlags {}
 );
 
-/// An entry in the Independent and Disposable Samples Box (`sdtp`).
+/// An entry in the Sample Dependency Type Box (`sdtp`).
+///
+/// Each entry is a single byte containing four 2-bit fields describing
+/// the sample's dependency characteristics.
 #[derive(Debug, Clone, Copy)]
 pub struct SdtpEntry {
     /// Whether the sample is leading.
@@ -51,14 +63,24 @@ impl FixedSizeEntry for SdtpEntry {
     }
 }
 
-/// A reference to an Independent and Disposable Samples Box (`sdtp`).
+/// A reference to a Sample Dependency Type Box (`sdtp`).
+///
+/// Provides dependency information for each sample, enabling efficient
+/// random access and stream switching.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `entry_count`: Number of samples.
+/// - `entries`: One byte per sample with dependency flags.
 #[derive(Debug)]
 pub struct SdtpBoxView<'a> {
-    /// Box version (0).
+    /// Box version (should be 0).
     pub version: u8,
-    /// Box flags (should be 0).
+    /// Reserved flags (should be 0).
     pub flags: SdtpFlags,
-    /// Number of entries.
+    /// Number of samples described.
     pub entry_count: u32,
     entries: &'a [u8],
 }
@@ -118,14 +140,23 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    /// An owned Independent and Disposable Samples Box (`sdtp`).
+    /// An owned Sample Dependency Type Box (`sdtp`).
+    ///
+    /// This is the owned variant of [`SdtpBoxView`] that stores dependency
+    /// entries in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved (should be 0).
+    /// - `entries`: Sample dependency information.
     #[derive(Debug, Clone)]
     pub struct SdtpBox {
-        /// Box version (0).
+        /// Box version (should be 0).
         pub version: u8,
-        /// Box flags (should be 0).
+        /// Reserved flags (should be 0).
         pub flags: SdtpFlags,
-        /// Entries.
+        /// Sample dependency type entries.
         pub entries: Vec<SdtpEntry>,
     }
 

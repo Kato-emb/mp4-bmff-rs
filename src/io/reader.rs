@@ -1,4 +1,7 @@
 //! BMFF box reader for stream-based I/O.
+//!
+//! This module provides [`BoxReader`] for reading BMFF boxes from any
+//! type implementing [`std::io::Read`].
 
 use std::error::Error;
 use std::io::Read;
@@ -7,28 +10,65 @@ use crate::BoxHeader;
 use crate::base::rawbox::RawBoxOwned;
 use crate::error::Result;
 
-/// I/O utilities for BMFF parsing and writing.
+/// A reader for BMFF boxes from a stream.
+///
+/// `BoxReader` wraps any [`Read`](std::io::Read) implementor and provides
+/// methods to read boxes sequentially. It handles compact boxes, extended
+/// size boxes, and EOF boxes (size = 0) automatically.
+///
+/// # Iterator Support
+///
+/// `BoxReader` implements [`Iterator`], yielding `Result<RawBoxOwned>` for
+/// each box in the stream. The iterator terminates when EOF is reached.
+///
+/// # Example
+///
+/// ```
+/// use std::io::Cursor;
+/// use mp4_bmff::io::BoxReader;
+///
+/// // Create a minimal BMFF stream with one box
+/// let data = vec![
+///     0x00, 0x00, 0x00, 0x0C, // size = 12
+///     b'f', b't', b'y', b'p', // type = "ftyp"
+///     0x69, 0x73, 0x6F, 0x6D, // payload: "isom"
+/// ];
+///
+/// let mut reader = BoxReader::new(Cursor::new(data));
+/// let raw_box = reader.read_box().unwrap();
+///
+/// assert_eq!(raw_box.payload(), b"isom");
+/// ```
 pub struct BoxReader<R> {
     inner: R,
 }
 
 impl<R> BoxReader<R> {
-    /// Creates a new `BoxReader` from the given reader.
+    /// Creates a new `BoxReader` wrapping the given reader.
+    ///
+    /// # Arguments
+    ///
+    /// * `inner` - Any type implementing [`Read`](std::io::Read)
     pub fn new(inner: R) -> Self {
         BoxReader { inner }
     }
 
-    /// Returns a reference to the inner reader.
+    /// Returns a reference to the underlying reader.
+    #[inline]
     pub fn get_ref(&self) -> &R {
         &self.inner
     }
 
-    /// Returns a mutable reference to the inner reader.
+    /// Returns a mutable reference to the underlying reader.
+    ///
+    /// Use this to access reader-specific functionality like seeking.
+    #[inline]
     pub fn get_mut(&mut self) -> &mut R {
         &mut self.inner
     }
 
-    /// Consumes the `BoxReader`, returning the inner reader.
+    /// Consumes the `BoxReader`, returning the underlying reader.
+    #[inline]
     pub fn into_inner(self) -> R {
         self.inner
     }
@@ -52,7 +92,22 @@ impl<R: Read> BoxReader<R> {
         BoxHeader::parse(&full_buf)
     }
 
-    /// Reads a `RawBoxOwned` from the inner reader.
+    /// Reads the next box from the stream.
+    ///
+    /// This method reads the box header first to determine the box size,
+    /// then reads the payload. For EOF boxes (size = 0), it reads all
+    /// remaining data from the stream.
+    ///
+    /// # Returns
+    ///
+    /// The parsed box as a [`RawBoxOwned`] on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The stream doesn't contain enough data for the header
+    /// - The stream doesn't contain enough data for the declared payload size
+    /// - An I/O error occurs
     pub fn read_box(&mut self) -> Result<RawBoxOwned> {
         let header = self.read_header()?;
 

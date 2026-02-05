@@ -1,3 +1,10 @@
+//! Shadow Sync Sample Box (`stsh`) implementation.
+//!
+//! The Shadow Sync Sample Box provides an optional set of sync samples that
+//! can be used when seeking, especially for editing workflows. Shadow sync
+//! samples are alternative sync points that may provide better seek positions
+//! than the primary sync samples.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -9,10 +16,15 @@ use crate::cursor::ReadCursor;
 
 define_box_flags!(
     /// Flags for the Shadow Sync Sample Box (`stsh`).
+    ///
+    /// Reserved (should be 0).
     StshFlags {}
 );
 
 /// An entry in the Shadow Sync Sample Box (`stsh`).
+///
+/// Maps a sample to a shadow sync sample that can be used as an
+/// alternative sync point when seeking.
 #[derive(Debug, Clone, Copy)]
 pub struct StshEntry {
     /// The sample number of the shadowed sample.
@@ -41,11 +53,20 @@ impl FixedSizeEntry for StshEntry {
 }
 
 /// A reference to a Shadow Sync Sample Box (`stsh`).
+///
+/// Provides alternative sync points for seeking. Each entry maps a shadowed
+/// sample to a sync sample that can be used as a seek target.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `entries`: Pairs of (shadowed_sample, sync_sample) numbers.
 #[derive(Debug)]
 pub struct StshBoxView<'a> {
-    /// Box version (0).
+    /// Box version (should be 0).
     pub version: u8,
-    /// Box flags (should be 0).
+    /// Reserved flags (should be 0).
     pub flags: StshFlags,
     entries: &'a [u8],
 }
@@ -107,13 +128,22 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Shadow Sync Sample Box (`stsh`).
+    ///
+    /// This is the owned variant of [`StshBoxView`] that stores shadow sync
+    /// entries in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (should be 0).
+    /// - `flags`: Reserved (should be 0).
+    /// - `entries`: Shadow sync sample mappings.
     #[derive(Debug, Clone)]
     pub struct StshBox {
-        /// Box version (0).
+        /// Box version (should be 0).
         pub version: u8,
-        /// Box flags (should be 0).
+        /// Reserved flags (should be 0).
         pub flags: StshFlags,
-        /// The entries in the Shadow Sync Sample Box.
+        /// Shadow sync sample entries.
         pub entries: Vec<StshEntry>,
     }
 

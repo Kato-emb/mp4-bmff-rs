@@ -1,3 +1,9 @@
+//! Movie Header Box (`mvhd`) implementation.
+//!
+//! The Movie Header Box contains overall information about the media presentation
+//! that is independent of any particular track. It defines the timescale used
+//! throughout the file, the overall duration, and the next track ID to use.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -14,27 +20,46 @@ define_box_flags!(
 );
 
 /// Movie Header Box (`mvhd`).
+///
+/// The Movie Header Box defines the overall characteristics of the presentation.
+/// It is contained within the Movie Box (`moov`) and must appear exactly once.
+///
+/// This is a fixed-size box that implements `Copy`, so there is no separate
+/// View/Owned distinction.
+///
+/// # Structure
+///
+/// - `version`: Box version (0 or 1). Version 1 uses 64-bit time/duration fields.
+/// - `flags`: Reserved flags (should be 0).
+/// - `creation_time`: When the presentation was created.
+/// - `modification_time`: When the presentation was last modified.
+/// - `timescale`: Time units per second for this movie (e.g., 1000 for milliseconds).
+/// - `duration`: Length of the presentation in timescale units.
+/// - `rate`: Preferred playback rate (1.0 = normal, stored as 16.16 fixed-point).
+/// - `volume`: Preferred playback volume (1.0 = full, stored as 8.8 fixed-point).
+/// - `matrix`: Transformation matrix for the video (typically identity).
+/// - `next_track_id`: Value to use for the next track added to this presentation.
 #[derive(Debug, Clone, Copy)]
 pub struct MvhdBox {
-    /// The version of the box.
+    /// Box version (0 or 1). Version 1 uses 64-bit time and duration fields.
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: MvhdFlags,
-    /// The creation time.
+    /// When the presentation was created (seconds since 1904-01-01 00:00:00 UTC).
     pub creation_time: QuickTimeDateTime,
-    /// The modification time.
+    /// When the presentation was last modified.
     pub modification_time: QuickTimeDateTime,
-    /// The timescale.
+    /// Time units per second (e.g., 1000 means duration is in milliseconds).
     pub timescale: u32,
-    /// The duration.
+    /// Length of the presentation in timescale units.
     pub duration: u64,
-    /// The rate.
+    /// Preferred playback rate as 16.16 fixed-point (1.0 = 0x00010000 = normal speed).
     pub rate: I16F16,
-    /// The volume.
+    /// Preferred playback volume as 8.8 fixed-point (1.0 = 0x0100 = full volume).
     pub volume: U8F8,
-    /// The transformation matrix.
+    /// Transformation matrix for video display (typically identity matrix).
     pub matrix: Matrix,
-    /// The next track ID.
+    /// ID to use for the next track added (must be non-zero and larger than any existing track ID).
     pub next_track_id: u32,
 }
 

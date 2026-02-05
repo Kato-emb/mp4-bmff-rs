@@ -1,3 +1,9 @@
+//! Sample Table Box (`stbl`) implementation.
+//!
+//! The Sample Table Box contains all the time and data indexing of the media
+//! samples in a track. Using the tables here, it is possible to locate samples
+//! in time, determine their type, size, container, and offset into that container.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -17,6 +23,28 @@ use super::StszBoxView;
 use super::SttsBoxView;
 
 /// A reference to a Sample Table Box (`stbl`).
+///
+/// The Sample Table Box is the most important container in the media information
+/// structure. It contains all data needed to locate and decode samples. The sample
+/// table must contain a sample description, time-to-sample mapping, sample sizes,
+/// sample-to-chunk mapping, and chunk offsets.
+///
+/// # Structure
+///
+/// Required child boxes:
+/// - `stsd`: Sample Description Box - describes sample formats.
+/// - `stts`: Decoding Time to Sample Box - sample timing.
+/// - `stsz`: Sample Size Box - individual sample sizes.
+/// - `stsc`: Sample to Chunk Box - sample-to-chunk mapping.
+/// - `stco`/`co64`: Chunk Offset Box - chunk file positions.
+///
+/// Optional child boxes:
+/// - `ctts`: Composition Time to Sample Box - composition time offsets.
+/// - `cslg`: Composition to Decode Box - timing relationships.
+/// - `stss`: Sync Sample Box - identifies keyframes.
+/// - `stsh`: Shadow Sync Box - alternative sync points.
+/// - `sdtp`: Sample Dependency Type Box - sample dependencies.
+/// - `stdp`: Degradation Priority Box - sample priorities.
 #[derive(Debug)]
 pub struct StblBoxView<'a> {
     content: &'a [u8],
@@ -232,29 +260,44 @@ mod owned {
     use crate::boxes::bmff::SttsBox;
 
     /// An owned Sample Table Box (`stbl`).
+    ///
+    /// This is the owned variant of [`StblBoxView`] that stores child boxes
+    /// in heap-allocated structures.
+    ///
+    /// # Structure
+    ///
+    /// Required child boxes:
+    /// - `stsd`: Sample descriptions (formats, codecs).
+    /// - `stts`: Decoding time-to-sample mapping.
+    /// - `stsz`: Sample sizes.
+    /// - `stsc`: Sample-to-chunk grouping.
+    /// - `stco`: Chunk file offsets.
+    ///
+    /// Optional child boxes:
+    /// - `ctts`, `cslg`, `stss`, `stsh`, `sdtp`, `stdp`.
     #[derive(Debug, Clone)]
     pub struct StblBox {
-        /// Sample Description Box (`stsd`).
+        /// Sample Description Box - describes formats for the samples.
         pub stsd: StsdBox,
-        /// Degradation Priority Box (`stdp`), if present.
+        /// Degradation Priority Box (optional) - sample quality priorities.
         pub stdp: Option<StdpBox>,
-        /// Decoding Time to Sample Box (`stts`).
+        /// Decoding Time to Sample Box - maps samples to decoding time.
         pub stts: SttsBox,
-        /// Composition Time to Sample Box (`ctts`), if present.
+        /// Composition Time to Sample Box (optional) - composition time offsets.
         pub ctts: Option<CttsBox>,
-        /// Composition to Decode Box (`cslg`), if present.
+        /// Composition to Decode Box (optional) - timing relationships.
         pub cslg: Option<CslgBox>,
-        /// Sync Sample Box (`stss`), if present.
+        /// Sync Sample Box (optional) - identifies random access points.
         pub stss: Option<StssBox>,
-        /// Shadow Sync Box (`stsh`), if present.
+        /// Shadow Sync Box (optional) - alternative sync points.
         pub stsh: Option<StshBox>,
-        /// Sample Degradation Priority Box (`sdtp`), if present.
+        /// Sample Dependency Type Box (optional) - inter-sample dependencies.
         pub sdtp: Option<SdtpBox>,
-        /// Sample Size Box (`stsz`).
+        /// Sample Size Box - size of each sample.
         pub stsz: StszBox,
-        /// Sample to Chunk Box (`stsc`).
+        /// Sample to Chunk Box - maps samples to chunks.
         pub stsc: StscBox,
-        /// Chunk Offset Box (`stco`).
+        /// Chunk Offset Box - file offset of each chunk.
         pub stco: StcoBox,
     }
 

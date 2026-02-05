@@ -1,12 +1,28 @@
+//! Free Space Box (`free`) implementation.
+//!
+//! The Free Space Box contains free space that may be skipped by parsers.
+//! It can be used to reserve space in a file for later use or to pad
+//! the file to a specific size.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
 
 /// A reference to a Free Space Box (`free`).
+///
+/// The Free Space Box contains data that is irrelevant and may be ignored
+/// by conformant readers. It is commonly used to reserve space in a file
+/// that may be overwritten later, or to pad the file to a specific alignment.
+///
+/// The `skip` box type is functionally identical to `free`.
+///
+/// # Structure
+///
+/// - `data`: Arbitrary padding bytes. The contents are not defined and may be any value.
 #[derive(Debug)]
 pub struct FreeBoxView<'a> {
-    /// The raw data of the Free Space Box (`free`).
+    /// Arbitrary padding bytes (contents are undefined).
     pub data: &'a [u8],
 }
 
@@ -32,9 +48,23 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Free Space Box (`free`).
+    ///
+    /// This is the owned variant of [`FreeBoxView`] that stores the padding
+    /// data in a heap-allocated vector.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::boxes::bmff::FreeBox;
+    ///
+    /// // Create a free box with 1024 bytes of padding
+    /// let free = FreeBox {
+    ///     data: vec![0u8; 1024],
+    /// };
+    /// ```
     #[derive(Debug, Clone)]
     pub struct FreeBox {
-        /// The raw data of the Free Space Box (`free`).
+        /// Arbitrary padding bytes (contents are undefined).
         pub data: Vec<u8>,
     }
 

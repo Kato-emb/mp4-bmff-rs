@@ -1,4 +1,7 @@
 //! BMFF box writer for stream-based I/O.
+//!
+//! This module provides [`BoxWriter`] for writing BMFF boxes to any
+//! type implementing [`std::io::Write`].
 
 use std::io::Write;
 
@@ -9,14 +12,45 @@ use crate::base::rawbox::RawBox;
 use crate::error::Result;
 use crate::write_box;
 
-/// I/O utilities for BMFF parsing and writing.
+/// A writer for BMFF boxes to a stream.
+///
+/// `BoxWriter` wraps any [`Write`](std::io::Write) implementor and provides
+/// methods to write encoded boxes. It maintains an internal buffer to
+/// minimize allocations when writing multiple boxes.
+///
+/// # Writing Methods
+///
+/// - [`write_box`](Self::write_box): Write an encoded box (requires `BoxCodec + BoxEncode`)
+/// - [`write_raw_box`](Self::write_raw_box): Write a raw box directly
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::io::BoxWriter;
+/// use mp4_bmff::BoxType;
+/// use mp4_bmff::RawBox;
+///
+/// let mut output = Vec::new();
+/// let mut writer = BoxWriter::new(&mut output);
+///
+/// // Write a raw box
+/// let raw = RawBox::new(BoxType::FREE, vec![]);
+/// writer.write_raw_box(&raw).unwrap();
+///
+/// // The output now contains the serialized box
+/// assert_eq!(output.len(), 8); // header only (no payload)
+/// ```
 pub struct BoxWriter<W> {
     inner: W,
     buf: Vec<u8>,
 }
 
 impl<W> BoxWriter<W> {
-    /// Creates a new `BoxWriter` from the given writer.
+    /// Creates a new `BoxWriter` wrapping the given writer.
+    ///
+    /// # Arguments
+    ///
+    /// * `inner` - Any type implementing [`Write`](std::io::Write)
     pub fn new(inner: W) -> Self {
         BoxWriter {
             inner,
@@ -24,24 +58,41 @@ impl<W> BoxWriter<W> {
         }
     }
 
-    /// Returns a reference to the inner writer.
+    /// Returns a reference to the underlying writer.
+    #[inline]
     pub fn get_ref(&self) -> &W {
         &self.inner
     }
 
-    /// Returns a mutable reference to the inner writer.
+    /// Returns a mutable reference to the underlying writer.
+    ///
+    /// Use this to access writer-specific functionality like flushing.
+    #[inline]
     pub fn get_mut(&mut self) -> &mut W {
         &mut self.inner
     }
 
-    /// Consumes the `BoxWriter`, returning the inner writer.
+    /// Consumes the `BoxWriter`, returning the underlying writer.
+    #[inline]
     pub fn into_inner(self) -> W {
         self.inner
     }
 }
 
 impl<W: Write> BoxWriter<W> {
-    /// Writes a BMFF box to the inner writer.
+    /// Writes an encoded BMFF box to the stream.
+    ///
+    /// This method encodes the box using its [`BoxEncode`] implementation,
+    /// prepends the appropriate header, and writes the complete box to
+    /// the underlying writer.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `B` - A type implementing both [`BoxCodec`] and [`BoxEncode`]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if encoding fails or an I/O error occurs.
     pub fn write_box<B>(&mut self, boxed: &B) -> Result<()>
     where
         B: BoxCodec + BoxEncode,
@@ -65,7 +116,19 @@ impl<W: Write> BoxWriter<W> {
         Ok(())
     }
 
-    /// Writes a raw BMFF box to the inner writer.
+    /// Writes a raw BMFF box to the stream.
+    ///
+    /// This method writes a [`RawBox`] directly without additional encoding.
+    /// Use this when you have a box that doesn't need further processing
+    /// or when copying boxes between files.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - The payload storage type (e.g., `&[u8]`, `Vec<u8>`)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an I/O error occurs while writing.
     pub fn write_raw_box<T: AsRef<[u8]>>(&mut self, raw: &RawBox<T>) -> Result<()> {
         let total_size = raw.len();
         if total_size > self.buf.len() {

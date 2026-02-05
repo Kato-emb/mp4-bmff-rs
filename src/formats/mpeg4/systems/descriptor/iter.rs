@@ -1,4 +1,8 @@
 //! Descriptor iterator for MPEG-4 Systems descriptors.
+//!
+//! This module provides an iterator for parsing consecutive descriptors
+//! from a byte slice, commonly used within ES_Descriptor and
+//! DecoderConfigDescriptor instances.
 
 use crate::error::*;
 
@@ -6,7 +10,29 @@ use crate::cursor::ReadCursor;
 
 use super::RawDescriptorRef;
 
-/// An iterator over MPEG-4 Systems descriptors in a byte slice.
+/// Iterator over consecutive MPEG-4 Systems descriptors in a byte slice.
+///
+/// This iterator parses descriptors one at a time from the underlying byte
+/// slice, returning each as a [`RawDescriptorRef`]. Parsing errors are
+/// returned as `Err` items rather than panicking.
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::formats::mpeg4::systems::descriptor::{iter_descriptors, Tag};
+///
+/// let data = [
+///     0x05, 0x02, 0x11, 0x90,  // DecoderSpecificInfo (2 bytes)
+///     0x06, 0x01, 0x02,        // SLConfigDescriptor (1 byte)
+/// ];
+///
+/// let mut count = 0;
+/// for result in iter_descriptors(&data) {
+///     let descr = result.unwrap();
+///     count += 1;
+/// }
+/// assert_eq!(count, 2);
+/// ```
 pub struct DescriptorIter<'a> {
     cur: ReadCursor<'a>,
 }
@@ -42,6 +68,17 @@ impl<'a> Iterator for DescriptorIter<'a> {
 }
 
 /// Creates an iterator over MPEG-4 Systems descriptors in the given byte slice.
+///
+/// This is a convenience function that creates a [`DescriptorIter`] for
+/// parsing consecutive descriptors from raw bytes.
+///
+/// # Arguments
+///
+/// * `data` - Byte slice containing one or more concatenated descriptors
+///
+/// # Returns
+///
+/// An iterator yielding `Result<RawDescriptorRef>` for each descriptor
 pub fn iter_descriptors(data: &[u8]) -> DescriptorIter<'_> {
     DescriptorIter::new(data)
 }

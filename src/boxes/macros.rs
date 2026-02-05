@@ -1,3 +1,16 @@
+//! Internal macros for box type and flag definitions.
+//!
+//! This module provides macros used throughout the crate to define box types
+//! and FullBox flag types in a consistent, concise manner.
+//!
+//! # Macros
+//!
+//! - `define_box_types!`: Defines `BoxType` constants from FourCC literals.
+//! - `define_box_flags!`: Defines flag types for FullBox structures with
+//!   bitwise operations and named flag constants.
+//!
+//! These macros are internal to the crate and not exposed in the public API.
+
 /// Macro to define BoxType constants in a concise, table-like format.
 macro_rules! define_box_types {
     ($(

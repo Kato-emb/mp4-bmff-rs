@@ -1,3 +1,9 @@
+//! File Type Box (`ftyp`) implementation.
+//!
+//! The File Type Box identifies the specifications to which the file complies.
+//! It is typically placed at the beginning of the file to allow readers to
+//! quickly determine whether they can process the file.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -7,11 +13,21 @@ use crate::types::*;
 use crate::cursor::ReadCursor;
 
 /// A reference to a File Type Box (`ftyp`).
+///
+/// The File Type Box contains brand information that identifies the
+/// specifications with which the file is compliant. This is typically
+/// the first box in an ISO Base Media File Format file.
+///
+/// # Structure
+///
+/// - `major_brand`: The brand identifier for the best use of the file.
+/// - `minor_version`: An informative integer for the minor version of the major brand.
+/// - `compatible_brands`: A list of brands with which the file is compatible.
 #[derive(Debug)]
 pub struct FtypBoxView<'a> {
-    /// The major brand.
+    /// The brand identifier for the best use of the file.
     pub major_brand: FourCC,
-    /// The minor version.
+    /// The minor version of the major brand.
     pub minor_version: u32,
     compatible_brands: &'a [u8],
 }
@@ -75,20 +91,33 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned File Type Box (`ftyp`).
+    ///
+    /// This is the owned variant of [`FtypBoxView`] that stores compatible brands
+    /// in a heap-allocated vector.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::boxes::bmff::FtypBox;
+    /// use mp4_bmff::types::FourCC;
+    ///
+    /// let ftyp = FtypBox {
+    ///     major_brand: FourCC::new(*b"isom"),
+    ///     minor_version: 512,
+    ///     compatible_brands: vec![
+    ///         FourCC::new(*b"isom"),
+    ///         FourCC::new(*b"iso2"),
+    ///     ],
+    /// };
+    /// ```
     #[derive(Debug, Clone)]
     pub struct FtypBox {
-        /// The major brand.
+        /// The brand identifier for the best use of the file.
         pub major_brand: FourCC,
-        /// The minor version.
+        /// The minor version of the major brand.
         pub minor_version: u32,
-        /// The compatible brands.
+        /// A list of brands with which the file is compatible.
         pub compatible_brands: Vec<FourCC>,
-    }
-
-    impl BoxCodec for FtypBox {
-        fn boxtype(&self) -> BoxType {
-            BoxType::FTYP
-        }
     }
 
     impl From<&FtypBoxView<'_>> for FtypBox {
@@ -107,6 +136,12 @@ mod owned {
         /// Converts this view into an owned `FtypBox`.
         pub fn to_owned(&self) -> FtypBox {
             FtypBox::from(self)
+        }
+    }
+
+    impl BoxCodec for FtypBox {
+        fn boxtype(&self) -> BoxType {
+            BoxType::FTYP
         }
     }
 

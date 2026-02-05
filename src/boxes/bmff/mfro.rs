@@ -1,3 +1,13 @@
+//! Movie Fragment Random Access Offset Box (`mfro`) implementation.
+//!
+//! The Movie Fragment Random Access Offset Box contains the size of the
+//! enclosing `mfra` box. This allows players to locate the `mfra` by reading
+//! the last 4 bytes of the file (which give the `mfra` size), then seeking
+//! backwards to read the full `mfra`.
+//!
+//! This box is required within the Movie Fragment Random Access Box (`mfra`)
+//! and must be the last child box.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -9,17 +19,44 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for the Movie Fragment Random Access Offset Box (`mfro`).
+    ///
+    /// Reserved (should be 0).
     MfroFlags {}
 );
 
 /// Movie Fragment Random Access Offset Box (`mfro`).
+///
+/// Contains the size of the enclosing `mfra` box to enable finding it
+/// from the end of the file. Must be the last box in `mfra`.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Reserved (should be 0).
+/// - `size`: Total size of the enclosing `mfra` box in bytes.
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::BoxDecode;
+/// use mp4_bmff::boxes::bmff::MfroBox;
+///
+/// let data: [u8; 8] = [
+///     0x00,                   // version = 0
+///     0x00, 0x00, 0x00,       // flags
+///     0x00, 0x00, 0x10, 0x00, // size = 4096
+/// ];
+///
+/// let mfro = MfroBox::decode(&data).unwrap();
+/// assert_eq!(mfro.size, 4096);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct MfroBox {
-    /// The version of the box.
+    /// Box version (should be 0).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: MfroFlags,
-    /// The size of an integer gives the number of bytes of the enclosing `mfra` box.
+    /// Total size of the enclosing `mfra` box in bytes.
     pub size: u32,
 }
 

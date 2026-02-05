@@ -1,4 +1,21 @@
-//! Box type helpers shared across the Core BMFF boxes.
+//! BMFF box type representation.
+//!
+//! This module defines the [`BoxType`] type, which represents the type of a
+//! BMFF box. Box types can be either:
+//!
+//! - **FourCC**: Standard 4-character code (e.g., "ftyp", "moov", "mdat").
+//! - **UUID**: Extended type using a 16-byte UUID for custom boxes.
+//!
+//! # UUID Box Types
+//!
+//! When the FourCC is "uuid", an additional 16-byte UUID field follows
+//! the type field in the box header. This allows vendors to define
+//! custom box types without risk of collision.
+//!
+//! # Constants
+//!
+//! Standard box type constants are defined on `BoxType` via the
+//! `define_box_types!` macro (e.g., `BoxType::FTYP`, `BoxType::MOOV`).
 
 use core::fmt;
 
@@ -7,13 +24,37 @@ use crate::types::{
     Uuid,
 };
 
-/// User extensions use an extended type
+/// User-defined box type extension (UUID).
+///
+/// Used when the FourCC type field is "uuid" to provide a 16-byte
+/// unique identifier for custom box types.
 pub type UserType = Uuid;
 
 /// The FourCC code used for UUID-based box types.
 pub const UUID: FourCC = FourCC::new(*b"uuid");
 
-/// Type-safe representation of BMFF `boxtype` values.
+/// Type-safe representation of BMFF box type values.
+///
+/// Box types identify the kind of data contained in a box. Most boxes
+/// use a standard FourCC code, but custom boxes can use UUID-based types.
+///
+/// # Structure
+///
+/// - `boxtype`: The 4-byte FourCC type field (or "uuid" for extended types).
+/// - `usertype`: Optional 16-byte UUID for extended type identification.
+///
+/// # Creating Box Types
+///
+/// ```
+/// use mp4_bmff::BoxType;
+/// use mp4_bmff::types::FourCC;
+///
+/// // Use predefined constants
+/// let ftyp = BoxType::FTYP;
+///
+/// // Create from FourCC
+/// let custom = BoxType::new(FourCC::new(*b"test"));
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BoxType {
     pub(crate) boxtype: FourCC,

@@ -1,3 +1,13 @@
+//! Composition to Decode Box (`cslg`) implementation.
+//!
+//! The Composition to Decode Box provides information about the relationship
+//! between composition time (display order) and decode time (decode order).
+//! This is particularly important for codecs that use B-frames, where the
+//! presentation order differs from the decoding order.
+//!
+//! This box clarifies the edit list behavior and provides timing bounds that
+//! enable efficient seeking and synchronization.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -9,25 +19,62 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for the Composition to Decode Box (`cslg`).
+    ///
+    /// Reserved (should be 0).
     CslgFlags {}
 );
 
 /// Composition to Decode Box (`cslg`).
+///
+/// Provides timing shift information to relate composition time (CT) to
+/// decode time (DT). This is essential for video codecs using B-frames
+/// where presentation order differs from decode order.
+///
+/// # Structure
+///
+/// - `version`: Box version (0 for 32-bit values, 1 for 64-bit).
+/// - `flags`: Reserved (should be 0).
+/// - `composition_to_decode_shift`: Offset to add to CT to get DT.
+/// - `least_decode_to_display_delta`: Smallest CT - DT delta.
+/// - `greatest_decode_to_display_delta`: Largest CT - DT delta.
+/// - `composition_start_time`: Composition time of the first sample.
+/// - `composition_end_time`: Composition time of the last sample plus duration.
+///
+/// # Example
+///
+/// ```
+/// use mp4_bmff::BoxDecode;
+/// use mp4_bmff::boxes::bmff::CslgBox;
+///
+/// let data: [u8; 24] = [
+///     0x00,                   // version = 0
+///     0x00, 0x00, 0x00,       // flags
+///     0x00, 0x00, 0x00, 0x64, // composition_to_decode_shift = 100
+///     0xFF, 0xFF, 0xFF, 0x9C, // least_decode_to_display_delta = -100
+///     0x00, 0x00, 0x00, 0xC8, // greatest_decode_to_display_delta = 200
+///     0x00, 0x00, 0x00, 0x00, // composition_start_time = 0
+///     0x00, 0x00, 0x03, 0xE8, // composition_end_time = 1000
+/// ];
+///
+/// let cslg = CslgBox::decode(&data).unwrap();
+/// assert_eq!(cslg.composition_to_decode_shift, 100);
+/// assert_eq!(cslg.least_decode_to_display_delta, -100);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct CslgBox {
-    /// Box version (0 or 1).
+    /// Box version (0 for 32-bit fields, 1 for 64-bit fields).
     pub version: u8,
-    /// Box flags (should be 0).
+    /// Reserved flags (should be 0).
     pub flags: CslgFlags,
-    /// The composition to decode shift.
+    /// Offset added to composition time to get decode time.
     pub composition_to_decode_shift: i64,
-    /// The least decode to display delta.
+    /// The smallest composition time minus decode time delta.
     pub least_decode_to_display_delta: i64,
-    /// The greatest decode to display delta.
+    /// The largest composition time minus decode time delta.
     pub greatest_decode_to_display_delta: i64,
-    /// The composition start time.
+    /// The composition time of the first presentable sample.
     pub composition_start_time: i64,
-    /// The composition end time.
+    /// The composition time plus duration of the last presentable sample.
     pub composition_end_time: i64,
 }
 

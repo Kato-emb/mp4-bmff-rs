@@ -1,3 +1,11 @@
+//! Track Fragment Random Access Box (`tfra`) implementation.
+//!
+//! The Track Fragment Random Access Box provides a table mapping presentation
+//! times to byte offsets of movie fragments for a single track. This enables
+//! efficient seeking to specific times in fragmented MP4 files.
+//!
+//! This box is optional within the Movie Fragment Random Access Box (`mfra`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -7,21 +15,26 @@ use crate::cursor::ReadCursor;
 
 define_box_flags!(
     /// Flags for the Track Fragment Random Access Box (`tfra`).
+    ///
+    /// Reserved (should be 0).
     TfraFlags {}
 );
 
 /// An entry in the Track Fragment Random Access Box (`tfra`).
+///
+/// Maps a presentation time to a specific sample in a movie fragment,
+/// identifying the `moof` offset and indices within the fragment.
 #[derive(Debug, Clone, Copy)]
 pub struct TfraEntry {
-    /// The time of the fragment.
+    /// Presentation time of this random access point (track timescale).
     pub time: u64,
-    /// The moof offset of the fragment.
+    /// Byte offset of the `moof` box containing this access point.
     pub moof_offset: u64,
-    /// The traf number.
+    /// 1-based index of the `traf` box within the `moof`.
     pub traf_number: u32,
-    /// The trun number.
+    /// 1-based index of the `trun` box within the `traf`.
     pub trun_number: u32,
-    /// The sample number.
+    /// 1-based index of the sample within the `trun`.
     pub sample_number: u32,
 }
 
@@ -149,21 +162,33 @@ impl<'a> Iterator for TfraEntryIter<'a> {
 impl<'a> ExactSizeIterator for TfraEntryIter<'a> {}
 
 /// A reference to a Track Fragment Random Access Box (`tfra`).
+///
+/// Provides a seek table for one track in a fragmented movie. Each entry
+/// maps a time to a specific sample location within the fragments.
+///
+/// # Structure
+///
+/// - `version`: Box version (0 for 32-bit times, 1 for 64-bit).
+/// - `flags`: Reserved (should be 0).
+/// - `track_id`: Track this table applies to.
+/// - `length_size_of_*`: Byte sizes for variable-length fields (minus 1).
+/// - `number_of_entry`: Number of random access points.
+/// - `entries`: Array of time/offset/index tuples.
 #[derive(Debug)]
 pub struct TfraBoxView<'a> {
-    /// The version of the box.
+    /// Box version (0 for 32-bit times/offsets, 1 for 64-bit).
     pub version: u8,
-    /// The flags of the box.
+    /// Reserved flags (should be 0).
     pub flags: TfraFlags,
-    /// The track ID.
+    /// Track ID this table applies to.
     pub track_id: u32,
-    /// The length size of the traf number minus 1.
+    /// Byte size of traf_number minus 1 (0-3 means 1-4 bytes).
     pub length_size_of_traf_num: u8,
-    /// The length size of the trun number minus 1.
+    /// Byte size of trun_number minus 1 (0-3 means 1-4 bytes).
     pub length_size_of_trun_num: u8,
-    /// The length size of the sample number minus 1.
+    /// Byte size of sample_number minus 1 (0-3 means 1-4 bytes).
     pub length_size_of_sample_num: u8,
-    /// The number of entries in the box.
+    /// Number of random access point entries.
     pub number_of_entry: u32,
     entries: &'a [u8],
 }
@@ -257,21 +282,31 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Track Fragment Random Access Box (`tfra`).
+    ///
+    /// This is the owned variant of [`TfraBoxView`] that stores entries
+    /// in a heap-allocated vector.
+    ///
+    /// # Structure
+    ///
+    /// - `version`: Box version (0 for 32-bit, 1 for 64-bit times).
+    /// - `track_id`: Track this table applies to.
+    /// - `length_size_of_*`: Byte sizes for variable-length fields.
+    /// - `entries`: Random access point table.
     #[derive(Debug, Clone)]
     pub struct TfraBox {
-        /// The version of the box.
+        /// Box version (0 for 32-bit times/offsets, 1 for 64-bit).
         pub version: u8,
-        /// The flags of the box.
+        /// Reserved flags (should be 0).
         pub flags: TfraFlags,
-        /// The track ID.
+        /// Track ID this table applies to.
         pub track_id: u32,
-        /// The length size of the traf number minus 1.
+        /// Byte size of traf_number minus 1.
         pub length_size_of_traf_num: u8,
-        /// The length size of the trun number minus 1.
+        /// Byte size of trun_number minus 1.
         pub length_size_of_trun_num: u8,
-        /// The length size of the sample number minus 1.
+        /// Byte size of sample_number minus 1.
         pub length_size_of_sample_num: u8,
-        /// The entries in the box.
+        /// Random access point entries.
         pub entries: Vec<TfraEntry>,
     }
 

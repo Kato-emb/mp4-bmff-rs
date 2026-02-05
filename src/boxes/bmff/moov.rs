@@ -1,3 +1,10 @@
+//! Movie Box (`moov`) implementation.
+//!
+//! The Movie Box contains all the metadata needed to present the media.
+//! It includes the Movie Header Box (`mvhd`) with global information,
+//! and one or more Track Boxes (`trak`) containing per-track metadata.
+//! For fragmented movies, it may also contain a Movie Extends Box (`mvex`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -9,6 +16,17 @@ use super::MvhdBox;
 use super::TrakBoxView;
 
 /// A reference to a Movie Box (`moov`).
+///
+/// The Movie Box is a container for all the metadata describing the media
+/// presentation. It is required in every ISO Base Media File and must appear
+/// exactly once. The `moov` box can appear before or after the Media Data Box
+/// (`mdat`); placing it before enables "fast start" streaming.
+///
+/// # Structure
+///
+/// - `mvhd`: Movie Header Box (required, exactly one) - global presentation info.
+/// - `trak`: Track Box (required, one or more) - per-track metadata.
+/// - `mvex`: Movie Extends Box (optional) - present when file uses movie fragments.
 #[derive(Debug)]
 pub struct MoovBoxView<'a> {
     content: &'a [u8],
@@ -90,13 +108,26 @@ mod owned {
     use super::super::TrakBox;
 
     /// An owned Movie Box (`moov`).
+    ///
+    /// This is the owned variant of [`MoovBoxView`] that stores child boxes
+    /// in heap-allocated structures.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::boxes::bmff::{MoovBox, MvhdBox, TrakBox};
+    /// use mp4_bmff::BoxDecode;
+    ///
+    /// // The moov box contains mvhd (movie header) and trak (track) boxes
+    /// // In practice, you would decode from actual file data
+    /// ```
     #[derive(Debug, Clone)]
     pub struct MoovBox {
-        /// Movie Header Box (`mvhd`).
+        /// Movie Header Box - contains global presentation information.
         pub mvhd: MvhdBox,
-        /// Track Boxes (`trak`).
+        /// Track Boxes - one per media track (audio, video, etc.).
         pub traks: Vec<TrakBox>,
-        /// Movie Extends Box (`mvex`), if present.
+        /// Movie Extends Box - present when the file uses movie fragments.
         pub mvex: Option<MvexBox>,
     }
 

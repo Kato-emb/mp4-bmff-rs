@@ -1,3 +1,11 @@
+//! Track Fragment Header Box (`tfhd`) implementation.
+//!
+//! The Track Fragment Header Box identifies the track this fragment belongs to
+//! and provides default values for sample properties. These defaults can be
+//! overridden by individual Track Run (`trun`) boxes.
+//!
+//! This box is required within every Track Fragment Box (`traf`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -9,42 +17,58 @@ use crate::cursor::WriteCursor;
 
 define_box_flags!(
     /// Flags for the Track Fragment Header Box (`tfhd`).
+    ///
+    /// Control which optional fields are present in the box.
     TfhdFlags {
-        /// Indicates that the base data offset is present.
+        /// Base data offset field is present (8 bytes).
         BASE_DATA_OFFSET_PRESENT = 0x000001,
-        /// Indicates that the sample description index is present.
+        /// Sample description index field is present (4 bytes).
         SAMPLE_DESCRIPTION_INDEX_PRESENT = 0x000002,
-        /// Indicates that the default sample duration is present.
+        /// Default sample duration field is present (4 bytes).
         DEFAULT_SAMPLE_DURATION_PRESENT = 0x000008,
-        /// Indicates that the default sample size is present.
+        /// Default sample size field is present (4 bytes).
         DEFAULT_SAMPLE_SIZE_PRESENT = 0x000010,
-        /// Indicates that the default sample flags are present.
+        /// Default sample flags field is present (4 bytes).
         DEFAULT_SAMPLE_FLAGS_PRESENT = 0x000020,
-        /// Indicates that duration is empty.
+        /// This fragment has zero duration (empty edit).
         DURATION_IS_EMPTY = 0x010000,
-        /// Indicates that the default base is the moof box.
+        /// Base offset is the start of the enclosing `moof` box.
         DEFAULT_BASE_IS_MOOF = 0x020000,
     }
 );
 
 /// Track Fragment Header Box (`tfhd`).
+///
+/// Identifies the track and provides default sample properties for this
+/// fragment. Fields are present based on flag bits.
+///
+/// # Structure
+///
+/// - `version`: Box version (should be 0).
+/// - `flags`: Indicate which optional fields are present.
+/// - `track_id`: Identifies which track this fragment belongs to.
+/// - `base_data_offset`: Byte offset of media data (when flag set).
+/// - `sample_description_index`: Index into sample description table.
+/// - `default_sample_duration`: Default duration for samples in this fragment.
+/// - `default_sample_size`: Default size for samples in this fragment.
+/// - `default_sample_flags`: Default flags for samples in this fragment.
 #[derive(Debug, Clone, Copy)]
 pub struct TfhdBox {
-    /// The version of the box.
+    /// Box version (should be 0).
     pub version: u8,
-    /// The flags of the box.
+    /// Flags indicating which optional fields are present.
     pub flags: TfhdFlags,
-    /// The track ID.
+    /// Track ID this fragment belongs to.
     pub track_id: u32,
-    /// The base data offset.
+    /// Base offset for media data in the associated `mdat` box.
     pub base_data_offset: Option<u64>,
-    /// The sample description index.
+    /// Index into sample description table for this fragment.
     pub sample_description_index: Option<u32>,
-    /// The default sample duration.
+    /// Default sample duration in timescale units.
     pub default_sample_duration: Option<u32>,
-    /// The default sample size.
+    /// Default sample size in bytes.
     pub default_sample_size: Option<u32>,
-    /// The default sample flags.
+    /// Default sample flags (sync, dependency info, etc.).
     pub default_sample_flags: Option<u32>,
 }
 

@@ -1,15 +1,42 @@
-//! Fixed-point helpers used by various BMFF fields.
+//! Fixed-point number types for BMFF fields.
 //!
-//! The implementations here keep the math and encoding details in a single
-//! place so higher-level boxes can simply use the type aliases (e.g. `I16F16`).
+//! BMFF uses fixed-point numbers to represent fractional values with exact
+//! binary representation. This module provides a generic [`Fixed`] type and
+//! common type aliases used throughout the specification.
+//!
+//! # Type Aliases
+//!
+//! | Type | Storage | Integer Bits | Fractional Bits | Range |
+//! |------|---------|--------------|-----------------|-------|
+//! | [`I8F8`] | `i16` | 8 (signed) | 8 | -128.0 to ~127.996 |
+//! | [`U8F8`] | `u16` | 8 (unsigned) | 8 | 0.0 to ~255.996 |
+//! | [`I16F16`] | `i32` | 16 (signed) | 16 | -32768.0 to ~32767.999 |
+//! | [`U16F16`] | `u32` | 16 (unsigned) | 16 | 0.0 to ~65535.999 |
+//! | [`I2F30`] | `i32` | 2 (signed) | 30 | -2.0 to ~1.999 |
+//!
+//! # Usage
+//!
+//! ```
+//! use mp4_bmff::types::{I16F16, U16F16};
+//!
+//! // Create from raw storage value
+//! let resolution = U16F16::from_raw(0x00480000); // 72.0 dpi
+//! assert_eq!(resolution.integer(), 72);
+//! assert_eq!(resolution.fraction_bits(), 0);
+//!
+//! // Access components
+//! let value = I16F16::from_raw(0x0001_8000); // 1.5
+//! assert_eq!(value.integer(), 1);
+//! assert_eq!(value.to_f64(), 1.5);
+//! ```
 
 use core::fmt;
 
-/// Trait implemented by primitive integer types that can back a [`Fixed`].
+/// Trait implemented by primitive integer types that back a [`Fixed`].
 ///
-/// Keeping the masking, sign-extension, and clamping logic centralized in this
-/// trait lets the [`Fixed`] implementation stay DRY and usable in `no_std`
-/// environments without depending on external crates.
+/// This trait centralizes masking, sign-extension, and clamping logic,
+/// keeping the [`Fixed`] implementation clean and usable in `no_std`
+/// environments without external dependencies.
 pub trait FixedStorage: Copy + Ord {
     /// Total bit width of the storage type.
     const BITS: u32;
@@ -141,7 +168,31 @@ macro_rules! impl_fixed_storage_unsigned {
 impl_fixed_storage_signed!(i8, i16, i32, i64);
 impl_fixed_storage_unsigned!(u8, u16, u32, u64);
 
-/// Generic fixed-point value that stores `FRACTIONAL` bits of fraction.
+/// Generic fixed-point number with configurable storage and precision.
+///
+/// A fixed-point number stores a fractional value as an integer scaled by
+/// a power of two. The `FRACTIONAL` parameter specifies how many bits are
+/// used for the fractional part.
+///
+/// # Type Parameters
+///
+/// - `Storage`: The underlying integer type (`i16`, `u16`, `i32`, `u32`, etc.).
+/// - `FRACTIONAL`: Number of bits used for the fractional part.
+///
+/// # Memory Layout
+///
+/// The storage is divided into integer and fractional parts:
+/// ```text
+/// |<-- INTEGER_BITS -->|<-- FRACTIONAL bits -->|
+/// [  integer part      |   fractional part     ]
+/// ```
+///
+/// # Conversions
+///
+/// - `from_raw()` / `to_raw()`: Direct access to storage value.
+/// - `from_integer()`: Create from whole number.
+/// - `to_f64()` / `to_f32()`: Convert to floating-point.
+/// - `from_f64()` / `from_f32()`: Convert from floating-point (requires `std`).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Fixed<Storage, const FRACTIONAL: u32>
@@ -376,19 +427,33 @@ where
     }
 }
 
-/// Signed 8.8 fixed point (uses `i16` storage).
+/// Signed 8.8 fixed-point number (16-bit storage).
+///
+/// Used for fields requiring moderate precision with signed values,
+/// such as audio balance (-1.0 to +1.0 range).
 pub type I8F8 = Fixed<i16, 8>;
 
-/// Unsigned 8.8 fixed point (uses `u16` storage).
+/// Unsigned 8.8 fixed-point number (16-bit storage).
+///
+/// Used for fields requiring moderate precision with positive values only.
 pub type U8F8 = Fixed<u16, 8>;
 
-/// Unsigned 16.16 fixed point (uses `u32` storage).
+/// Unsigned 16.16 fixed-point number (32-bit storage).
+///
+/// Commonly used for resolutions (72.0 dpi = 0x00480000) and
+/// sample rates in media headers.
 pub type U16F16 = Fixed<u32, 16>;
 
-/// Signed 16.16 fixed point (uses `i32` storage).
+/// Signed 16.16 fixed-point number (32-bit storage).
+///
+/// Used for transformation matrix elements (a, b, c, d, x, y)
+/// and other values requiring signed fractional precision.
 pub type I16F16 = Fixed<i32, 16>;
 
-/// Signed 2.30 fixed point (uses `i32` storage).
+/// Signed 2.30 fixed-point number (32-bit storage).
+///
+/// Used for transformation matrix projective terms (u, v, w)
+/// which are typically 0.0, 0.0, and 1.0 for affine transforms.
 pub type I2F30 = Fixed<i32, 30>;
 
 #[cfg(test)]

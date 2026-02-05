@@ -1,3 +1,10 @@
+//! Edit List Box (`elst`) implementation.
+//!
+//! The Edit List Box contains an explicit timeline map. Each entry defines
+//! a segment of the track timeline by specifying a span of presentation time
+//! and the corresponding media time. This enables operations like trimming,
+//! looping, and inserting empty (dwell) time.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -11,26 +18,46 @@ define_box_flags!(
 );
 
 /// An entry in the Edit List Box (`elst`).
+///
+/// Each entry defines how a segment of the track timeline maps to media samples.
+///
+/// # Structure
+///
+/// - `segment_duration`: Duration of this edit segment in movie timescale units.
+/// - `media_time`: Starting time in media timescale (-1 indicates an empty edit).
+/// - `media_rate_integer`: Playback rate numerator (typically 1 for normal playback).
+/// - `media_rate_fraction`: Playback rate denominator (typically 0).
 #[derive(Debug, Clone, Copy)]
 pub struct ElstEntry {
-    /// The segment duration.
+    /// Duration of this edit segment in movie timescale units.
     pub segment_duration: u64,
-    /// The media time.
+    /// Starting media time in media timescale units (-1 = empty edit/dwell).
     pub media_time: i64,
-    /// The media rate integer.
+    /// Playback rate integer part (1 = normal forward, 0 = dwell, -1 = reverse).
     pub media_rate_integer: i16,
-    /// The media rate fraction.
+    /// Playback rate fractional part (usually 0).
     pub media_rate_fraction: i16,
 }
 
 /// A reference to an Edit List Box (`elst`).
+///
+/// The Edit List Box defines the timeline mapping for a track. An edit list
+/// with a single entry that maps the entire media is common; more complex
+/// lists enable trimming, looping, or inserting gaps.
+///
+/// # Structure
+///
+/// - `version`: 0 uses 32-bit time fields, 1 uses 64-bit.
+/// - `flags`: Reserved (should be 0).
+/// - `entry_count`: Number of edit segments.
+/// - `entries`: The edit list entries defining the timeline mapping.
 #[derive(Debug)]
 pub struct ElstBoxView<'a> {
-    /// Box version.
+    /// Box version (0 or 1). Version 1 uses 64-bit time fields.
     pub version: u8,
-    /// Box flags (should be 0).
+    /// Reserved flags (should be 0).
     pub flags: ElstFlags,
-    /// Number of entries.
+    /// Number of edit list entries.
     pub entry_count: u32,
     entries: &'a [u8],
 }
@@ -139,13 +166,16 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Edit List Box (`elst`).
+    ///
+    /// This is the owned variant of [`ElstBoxView`] that stores edit entries
+    /// in a heap-allocated vector.
     #[derive(Debug, Clone)]
     pub struct ElstBox {
-        /// Box version.
+        /// Box version (0 or 1). Version 1 uses 64-bit time fields.
         pub version: u8,
-        /// Box flags (should be 0).
+        /// Reserved flags (should be 0).
         pub flags: ElstFlags,
-        /// ELST entries.
+        /// Edit list entries defining timeline-to-media mapping.
         pub entries: Vec<ElstEntry>,
     }
 
