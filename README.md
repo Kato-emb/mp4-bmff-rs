@@ -1,177 +1,160 @@
-# mp4-bmff-rs
+# mp4-bmff
 
-ISO/IEC 14496-12 (ISO Base Media File Format, ISOBMFF) の純粋なRust実装です。
+[![Crates.io](https://img.shields.io/crates/v/mp4-bmff.svg)](https://crates.io/crates/mp4-bmff)
+[![Documentation](https://docs.rs/mp4-bmff/badge.svg)](https://docs.rs/mp4-bmff)
+[![License](https://img.shields.io/crates/l/mp4-bmff.svg)](LICENSE)
 
-## 設計方針
+A pure Rust, zero-copy implementation of ISO Base Media File Format (ISO/IEC 14496-12).
 
-### レイヤー構造
+## Features
 
-本クレートは、機能を段階的に提供する4層のレイヤー構造で設計されています。
-各レイヤーの境界はFeature依存（`no_std`/`alloc`/`std`）で分けられています。
+- **Zero-copy parsing** - View types parse directly from byte slices without allocation
+- **`no_std` support** - Core functionality works without standard library
+- **Layered design** - Use only what you need, from primitives to full I/O
+- **Type-safe** - Strongly typed box structures with compile-time guarantees
 
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+mp4-bmff = "0.1"
 ```
-Layer 3: I/O (std)           - BoxReader / BoxWriter
-Layer 2: Typed Boxes (alloc) - 型付きボックス表現
-Layer 1: Core (no_std)       - ISO BMFF基本構造
-Layer 0: Primitives          - FourCC, Fixed-point numbers, Matrix等
+
+For `no_std` environments:
+
+```toml
+[dependencies]
+mp4-bmff = { version = "0.1", default-features = false, features = ["alloc"] }
 ```
 
-| レイヤー | 必要なFeature | 内容                                                         |
-| -------- | ------------- | ------------------------------------------------------------ |
-| Layer 0  | なし          | プリミティブ型（`FourCC`, `Fixed<I,F>`, `Matrix`, `Uuid`等） |
-| Layer 1  | なし          | ISO BMFF基本構造（詳細は下表）                               |
-| Layer 2  | `alloc`       | 型付きボックス表現（`FtypBox`, `MoovBox`等）                 |
-| Layer 3  | `std`         | ストリームベースのI/O（`BoxReader`, `BoxWriter`）            |
+## Quick Start
 
-**Layer 1 の構成:**
-
-| モジュール | 責務                                                                |
-| ---------- | ------------------------------------------------------------------- |
-| `base`     | データ構造（`BoxHeader`, `BoxType`, `RawBox`等）                    |
-| `error`    | エラー型（`Error`, `ErrorKind`）                                    |
-| `codec`    | エンコード/デコードトレイト（`BoxCodec`, `BoxDecode`, `BoxEncode`） |
-| `iter`     | イテレータ（`BoxIter`, `FixedSizeEntryIter`）                       |
-
-`codec`と`iter`は、Layer 1のデータ構造とLayer 2の型付きボックスを繋ぐトレイト・ヘルパーを提供します。
-
-### View/Owned パターン
-
-可変長データを持つボックスには、2種類の型を提供しています。
-
-- **View型** (`XxxBoxView<'a>`): バイトスライスへの参照を保持し、ゼロコピーパースを実現
-- **Owned型** (`XxxBox`): データを所有し、変更や書き込みが可能
+### Parse boxes from bytes
 
 ```rust
-// View型: ゼロコピーでパース（no_std/no_alloc環境でも使用可能）
-let ftyp_view: FtypBoxView = FtypBoxView::decode(payload)?;
-println!("Major brand: {}", ftyp_view.major_brand);
+use mp4_bmff::{iter_boxes, BoxType};
 
-// Owned型: データを所有（alloc feature必要）
-let ftyp: FtypBox = FtypBox::from(&ftyp_view);
-ftyp.compatible_brands.push(FourCC::new(*b"iso6"));
-```
+let data: &[u8] = /* MP4 data */;
 
-### Copy型ボックス
-
-固定サイズのボックス（`MvhdBox`, `TkhdBox`等）は、View/Owned の区別がなく単一の`Copy`可能な型として実装されています。
-
-```rust
-let mvhd: MvhdBox = MvhdBox::decode(payload)?;
-let copy = mvhd; // Copy可能
-```
-
-### トレイトベース設計
-
-ボックスのエンコード/デコードは、以下のトレイトで抽象化されています。
-
-| トレイト         | 役割                                 |
-| ---------------- | ------------------------------------ |
-| `BoxCodec`       | ボックスタイプ（FourCC）を返す       |
-| `BoxDecode<'de>` | バイトスライスからボックスをデコード |
-| `BoxEncode`      | ボックスをバイトスライスにエンコード |
-
-```rust
-pub trait BoxCodec {
-    fn boxtype(&self) -> BoxType;
-}
-
-pub trait BoxDecode<'de>: Sized {
-    fn decode(bytes: &'de [u8]) -> Result<Self>;
-}
-
-pub trait BoxEncode {
-    fn encoded_len(&self) -> usize;
-    fn encode(&self, bytes: &mut [u8]) -> Result<()>;
+for result in iter_boxes(data) {
+    let raw_box = result?;
+    println!("{}: {} bytes", raw_box.boxtype(), raw_box.len());
 }
 ```
 
-### コンテナボックス
-
-コンテナボックス（`moov`, `trak`等）は、子ボックスへのアクセスにイテレータを使用します。
+### Decode typed boxes
 
 ```rust
-let moov: MoovBoxView = MoovBoxView::decode(payload)?;
+use mp4_bmff::read_box;
+use mp4_bmff::boxes::bmff::FtypBox;
 
-// 必須ボックスは専用メソッドでアクセス
-let mvhd: MvhdBox = moov.mvhd()?;
+let data: &[u8] = /* ftyp box data */;
 
-// 複数存在する子ボックスはイテレータでアクセス
-for trak in moov.traks() {
-    let trak = trak?;
-    let tkhd = trak.tkhd()?;
-    println!("Track ID: {}", tkhd.track_id);
+let ftyp = read_box::<FtypBox>(data)?;
+println!("Major brand: {}", ftyp.major_brand);
+```
+
+### Write boxes
+
+```rust
+use mp4_bmff::write_box;
+use mp4_bmff::boxes::bmff::FreeBox;
+
+let free = FreeBox { data: vec![0u8; 16] };
+
+let mut buf = vec![0u8; 256];
+let written = write_box(&mut buf, &free)?;
+```
+
+### Stream-based I/O
+
+```rust
+use std::fs::File;
+use mp4_bmff::io::BoxReader;
+
+let file = File::open("video.mp4")?;
+for result in BoxReader::new(file) {
+    let raw_box = result?;
+    println!("{}: {} bytes", raw_box.boxtype(), raw_box.len());
 }
 ```
 
 ## Feature Flags
 
-| Feature | デフォルト | 説明                                  |
-| ------- | ---------- | ------------------------------------- |
-| `std`   | 有効       | 標準ライブラリサポート。`alloc`を含む |
-| `alloc` | -          | ヒープ割り当て。Owned型ボックスに必要 |
+| Feature   | Default | Description                                |
+| --------- | ------- | ------------------------------------------ |
+| `std`     | ✓       | Standard library support (implies `alloc`) |
+| `alloc`   |         | Heap allocation for owned box types        |
+| `mp4`     | ✓       | ISO/IEC 14496-14 boxes                     |
+| `avc`     | ✓       | AVC/H.264 support                          |
+| `hevc`    |         | HEVC/H.265 support                         |
+| `systems` |         | MPEG-4 Systems descriptors                 |
 
-```toml
-# デフォルト（std有効）
-mp4-bmff = "0.1"
+## Architecture
 
-# no_std + alloc
-mp4-bmff = { version = "0.1", default-features = false, features = ["alloc"] }
+The crate is organized into layers:
 
-# no_std + no_alloc（View型のみ使用可能）
-mp4-bmff = { version = "0.1", default-features = false }
-```
+| Layer | Modules                          | Feature                      | Description                                  |
+| ----- | -------------------------------- | ---------------------------- | -------------------------------------------- |
+| 0     | `types`                          | -                            | Primitives (FourCC, fixed-point, timestamps) |
+| 1     | `base`, `codec`, `error`, `iter` | -                            | Core BMFF structures                         |
+| 2     | `boxes`, `formats`               | View/Copy: -, Owned: `alloc` | Typed box representations                    |
+| 3     | `io`                             | `std`                        | Stream-based I/O                             |
 
-## 使用例
+### Box Type Variants
 
-### ファイルからボックスを読み込む
+- **View types** (`*BoxView<'a>`) - Zero-copy references, `no_std` compatible
+- **Copy types** (`MvhdBox`, etc.) - Fixed-size boxes, `no_std` compatible
+- **Owned types** (`*Box`) - Heap-allocated, requires `alloc`
 
-```rust
-use std::fs::File;
-use mp4_bmff::{BoxReader, BoxType};
-use mp4_bmff::boxes::MoovBoxView;
+## Supported Boxes
 
-let file = File::open("video.mp4")?;
-let reader = BoxReader::new(file);
+ISO/IEC 14496-12 (BMFF) boxes:
 
-for raw in reader {
-    let raw = raw?;
-    match raw.boxtype() {
-        BoxType::MOOV => {
-            let moov = MoovBoxView::decode(raw.payload())?;
-            let mvhd = moov.mvhd()?;
-            println!("Duration: {} (timescale: {})", mvhd.duration, mvhd.timescale);
-        }
-        _ => {}
-    }
-}
-```
+- File structure: `ftyp`, `mdat`, `free`, `skip`, `pdin`
+- Movie: `moov`, `mvhd`, `trak`, `tkhd`, `mdia`, `mdhd`, `hdlr`, `minf`, `stbl`
+- Sample tables: `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stco`, `co64`, `stss`, `sdtp`
+- Fragments: `mvex`, `moof`, `mfhd`, `traf`, `tfhd`, `tfdt`, `trun`
+- Random access: `mfra`, `tfra`, `mfro`
+- Segments: `styp`
 
-### ボックスを書き込む
+See [documentation](https://docs.rs/mp4-bmff) for the complete list.
 
-```rust
-use mp4_bmff::{BoxWriter, BoxType};
-use mp4_bmff::boxes::FtypBox;
-use mp4_bmff::types::FourCC;
+## Roadmap
 
-let ftyp = FtypBox {
-    major_brand: FourCC::new(*b"isom"),
-    minor_version: 512,
-    compatible_brands: vec![
-        FourCC::new(*b"isom"),
-        FourCC::new(*b"iso2"),
-        FourCC::new(*b"avc1"),
-    ],
-};
+- [ ] **HEVC/H.265 support** - `hvc1`, `hev1` sample entries and HEVCDecoderConfigurationRecord
+- [ ] **Additional BMFF boxes**
+  - [ ] `meta` - Metadata container
+  - [ ] `iloc` - Item location
+  - [ ] `iinf` - Item information
+  - [ ] `pitm` - Primary item
+  - [ ] `iref` - Item reference
+  - [ ] `iprp` - Item properties
+  - [ ] `udta` - User data
+  - [ ] `cprt` - Copyright
+  - [ ] `sbgp` - Sample to group
+  - [ ] `sgpd` - Sample group description
+  - [ ] `subs` - Sub-sample information
+  - [ ] `sidx` - Segment index
+  - [ ] `ssix` - Subsegment index
+  - [ ] `prft` - Producer reference time
+- [ ] **Extended codec support**
+  - [ ] VVC/H.266
+  - [ ] AV1
 
-let mut output = Vec::new();
-let mut writer = BoxWriter::new(&mut output);
-writer.write_box(&ftyp)?;
-```
+## License
 
-## 対応ボックス
+Licensed under either of:
 
-主要なISO BMFF / MP4ボックスに対応しています。詳細は `src/boxes.rs` のボックス一覧を参照してください。
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT License ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
-## ライセンス
+at your option.
 
-MIT OR Apache-2.0
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
