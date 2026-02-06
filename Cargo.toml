@@ -1,9 +1,19 @@
 [package]
 name = "mp4-bmff"
 version = "0.1.0"
+authors = ["Ryohei Kato <r-kato@musen.co.jp>"]
 edition = "2024"
 rust-version = "1.87"
+description = "A pure Rust, zero-copy implementation of ISO Base Media File Format (ISOBMFF/MP4)"
+readme = "README.md"
 repository = "https://github.com/Kato-emb/mp4-bmff-rs"
+license = "MIT OR Apache-2.0"
+keywords = ["no_std", "isobmff", "mp4", "parser", "multimedia"]
+categories = ["data-structures", "no-std"]
+exclude = ["examples/", "benches/", ".github/"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [features]
 default = ["std", "avc", "mp4"]

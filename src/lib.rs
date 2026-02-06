@@ -83,7 +83,7 @@
 //! |-------|---------|-------------|
 //! | 0 | [`types`] | Primitive types (FourCC, fixed-point, timestamps) |
 //! | 1 | [`base`], [`codec`], [`error`], [`iter`] | Core BMFF structures (`no_std` compatible) |
-//! | 2 | [`boxes`], [`formats`] | Typed box representations (requires `alloc`) |
+//! | 2 | [`boxes`], [`formats`] | Typed box representations (View/Copy: `no_std`, Owned: `alloc`) |
 //! | 3 | `io` | Stream-based I/O (requires `std`) |
 //!
 //! # Key Types
@@ -237,7 +237,7 @@ pub use codec::write_box;
 pub use iter::iter_boxes;
 
 // =============================================================================
-// Layer 2 - Typed Box Representations (requires alloc)
+// Layer 2 - Typed Box Representations (View/Copy: no_std, Owned: alloc)
 // =============================================================================
 pub mod boxes;
 pub mod formats;
