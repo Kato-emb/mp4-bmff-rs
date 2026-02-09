@@ -261,7 +261,7 @@ pub struct Error {
     offset: Option<u64>,
     box_type: Option<BoxType>,
     #[cfg(feature = "std")]
-    source: Option<Box<dyn error::Error + 'static>>,
+    source: Option<Box<dyn error::Error + Send + Sync + 'static>>,
 }
 
 impl Error {
@@ -332,6 +332,17 @@ impl Error {
         self
     }
 
+    /// Adds an underlying source error to this error.
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn with_source<E>(mut self, source: E) -> Self
+    where
+        E: error::Error + Send + Sync + 'static,
+    {
+        self.source = Some(Box::new(source));
+        self
+    }
+
     /// Returns the error kind.
     #[inline]
     pub fn kind(&self) -> ErrorKind {
@@ -387,7 +398,9 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     #[cfg(feature = "std")]
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        self.source.as_deref()
+        self.source
+            .as_ref()
+            .map(|e| e.as_ref() as &(dyn error::Error + 'static))
     }
 }
 
@@ -424,8 +437,6 @@ impl From<CursorError> for Error {
 #[cfg(feature = "std")]
 impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
-        let mut error = Self::new(ErrorKind::Io);
-        error.source = Some(Box::new(value));
-        error
+        Error::new(ErrorKind::Io).with_source(value)
     }
 }

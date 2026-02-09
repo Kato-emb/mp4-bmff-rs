@@ -28,7 +28,6 @@ pub use crate::base::rawbox::RawBoxOwned;
 // Error types
 pub use crate::error::Error;
 pub use crate::error::ErrorKind;
-pub use crate::error::Result;
 
 // Common functions
 pub use crate::codec::read_box;

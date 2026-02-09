@@ -221,7 +221,6 @@ pub use base::rawbox::{
 pub use error::{
     Error, //
     ErrorKind,
-    Result,
 };
 
 // Re-export codec traits
