@@ -15,18 +15,16 @@
 //! # Reading Boxes
 //!
 //! [`BoxReader`] wraps any [`Read`](std::io::Read) implementor and provides
-//! methods to read boxes one at a time. It also implements [`Iterator`] for
-//! convenient sequential reading.
+//! methods to read boxes one at a time.
 //!
 //! ```no_run
 //! use std::fs::File;
 //! use mp4_bmff::io::BoxReader;
 //!
 //! let file = File::open("video.mp4").unwrap();
-//! let reader = BoxReader::new(file);
+//! let mut reader = BoxReader::new(file);
 //!
-//! for result in reader {
-//!     let raw_box = result.unwrap();
+//! while let Ok(raw_box) = reader.read_box() {
 //!     println!("Box type: {}", raw_box.boxtype());
 //! }
 //! ```

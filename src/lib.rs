@@ -67,10 +67,9 @@
 //! use mp4_bmff::io::BoxReader;
 //!
 //! let file = File::open("video.mp4").unwrap();
-//! let reader = BoxReader::new(file);
+//! let mut reader = BoxReader::new(file);
 //!
-//! for result in reader {
-//!     let raw_box = result.unwrap();
+//! while let Ok(raw_box) = reader.read_box() {
 //!     println!("Box: {} at offset {}", raw_box.boxtype(), raw_box.len());
 //! }
 //! ```

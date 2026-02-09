@@ -82,6 +82,8 @@ impl fmt::Display for BoxHeader {
 impl BoxHeader {
     /// Base size of a box header (size + type fields).
     pub const BASE_SIZE: usize = 8;
+    /// Maximum size of a box header including extended size and UUID.
+    pub const MAX_HEADER_SIZE: usize = Self::BASE_SIZE + 8 + 16; // Max header size with extended size and UUID
 
     /// Creates a new box header.
     pub fn new(type_: BoxType, payload_len: u64) -> Self {
@@ -131,7 +133,7 @@ impl BoxHeader {
     }
 
     /// Calculates the number of additional header bytes based on the base header.
-    pub fn addintional_header_bytes(base: &[u8; Self::BASE_SIZE]) -> usize {
+    pub fn additional_header_bytes(base: &[u8; Self::BASE_SIZE]) -> usize {
         let size = u32::from_be_bytes([base[0], base[1], base[2], base[3]]);
         let fourcc = FourCC::from([base[4], base[5], base[6], base[7]]);
 

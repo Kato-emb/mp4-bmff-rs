@@ -30,6 +30,7 @@
 //! assert_eq!(raw.payload(), &[0x01, 0x02, 0x03, 0x04]);
 //! ```
 
+use crate::BoxDecode;
 use crate::BoxHeader;
 use crate::BoxSize;
 use crate::BoxType;
@@ -176,6 +177,30 @@ impl<'a> RawBox<&'a [u8]> {
         }
     }
 
+    /// Decodes the box payload into a concrete box type.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::base::rawbox::RawBoxRef;
+    /// use mp4_bmff::boxes::bmff::FtypBoxView;
+    ///
+    /// let data = [
+    ///     0x00, 0x00, 0x00, 0x10, // size = 16
+    ///     b'f', b't', b'y', b'p', // type = "ftyp"
+    ///     b'i', b's', b'o', b'm', // major_brand = "isom"
+    ///     0x00, 0x00, 0x00, 0x01, // minor_version = 1
+    /// ];
+    ///
+    /// let raw = RawBoxRef::parse(&data).unwrap();
+    /// let ftyp: FtypBoxView = raw.decode().unwrap();
+    ///
+    /// assert_eq!(ftyp.major_brand.as_bytes(), b"isom");
+    /// ```
+    pub fn decode<B: BoxDecode<'a>>(&self) -> Result<B> {
+        B::decode(self.payload)
+    }
+
     /// Parses a `RawBoxRef` from the given byte slice.
     pub fn parse(bytes: &'a [u8]) -> Result<Self> {
         let header = BoxHeader::parse(bytes)?;
@@ -228,9 +253,39 @@ impl<'a> RawBox<&'a [u8]> {
     }
 }
 
+#[cfg(feature = "alloc")]
+impl RawBox<Vec<u8>> {
+    /// Decodes the box payload into a concrete box type.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mp4_bmff::base::rawbox::RawBoxRef;
+    /// use mp4_bmff::boxes::bmff::MfroBox;
+    ///
+    /// let data = [
+    ///     0x00, 0x00, 0x00, 0x10, // size = 16
+    ///     b'm', b'f', b'r', b'o', // type = "mfro"
+    ///     0x00,                   // version = 0
+    ///     0x00, 0x00, 0x00,       // flags = 0
+    ///     0x00, 0x00, 0x10, 0x00, // size = 4096
+    /// ];
+    ///
+    /// let raw_ref = RawBoxRef::parse(&data).unwrap();
+    /// let raw_owned = raw_ref.to_owned();
+    /// let mfro: MfroBox = raw_owned.decode().unwrap();
+    ///
+    /// assert_eq!(mfro.size, 4096);
+    /// ```
+    pub fn decode<'a, B: BoxDecode<'a>>(&'a self) -> Result<B> {
+        B::decode(&self.payload)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::boxes::bmff::{FtypBoxView, MfroBox};
     use crate::types::FourCC;
 
     #[test]
@@ -303,5 +358,81 @@ mod tests {
 
         let result = RawBoxRef::parse(&data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_view_from_raw_box_ref() {
+        // ftyp box with payload
+        let data = [
+            0x00, 0x00, 0x00, 0x14, // size = 20
+            b'f', b't', b'y', b'p', // type = 'ftyp'
+            b'i', b's', b'o', b'm', // major_brand
+            0x00, 0x00, 0x02, 0x00, // minor_version (512)
+            b'i', b's', b'o', b'm', // compatible_brand
+        ];
+
+        let raw = RawBoxRef::parse(&data).unwrap();
+        let ftyp: FtypBoxView = raw.decode().unwrap();
+
+        assert_eq!(ftyp.major_brand, FourCC::new(*b"isom"));
+        assert_eq!(ftyp.minor_version, 512);
+        assert_eq!(ftyp.compatible_brands().count(), 1);
+    }
+
+    #[test]
+    fn decode_owned_from_raw_box_ref() {
+        // mfro box with payload
+        let data = [
+            0x00, 0x00, 0x00, 0x10, // size = 16
+            b'm', b'f', b'r', b'o', // type = 'mfro'
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
+            0x00, 0x00, 0x10, 0x00, // size = 4096
+        ];
+
+        let raw = RawBoxRef::parse(&data).unwrap();
+        let mfro: MfroBox = raw.decode().unwrap();
+
+        assert_eq!(mfro.version, 0);
+        assert_eq!(mfro.size, 4096);
+    }
+
+    #[test]
+    fn decode_view_from_raw_box_owned() {
+        // ftyp box with payload
+        let data = [
+            0x00, 0x00, 0x00, 0x14, // size = 20
+            b'f', b't', b'y', b'p', // type = 'ftyp'
+            b'i', b's', b'o', b'm', // major_brand
+            0x00, 0x00, 0x02, 0x00, // minor_version (512)
+            b'i', b's', b'o', b'm', // compatible_brand
+        ];
+
+        let raw_ref = RawBoxRef::parse(&data).unwrap();
+        let raw_owned = raw_ref.to_owned();
+        let ftyp: FtypBoxView = raw_owned.decode().unwrap();
+
+        assert_eq!(ftyp.major_brand, FourCC::new(*b"isom"));
+        assert_eq!(ftyp.minor_version, 512);
+        assert_eq!(ftyp.compatible_brands().count(), 1);
+    }
+
+    #[test]
+    fn decode_owned_from_raw_box_owned() {
+        // mfro box with payload
+        let data = [
+            0x00, 0x00, 0x00, 0x10, // size = 16
+            b'm', b'f', b'r', b'o', // type = 'mfro'
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
+            0x00, 0x00, 0x10, 0x00, // size = 4096
+        ];
+
+        let raw_ref = RawBoxRef::parse(&data).unwrap();
+        let raw_owned = raw_ref.to_owned();
+        let mfro: MfroBox = raw_owned.decode().unwrap();
+
+        assert_eq!(mfro.version, 0);
+        assert_eq!(mfro.size, 4096);
     }
 }
