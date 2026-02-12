@@ -33,6 +33,11 @@ impl ObjectTypeIndication {
     pub const MPEG4_VISUAL: ObjectTypeIndication = ObjectTypeIndication(0x20);
     /// AVC (H.264) Video object type (0x21).
     pub const AVC_VIDEO: ObjectTypeIndication = ObjectTypeIndication(0x21);
+
+    /// Returns the raw value of the Object Type Indication.
+    pub const fn value(&self) -> u8 {
+        self.0
+    }
 }
 
 /// Stream type indicating the nature of the elementary stream.
@@ -54,6 +59,11 @@ impl StreamType {
     pub const VISUAL_STREAM: StreamType = StreamType(0x04);
     /// Text stream type (0x06).
     pub const TEXT_STREAM: StreamType = StreamType(0x06);
+
+    /// Returns the raw value of the Stream Type.
+    pub const fn value(&self) -> u8 {
+        self.0
+    }
 }
 
 /// Zero-copy view of a Decoder Configuration Descriptor.

@@ -82,6 +82,8 @@ impl<'de> BoxDecode<'de> for Mp4aSampleEntryView<'de> {
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use crate::lib::String;
+
     use super::*;
     use crate::BoxEncode;
 
@@ -106,6 +108,34 @@ mod owned {
         pub base: AudioSampleEntry,
         /// Elementary Stream Descriptor Box with codec configuration.
         pub esds: EsdsBox,
+    }
+
+    impl Mp4aSampleEntry {
+        /// Generates the codec string for this MPEG-4 Audio Sample Entry.
+        pub fn codec_string(&self) -> String {
+            use core::fmt::Write;
+            let mut codec = String::from("mp4a.");
+            let object_type_indication = self
+                .esds
+                .esd
+                .dec_config_descr
+                .object_type_indication
+                .value();
+            write!(codec, "{:02X}", object_type_indication).unwrap();
+            let audio_object_type = self
+                .esds
+                .esd
+                .dec_config_descr
+                .dec_specific_info
+                .as_ref()
+                .map(|info| info.instance()[0] >> 3);
+
+            if let Some(aot) = audio_object_type {
+                write!(codec, ".{}", aot).unwrap();
+            }
+
+            codec
+        }
     }
 
     impl TryFrom<&Mp4aSampleEntryView<'_>> for Mp4aSampleEntry {
@@ -376,5 +406,18 @@ mod tests {
             }
             _ => panic!("Expected BoxMissing error"),
         }
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn mp4a_sample_entry_codec_string() {
+        // テストデータ:
+        // - objectTypeIndication = 0x40 (MPEG-4 Audio)
+        // - DecoderSpecificInfo = [0x13, 0x90]
+        //   - 0x13 = 0001_0011 → 上位5ビット = 00010 = 2 (AAC-LC)
+        let payload = sample_mp4a_payload();
+        let owned = Mp4aSampleEntry::decode(&payload).unwrap();
+
+        assert_eq!(owned.codec_string(), "mp4a.40.2");
     }
 }
