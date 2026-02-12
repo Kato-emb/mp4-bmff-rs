@@ -275,6 +275,12 @@ mod owned {
     }
 
     impl AVCDecoderConfigurationRecord {
+        /// Parses an AVCDecoderConfigurationRecord from the given byte slice.
+        pub fn parse(bytes: &[u8]) -> Result<Self> {
+            let view = AVCDecoderConfigurationRecordView::parse(bytes)?;
+            Ok(AVCDecoderConfigurationRecord::from(&view))
+        }
+
         /// Returns the size in bytes when encoded to a byte slice.
         pub fn encoded_len(&self) -> usize {
             // Base fields: 6 bytes
