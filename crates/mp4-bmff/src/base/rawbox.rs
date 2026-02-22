@@ -109,6 +109,10 @@ impl<T> RawBox<T> {
 
 impl<T: AsRef<[u8]>> RawBox<T> {
     /// Creates a new `RawBox` with the given box type and payload.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the total box size overflows `u64`.
     pub fn new(boxtype: BoxType, payload: T) -> Self {
         let payload_len = payload.as_ref().len() as u64;
         let header = BoxHeader::new(boxtype, payload_len);
@@ -117,6 +121,10 @@ impl<T: AsRef<[u8]>> RawBox<T> {
     }
 
     /// Writes the `RawBox` into the given byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the byte slice is too short to hold the box.
     pub fn write(&self, bytes: &mut [u8]) -> Result<()> {
         let header_len = self.header.header_len();
         let payload = self.payload.as_ref();
@@ -179,6 +187,10 @@ impl<'a> RawBox<&'a [u8]> {
 
     /// Decodes the box payload into a concrete box type.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the payload cannot be decoded into the target type.
+    ///
     /// # Example
     ///
     /// ```
@@ -202,6 +214,15 @@ impl<'a> RawBox<&'a [u8]> {
     }
 
     /// Parses a `RawBoxRef` from the given byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is too short or malformed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the box size is non-EOF but has no value (should not happen
+    /// with well-formed `BoxSize`).
     pub fn parse(bytes: &'a [u8]) -> Result<Self> {
         let header = BoxHeader::parse(bytes)?;
         let header_len = header.header_len();
@@ -211,7 +232,7 @@ impl<'a> RawBox<&'a [u8]> {
             size => {
                 let box_size = size.value().expect("box size is valid");
 
-                if box_size > usize::MAX as u64 {
+                if usize::try_from(box_size).is_err() {
                     return Err(Error::in_box(
                         ErrorKind::InvalidBoxSize {
                             reason: "Box size exceeds usize max",
@@ -221,6 +242,8 @@ impl<'a> RawBox<&'a [u8]> {
                     ));
                 }
 
+                #[allow(clippy::cast_possible_truncation)]
+                // Safety: we verified box_size fits in usize above
                 let total_size = box_size as usize;
 
                 if total_size < header_len {
@@ -256,6 +279,10 @@ impl<'a> RawBox<&'a [u8]> {
 #[cfg(feature = "alloc")]
 impl RawBox<Vec<u8>> {
     /// Decodes the box payload into a concrete box type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the payload cannot be decoded into the target type.
     ///
     /// # Example
     ///

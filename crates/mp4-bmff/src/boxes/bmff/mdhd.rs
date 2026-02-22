@@ -95,14 +95,14 @@ impl BoxDecode<'_> for MdhdBox {
             0 => {
                 // Read creation_time (4 bytes)
                 creation_time =
-                    QuickTimeDateTime::from_quicktime_seconds(cur.read_u32_be()? as u64);
+                    QuickTimeDateTime::from_quicktime_seconds(u64::from(cur.read_u32_be()?));
                 // Read modification_time (4 bytes)
                 modification_time =
-                    QuickTimeDateTime::from_quicktime_seconds(cur.read_u32_be()? as u64);
+                    QuickTimeDateTime::from_quicktime_seconds(u64::from(cur.read_u32_be()?));
                 // Read timescale (4 bytes)
                 timescale = cur.read_u32_be()?;
                 // Read duration (4 bytes)
-                duration = cur.read_u32_be()? as u64;
+                duration = u64::from(cur.read_u32_be()?);
             }
             1 => {
                 // Read creation_time (8 bytes)
@@ -163,6 +163,7 @@ impl BoxEncode for MdhdBox {
         len
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 

@@ -122,7 +122,7 @@ impl Iterator for TrunSampleIter<'_> {
         {
             if self.version == 0 {
                 match cursor.read_u32_be() {
-                    Ok(v) => Some(v as i32),
+                    Ok(v) => Some(v.cast_signed()),
                     Err(e) => return Some(Err(e.into())),
                 }
             } else {
@@ -346,7 +346,7 @@ mod owned {
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_be_bytes())?;
 
-            cur.write_u32_be(self.samples.len() as u32)?;
+            cur.write_u32_be(u32::try_from(self.samples.len())?)?;
 
             if self.flags.contains(TrunFlags::DATA_OFFSET_PRESENT) {
                 if let Some(data_offset) = self.data_offset {
@@ -425,7 +425,7 @@ mod owned {
                 {
                     if let Some(offset) = sample.composition_time_offset {
                         if self.version == 0 {
-                            cur.write_u32_be(offset as u32)?;
+                            cur.write_u32_be(offset.cast_unsigned())?;
                         } else {
                             cur.write_i32_be(offset)?;
                         }

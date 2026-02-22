@@ -79,15 +79,15 @@ impl QuickTimeDateTime {
     /// or predating the Unix epoch.
     #[inline]
     pub fn to_unix_seconds(self) -> Option<i64> {
-        let offset = QUICKTIME_UNIX_OFFSET as u64;
+        let offset = QUICKTIME_UNIX_OFFSET.cast_unsigned();
         if self.0 < offset {
             return None;
         }
         let unix = self.0 - offset;
-        if unix > i64::MAX as u64 {
+        if unix > i64::MAX.cast_unsigned() {
             None
         } else {
-            Some(unix as i64)
+            Some(unix.cast_signed())
         }
     }
 
@@ -131,7 +131,7 @@ impl From<std::time::SystemTime> for QuickTimeDateTime {
         let duration_since_epoch = value
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
-        let unix_seconds = duration_since_epoch.as_secs() as i64;
+        let unix_seconds = duration_since_epoch.as_secs().cast_signed();
         QuickTimeDateTime::from_unix_seconds(unix_seconds).unwrap_or_default()
     }
 }
@@ -141,7 +141,7 @@ impl From<QuickTimeDateTime> for std::time::SystemTime {
     fn from(value: QuickTimeDateTime) -> Self {
         match value.to_unix_seconds() {
             Some(unix) if unix >= 0 => {
-                std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix as u64)
+                std::time::UNIX_EPOCH + core::time::Duration::from_secs(unix.cast_unsigned())
             }
             _ => std::time::UNIX_EPOCH,
         }
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn unix_underflow_is_none() {
         let quicktime =
-            QuickTimeDateTime::from_quicktime_seconds((QUICKTIME_UNIX_OFFSET - 1) as u64);
+            QuickTimeDateTime::from_quicktime_seconds((QUICKTIME_UNIX_OFFSET - 1).cast_unsigned());
         assert_eq!(quicktime.to_unix_seconds(), None);
     }
 

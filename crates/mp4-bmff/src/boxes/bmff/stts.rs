@@ -40,6 +40,7 @@ impl FixedEntry<8> for SttsEntry {
         }
     }
 
+    #[cfg(feature = "alloc")]
     fn to_bytes(&self) -> [u8; 8] {
         let mut bytes = [0u8; 8];
         bytes[0..4].copy_from_slice(&self.sample_count.to_be_bytes());
@@ -195,7 +196,7 @@ mod owned {
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_be_bytes())?;
 
-            cur.write_u32_be(self.entries.len() as u32)?;
+            cur.write_u32_be(u32::try_from(self.entries.len())?)?;
 
             for entry in &self.entries {
                 let bytes = entry.to_bytes();

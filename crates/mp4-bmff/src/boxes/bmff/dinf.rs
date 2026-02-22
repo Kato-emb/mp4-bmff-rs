@@ -36,6 +36,10 @@ impl<'a> DinfBoxView<'a> {
     }
 
     /// Returns the Data Reference Box (`dref`) contained in this `dinf` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `dref` box is missing or if there are multiple `dref` boxes.
     pub fn dref(&self) -> Result<DrefBoxView<'a>> {
         for b in self.boxes() {
             let b = b?;

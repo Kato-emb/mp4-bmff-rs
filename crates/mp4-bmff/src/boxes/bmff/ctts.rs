@@ -44,6 +44,7 @@ impl FixedEntry<8> for CttsEntry {
         }
     }
 
+    #[cfg(feature = "alloc")]
     fn to_bytes(&self) -> [u8; 8] {
         let mut bytes = [0u8; 8];
         bytes[0..4].copy_from_slice(&self.sample_count.to_be_bytes());
@@ -197,6 +198,7 @@ mod owned {
                 + self.entries.len() * CttsEntry::ENTRY_SIZE // entries
         }
 
+        #[allow(clippy::cast_possible_truncation)]
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 

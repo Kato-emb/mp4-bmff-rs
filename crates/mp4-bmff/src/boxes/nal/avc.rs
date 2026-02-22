@@ -119,6 +119,10 @@ impl<'a, S> AVCSampleEntryView<'a, S> {
     }
 
     /// Returns the AVC Configuration Box (`avcC`) contained in this sample entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `avcC` box is missing. The `avcC` box is required in a valid AVC sample entry.
     pub fn avcc(&self) -> Result<AvcCBoxView<'a>> {
         for result in self.boxes() {
             let b = result?;
@@ -134,6 +138,10 @@ impl<'a, S> AVCSampleEntryView<'a, S> {
     }
 
     /// Returns the MPEG-4 Extension Descriptors Box (`m4ds`) contained in this sample entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are multiple `m4ds` boxes. The `m4ds` box is optional, but if present there must be only one.
     pub fn m4ds(&self) -> Result<Option<M4dsBoxView<'a>>> {
         for result in self.boxes() {
             let b = result?;
@@ -225,6 +233,10 @@ impl<'a, S> AVC2SampleEntryView<'a, S> {
     }
 
     /// Returns the AVC Configuration Box (`avcC`) contained in this sample entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `avcC` box is missing. The `avcC` box is required in a valid AVC sample entry.
     pub fn avcc(&self) -> Result<AvcCBoxView<'a>> {
         for result in self.boxes() {
             let b = result?;
@@ -240,6 +252,10 @@ impl<'a, S> AVC2SampleEntryView<'a, S> {
     }
 
     /// Returns the MPEG-4 Extension Descriptors Box (`m4ds`) contained in this sample entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are multiple `m4ds` boxes. The `m4ds` box is optional, but if present there must be only one.
     pub fn m4ds(&self) -> Result<Option<M4dsBoxView<'a>>> {
         for result in self.boxes() {
             let b = result?;
@@ -549,6 +565,10 @@ mod owned {
 
     impl Avc1SampleEntry {
         /// Returns the codec string (e.g., "avc1.640028")
+        ///
+        /// # Panics
+        ///
+        /// This method will panic if writing to the internal string buffer fails, which should not happen under normal circumstances.
         pub fn codec_string(&self) -> String {
             let mut buf = String::new();
             self.write_codec_string_in(&mut buf, "avc1")
@@ -577,6 +597,10 @@ mod owned {
 
     impl Avc3SampleEntry {
         /// Returns the codec string (e.g., "avc3.640028")
+        ///
+        /// # Panics
+        ///
+        /// This method will panic if writing to the internal string buffer fails, which should not happen under normal circumstances.
         pub fn codec_string(&self) -> String {
             let mut buf = String::new();
             self.write_codec_string_in(&mut buf, "avc3")
@@ -707,6 +731,10 @@ mod owned {
 
     impl Avc2SampleEntry {
         /// Returns the codec string (e.g., "avc2.640028")
+        ///
+        /// # Panics
+        ///
+        /// This method will panic if writing to the internal string buffer fails, which should not happen under normal circumstances.
         pub fn codec_string(&self) -> String {
             let mut buf = String::new();
             self.write_codec_string_in(&mut buf, "avc2")
@@ -729,6 +757,10 @@ mod owned {
 
     impl Avc4SampleEntry {
         /// Returns the codec string (e.g., "avc4.640028")
+        ///
+        /// # Panics
+        ///
+        /// This method will panic if writing to the internal string buffer fails, which should not happen under normal circumstances.
         pub fn codec_string(&self) -> String {
             let mut buf = String::new();
             self.write_codec_string_in(&mut buf, "avc4")

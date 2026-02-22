@@ -155,7 +155,8 @@ mod owned {
             len += 4; // entry_count
 
             for entry in &self.entries {
-                len += entry.header().total_size() as usize;
+                len +=
+                    usize::try_from(entry.header().total_size()).expect("Box size exceeds usize");
             }
 
             len
@@ -167,7 +168,7 @@ mod owned {
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_be_bytes())?;
 
-            cur.write_u32_be(self.entries.len() as u32)?;
+            cur.write_u32_be(u32::try_from(self.entries.len())?)?;
 
             for entry in &self.entries {
                 let buf = cur.take_mut(entry.len())?;

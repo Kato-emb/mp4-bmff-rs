@@ -41,6 +41,10 @@ impl<'a> TrakBoxView<'a> {
     }
 
     /// Returns the Track Header Box (`tkhd`) contained in this `trak` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn tkhd(&self) -> Result<TkhdBox> {
         for b in self.boxes() {
             let b = b?;
@@ -59,6 +63,10 @@ impl<'a> TrakBoxView<'a> {
     }
 
     /// Returns the Track Reference Box (`tref`) contained in this `trak` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn tref(&self) -> Result<Option<TrefBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;
@@ -72,6 +80,10 @@ impl<'a> TrakBoxView<'a> {
     }
 
     /// Returns the Track Group Box (`trgr`) contained in this `trak` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn trgr(&self) -> Result<Option<TrgrBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;
@@ -85,6 +97,10 @@ impl<'a> TrakBoxView<'a> {
     }
 
     /// Returns the Media Box (`mdia`) contained in this `trak` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn mdia(&self) -> Result<MdiaBoxView<'a>> {
         for b in self.boxes() {
             let b = b?;
@@ -103,6 +119,10 @@ impl<'a> TrakBoxView<'a> {
     }
 
     /// Returns the Edit Box (`edts`) contained in this `trak` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn edts(&self) -> Result<Option<EdtsBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;

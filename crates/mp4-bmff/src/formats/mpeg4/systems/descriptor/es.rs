@@ -58,6 +58,11 @@ impl<'a> EsDescriptorView<'a> {
     }
 
     /// Returns the Decoder Config Descriptor contained in this ES Descriptor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Decoder Config Descriptor is not found or
+    /// contains invalid data.
     pub fn dec_config_descr(&self) -> Result<DecoderConfigDescriptorView<'a>> {
         for result in self.descriptors() {
             let descr = result?;
@@ -73,6 +78,11 @@ impl<'a> EsDescriptorView<'a> {
     }
 
     /// Returns the SL Config Descriptor contained in this ES Descriptor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SL Config Descriptor is not found or
+    /// contains invalid data.
     pub fn sl_config_descr(&self) -> Result<RawDescriptorRef<'a>> {
         for result in self.descriptors() {
             let descr = result?;
@@ -87,6 +97,10 @@ impl<'a> EsDescriptorView<'a> {
     }
 
     /// Parses an ES Descriptor from the given byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is too short or contains invalid values.
     pub fn parse(instance: &'a [u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(instance);
 
@@ -105,7 +119,7 @@ impl<'a> EsDescriptorView<'a> {
         };
 
         let url_string = if url_flag {
-            let url_length = cur.read_u8()? as usize;
+            let url_length = usize::from(cur.read_u8()?);
             let url_bytes = cur.take(url_length)?;
             Some(core::str::from_utf8(url_bytes).map_err(|_| {
                 Error::new(ErrorKind::Other {
@@ -250,6 +264,12 @@ mod owned {
 
     impl EsDescriptor {
         /// Returns the length of the EsDescriptor when encoded.
+        ///
+        /// # Panics
+        ///
+        /// Panics if the Decoder Config Descriptor length exceeds the maximum
+        /// representable size for MPEG-4 Systems descriptors (`0x0FFFFFFF`).
+        #[allow(clippy::cast_possible_truncation)]
         pub fn encoded_len(&self) -> usize {
             let mut len = 3; // es_id(2) + flags(1)
 
@@ -280,13 +300,27 @@ mod owned {
             len
         }
 
-        /// Parses EsDescriptor from a byte slice
+        /// Parses EsDescriptor from a byte slice.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the data is too short or contains invalid values.
         pub fn parse(instance: &[u8]) -> Result<Self> {
             let view = EsDescriptorView::parse(instance)?;
             Self::try_from(&view)
         }
 
         /// Writes the EsDescriptor into the given byte slice.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the buffer is too small to hold the encoded data.
+        ///
+        /// # Panics
+        ///
+        /// Panics if the Decoder Config Descriptor length exceeds the maximum
+        /// representable size for MPEG-4 Systems descriptors (`0x0FFFFFFF`).
+        #[allow(clippy::cast_possible_truncation)]
         pub fn write(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 

@@ -80,6 +80,7 @@ impl BoxSize {
 
     /// Returns the size value, or `None` if the box extends to the end of the file.
     #[inline]
+    #[allow(clippy::cast_lossless)]
     pub const fn value(&self) -> Option<u64> {
         match self.0 {
             BoxSizeInner::Compact(v) => Some(v as u64),
@@ -89,16 +90,16 @@ impl BoxSize {
     }
 
     pub(crate) fn new(size: u64) -> Self {
-        if size == Self::MARKER_EOF as u64 {
+        if size == u64::from(Self::MARKER_EOF) {
             return Self::eof();
         }
 
         debug_assert!(
-            size >= Self::SIZE_32_MIN as u64,
+            size >= u64::from(Self::SIZE_32_MIN),
             "Box size must be at least 8 bytes (size + type fields)"
         );
 
-        if size > u32::MAX as u64 {
+        if size > u64::from(u32::MAX) {
             debug_assert!(
                 size >= Self::SIZE_64_MIN,
                 "Box size must be at least 16 bytes for extended size (size + type + largesize fields)"
@@ -106,6 +107,8 @@ impl BoxSize {
 
             Self(BoxSizeInner::Extended(size))
         } else {
+            #[allow(clippy::cast_possible_truncation)]
+            // Safety: we checked that size <= u32::MAX above
             Self(BoxSizeInner::Compact(size as u32))
         }
     }

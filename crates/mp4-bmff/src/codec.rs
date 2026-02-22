@@ -194,6 +194,10 @@ pub trait BoxEncode {
     /// let payload = mfro.encode_to_vec().unwrap();
     /// assert_eq!(payload.len(), 8); // version(1) + flags(3) + size(4)
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if encoding fails.
     #[cfg(feature = "alloc")]
     fn encode_to_vec(&self) -> Result<Vec<u8>> {
         let len = self.encoded_len();
@@ -314,7 +318,10 @@ where
     B: BoxCodec + BoxDecode<'de>,
 {
     let raw = RawBox::parse(cur.inner())?;
-    debug_assert!(raw.len() == raw.header().total_size() as usize);
+    #[allow(clippy::cast_possible_truncation)]
+    {
+        debug_assert!(raw.len() == raw.header().total_size() as usize);
+    }
     cur.advance(raw.len())?;
 
     let b = B::decode(raw.into_payload())?;

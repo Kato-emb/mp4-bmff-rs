@@ -81,6 +81,10 @@ impl<'a> TrefBoxView<'a> {
     }
 
     /// Finds a track reference type box by its reference type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn find_reference(&self, reference_type: BoxType) -> Result<Option<TrefTypeBoxView<'a>>> {
         for result in self.references() {
             let (boxtype, tref_type_box) = result?;

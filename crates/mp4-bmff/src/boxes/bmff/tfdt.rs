@@ -73,7 +73,7 @@ impl BoxDecode<'_> for TfdtBox {
         let flags = TfdtFlags::from_be_bytes(cur.read_array::<3>()?);
 
         let base_media_decode_time = match version {
-            0 => cur.read_u32_be()? as u64,
+            0 => u64::from(cur.read_u32_be()?),
             1 => cur.read_u64_be()?,
             _ => {
                 return Err(Error::in_box(
@@ -113,7 +113,7 @@ impl BoxEncode for TfdtBox {
         cur.write_array(&self.flags.to_be_bytes())?;
 
         match self.version {
-            0 => cur.write_u32_be(self.base_media_decode_time as u32)?,
+            0 => cur.write_u32_be(u32::try_from(self.base_media_decode_time)?)?,
             1 => cur.write_u64_be(self.base_media_decode_time)?,
             _ => {
                 return Err(Error::in_box(

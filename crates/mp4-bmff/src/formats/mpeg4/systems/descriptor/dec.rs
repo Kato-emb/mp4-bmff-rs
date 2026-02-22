@@ -106,6 +106,10 @@ impl<'a> DecoderConfigDescriptorView<'a> {
     }
 
     /// Returns the Decoder Specific Info descriptor contained in this Decoder Config Descriptor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the child descriptors contain invalid data.
     pub fn dec_specific_info(&self) -> Result<Option<RawDescriptorRef<'a>>> {
         for result in self.descriptors() {
             let descr = result?;
@@ -118,6 +122,10 @@ impl<'a> DecoderConfigDescriptorView<'a> {
     }
 
     /// Parses a Decoder Config Descriptor from the given byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is too short or contains invalid values.
     pub fn parse(instance: &'a [u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(instance);
 
@@ -249,13 +257,21 @@ mod owned {
             len
         }
 
-        /// Parses DecoderConfigDescriptor from a byte slice
+        /// Parses DecoderConfigDescriptor from a byte slice.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the data is too short or contains invalid values.
         pub fn parse(instance: &[u8]) -> Result<Self> {
             let view = DecoderConfigDescriptorView::parse(instance)?;
             Self::try_from(&view)
         }
 
         /// Writes the DecoderConfigDescriptor into the given byte slice.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the buffer is too small to hold the encoded data.
         pub fn write(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 

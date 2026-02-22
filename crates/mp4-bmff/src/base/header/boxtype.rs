@@ -63,6 +63,11 @@ pub struct BoxType {
 
 impl BoxType {
     /// Creates a `BoxType` from a regular FourCC code.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the FourCC is "uuid". Use [`BoxType::with_usertype`] instead
+    /// for UUID-based box types.
     pub fn new(fourcc: FourCC) -> Self {
         assert!(
             fourcc != UUID,

@@ -46,6 +46,10 @@ impl<'a> Mp4vSampleEntryView<'a> {
     }
 
     /// Returns the ESDS box contained in this Mp4v Sample Entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ESDS box is missing. The ESDS box is required in a valid MP4V sample entry.
     pub fn esds(&self) -> Result<EsdsBoxView<'a>> {
         for result in self.boxes() {
             let rawbox = result?;

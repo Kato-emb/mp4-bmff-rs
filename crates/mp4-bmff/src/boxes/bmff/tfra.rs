@@ -62,8 +62,8 @@ impl TfraEntryIter<'_> {
 
     fn read_variable_uint(cur: &mut ReadCursor<'_>, size: u8) -> Result<u32> {
         let value = match size {
-            1 => cur.read_u8().map(|v| v as u32)?,
-            2 => cur.read_u16_be().map(|v| v as u32)?,
+            1 => cur.read_u8().map(u32::from)?,
+            2 => cur.read_u16_be().map(u32::from)?,
             3 => {
                 let bytes = cur.read_array::<3>()?;
                 u32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]])
@@ -91,11 +91,11 @@ impl Iterator for TfraEntryIter<'_> {
         match self.version {
             0 => {
                 match cur.read_u32_be() {
-                    Ok(v) => time = v as u64,
+                    Ok(v) => time = u64::from(v),
                     Err(e) => return Some(Err(e.into())),
                 }
                 match cur.read_u32_be() {
-                    Ok(v) => moof_offset = v as u64,
+                    Ok(v) => moof_offset = u64::from(v),
                     Err(e) => return Some(Err(e.into())),
                 }
             }
@@ -364,17 +364,17 @@ mod owned {
 
             cur.write_u32_be(self.track_id)?;
 
-            let reserved_and_length: u32 = ((self.length_size_of_traf_num as u32 & 0x03) << 4)
-                | ((self.length_size_of_trun_num as u32 & 0x03) << 2)
-                | (self.length_size_of_sample_num as u32 & 0x03);
+            let reserved_and_length: u32 = ((u32::from(self.length_size_of_traf_num) & 0x03) << 4)
+                | ((u32::from(self.length_size_of_trun_num) & 0x03) << 2)
+                | (u32::from(self.length_size_of_sample_num) & 0x03);
             cur.write_u32_be(reserved_and_length)?;
 
-            cur.write_u32_be(self.entries.len() as u32)?;
+            cur.write_u32_be(u32::try_from(self.entries.len())?)?;
 
             for entry in &self.entries {
                 if self.version == 0 {
-                    cur.write_u32_be(entry.time as u32)?;
-                    cur.write_u32_be(entry.moof_offset as u32)?;
+                    cur.write_u32_be(u32::try_from(entry.time)?)?;
+                    cur.write_u32_be(u32::try_from(entry.moof_offset)?)?;
                 } else {
                     cur.write_u64_be(entry.time)?;
                     cur.write_u64_be(entry.moof_offset)?;
@@ -382,8 +382,8 @@ mod owned {
 
                 let traf_number_size = self.length_size_of_traf_num + 1;
                 match traf_number_size {
-                    1 => cur.write_u8(entry.traf_number as u8)?,
-                    2 => cur.write_u16_be(entry.traf_number as u16)?,
+                    1 => cur.write_u8(u8::try_from(entry.traf_number)?)?,
+                    2 => cur.write_u16_be(u16::try_from(entry.traf_number)?)?,
                     3 => {
                         let bytes = (entry.traf_number & 0x00FF_FFFF).to_be_bytes();
                         cur.write_slice(&bytes[1..4])?;
@@ -394,8 +394,8 @@ mod owned {
 
                 let trun_number_size = self.length_size_of_trun_num + 1;
                 match trun_number_size {
-                    1 => cur.write_u8(entry.trun_number as u8)?,
-                    2 => cur.write_u16_be(entry.trun_number as u16)?,
+                    1 => cur.write_u8(u8::try_from(entry.trun_number)?)?,
+                    2 => cur.write_u16_be(u16::try_from(entry.trun_number)?)?,
                     3 => {
                         let bytes = (entry.trun_number & 0x00FF_FFFF).to_be_bytes();
                         cur.write_slice(&bytes[1..4])?;
@@ -406,8 +406,8 @@ mod owned {
 
                 let sample_number_size = self.length_size_of_sample_num + 1;
                 match sample_number_size {
-                    1 => cur.write_u8(entry.sample_number as u8)?,
-                    2 => cur.write_u16_be(entry.sample_number as u16)?,
+                    1 => cur.write_u8(u8::try_from(entry.sample_number)?)?,
+                    2 => cur.write_u16_be(u16::try_from(entry.sample_number)?)?,
                     3 => {
                         let bytes = (entry.sample_number & 0x00FF_FFFF).to_be_bytes();
                         cur.write_slice(&bytes[1..4])?;

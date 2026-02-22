@@ -46,6 +46,7 @@ impl FixedEntry<8> for PdinEntry {
         }
     }
 
+    #[cfg(feature = "alloc")]
     fn to_bytes(&self) -> [u8; 8] {
         let mut bytes = [0u8; 8];
         bytes[0..4].copy_from_slice(&self.rate.to_be_bytes());

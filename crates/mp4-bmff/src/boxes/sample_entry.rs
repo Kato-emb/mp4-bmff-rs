@@ -43,6 +43,10 @@ impl SampleEntry {
     }
 
     /// Parses a `SampleEntry` from the given byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(bytes);
         Self::parse_in(&mut cur)
@@ -59,6 +63,10 @@ impl SampleEntry {
     }
 
     /// Writes the `SampleEntry` to the given byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn write(&self, bytes: &mut [u8]) -> Result<()> {
         let mut cur = WriteCursor::new(bytes);
         self.write_in(&mut cur)
@@ -174,6 +182,7 @@ mod visual {
         /// Sets the compressor name. Truncates if longer than 31 bytes.
         ///
         /// The compressorname field is 32 bytes: first byte is length, followed by 31 bytes of data.
+        #[allow(clippy::cast_possible_truncation)]
         pub fn set_compressorname(&mut self, name: &str) {
             let bytes = name.as_bytes();
             let len = bytes.len().min(31);

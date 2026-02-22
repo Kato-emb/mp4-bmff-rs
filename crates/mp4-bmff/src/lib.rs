@@ -165,7 +165,7 @@
 
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 
-#[cfg(all(feature = "alloc", not(feature = "std")))]
+#[cfg(feature = "std")]
 extern crate alloc;
 
 mod lib {
@@ -178,7 +178,7 @@ mod lib {
     };
 
     #[cfg(feature = "std")]
-    pub(crate) use std::{
+    pub(crate) use alloc::{
         string::String, //
         string::ToString,
         vec,

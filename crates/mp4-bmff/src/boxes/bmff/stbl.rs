@@ -57,6 +57,10 @@ impl<'a> StblBoxView<'a> {
     }
 
     /// Returns the Sample Description Box (`stsd`) contained in this `stbl` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn stsd(&self) -> Result<StsdBoxView<'a>> {
         for b in self.boxes() {
             let b = b?;
@@ -75,6 +79,10 @@ impl<'a> StblBoxView<'a> {
     }
 
     /// Returns the Degradation Priority Box (`stdp`) contained in this `stbl` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn stdp(&self) -> Result<Option<StdpBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;
@@ -88,6 +96,10 @@ impl<'a> StblBoxView<'a> {
     }
 
     /// Returns the Decoding Time to Sample Box (`stts`) contained in this `stbl` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn stts(&self) -> Result<SttsBoxView<'a>> {
         for b in self.boxes() {
             let b = b?;
@@ -106,6 +118,10 @@ impl<'a> StblBoxView<'a> {
     }
 
     /// Returns the Composition Time to Sample Box (`ctts`) contained in this `stbl` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn ctts(&self) -> Result<Option<CttsBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;
@@ -119,6 +135,10 @@ impl<'a> StblBoxView<'a> {
     }
 
     /// Returns the Composition to Decode Box (`cslg`) contained in this `stbl` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn cslg(&self) -> Result<Option<CslgBox>> {
         for b in self.boxes() {
             let b = b?;
@@ -132,6 +152,10 @@ impl<'a> StblBoxView<'a> {
     }
 
     /// Returns the Sync Sample Box (`stss`) contained in this `stbl` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn stss(&self) -> Result<Option<StssBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;
@@ -145,6 +169,10 @@ impl<'a> StblBoxView<'a> {
     }
 
     /// Returns the Shadow Sync Box (`stsh`) contained in this `stbl` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn stsh(&self) -> Result<Option<StshBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;
@@ -158,6 +186,10 @@ impl<'a> StblBoxView<'a> {
     }
 
     /// Returns the Sample Degradation Priority Box (`sdtp`) contained in this `stbl` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn sdtp(&self) -> Result<Option<SdtpBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;
@@ -172,6 +204,10 @@ impl<'a> StblBoxView<'a> {
 
     /// Returns the Sample Size Box (`stsz`) contained in this `stbl` box.
     /// TODO: stz2 box as alternative
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn stsz(&self) -> Result<StszBoxView<'a>> {
         for b in self.boxes() {
             let b = b?;
@@ -190,6 +226,10 @@ impl<'a> StblBoxView<'a> {
     }
 
     /// Returns the Sample to Chunk Box (`stsc`) contained in this `stbl` box.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if the `stsc` box is missing or if there are multiple `stsc` boxes, as only one is allowed by the specification.
     pub fn stsc(&self) -> Result<StscBoxView<'a>> {
         for b in self.boxes() {
             let b = b?;
@@ -207,8 +247,12 @@ impl<'a> StblBoxView<'a> {
         ))
     }
 
-    /// Returns the Chunk Offset Box (`stco`) contained in this `stbl` box.
     /// TODO: co64 box as alternative
+    /// Returns the Chunk Offset Box (`stco`) contained in this `stbl` box.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if the `stco` box is missing or if there are multiple `stco` boxes, as only one is allowed by the specification.
     pub fn stco(&self) -> Result<StcoBoxView<'a>> {
         for b in self.boxes() {
             let b = b?;

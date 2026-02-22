@@ -41,6 +41,10 @@ impl<'a> TrafBoxView<'a> {
     }
 
     /// Returns the Track Fragment Header Box (`tfhd`) contained in this `traf` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `tfhd` box is missing or if there are multiple `tfhd` boxes.
     pub fn tfhd(&self) -> Result<TfhdBox> {
         for b in self.boxes() {
             let b = b?;
@@ -70,6 +74,10 @@ impl<'a> TrafBoxView<'a> {
     }
 
     /// Returns the Track Fragment Decode Time Box (`tfdt`) contained in this `traf` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are multiple `tfdt` boxes. It's valid for the `tfdt` box to be missing, in which case this returns `Ok(None)`.
     pub fn tfdt(&self) -> Result<Option<TfdtBox>> {
         for b in self.boxes() {
             let b = b?;

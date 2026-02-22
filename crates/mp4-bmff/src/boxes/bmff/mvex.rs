@@ -40,6 +40,10 @@ impl<'a> MvexBoxView<'a> {
     }
 
     /// Returns the Movie Extends Header Box (`mehd`) contained in this `mvex` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are multiple `mehd` boxes. It's valid for the `mehd` box to be missing, in which case this returns `Ok(None)`.
     pub fn mehd(&self) -> Result<Option<MehdBox>> {
         for b in self.boxes() {
             let b = b?;
@@ -53,6 +57,10 @@ impl<'a> MvexBoxView<'a> {
     }
 
     /// Returns an iterator over the Track Extends Defaults Boxes (`trex`) contained in this `mvex` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the `trex` boxes are invalid.
     pub fn trexs(&self) -> impl Iterator<Item = Result<TrexBox>> + 'a {
         self.boxes().filter_map(|result| match result {
             Ok(rawbox) if rawbox.boxtype() == BoxType::TREX => {

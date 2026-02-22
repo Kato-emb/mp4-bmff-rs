@@ -137,9 +137,12 @@ mod owned {
         fn encoded_len(&self) -> usize {
             let base_len = 4; // version(1) + flags(3)
 
-            let size_of_instance = SizeOfInstance::from_u32(self.esd.encoded_len() as u32)
+            let size_of_instance = u32::try_from(self.esd.encoded_len())
+                .ok()
+                .and_then(SizeOfInstance::from_u32)
                 .expect("ES Descriptor length too large");
-            let size_len = size_of_instance.to_bytes().1;
+
+            let (_, size_len) = size_of_instance.to_bytes();
             let esd_len = 1 + size_len + self.esd.encoded_len(); // ES Descriptor length
 
             base_len + esd_len
@@ -157,8 +160,8 @@ mod owned {
             // Write ES Descriptor
             let len = self.esd.encoded_len();
             cur.write_u8(Tag::ES_DESCR_TAG.0)?;
-            let size_of_instance =
-                SizeOfInstance::from_u32(len as u32).expect("ES Descriptor length too large");
+            let size_of_instance = SizeOfInstance::from_u32(u32::try_from(len)?)
+                .expect("ES Descriptor length too large");
             let (bytes, size) = size_of_instance.to_bytes();
             cur.write_slice(&bytes[..size])?;
 

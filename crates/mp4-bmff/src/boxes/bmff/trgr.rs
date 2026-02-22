@@ -77,6 +77,10 @@ impl<'a> TrgrBoxView<'a> {
     }
 
     /// Finds a track group type box by its track group type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn find_track_group(&self, track_group_type: BoxType) -> Result<Option<TrgrTypeBox>> {
         for result in self.track_groups() {
             let (boxtype, track_group_box) = result?;

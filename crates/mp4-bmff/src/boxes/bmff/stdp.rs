@@ -38,6 +38,7 @@ impl FixedEntry<2> for StdpEntry {
         }
     }
 
+    #[cfg(feature = "alloc")]
     fn to_bytes(&self) -> [u8; 2] {
         self.priority.to_be_bytes()
     }

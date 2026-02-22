@@ -34,6 +34,7 @@ impl FixedEntry<4> for StszEntry {
         }
     }
 
+    #[cfg(feature = "alloc")]
     fn to_bytes(&self) -> [u8; 4] {
         self.entry_size.to_be_bytes()
     }
@@ -196,7 +197,7 @@ mod owned {
             cur.write_array(&self.flags.to_be_bytes())?; // flags
 
             cur.write_u32_be(self.sample_size)?;
-            cur.write_u32_be(self.entries.len() as u32)?;
+            cur.write_u32_be(u32::try_from(self.entries.len())?)?;
 
             for entry in &self.entries {
                 let bytes = entry.to_bytes();

@@ -76,7 +76,7 @@ dbg_macro = "warn"
 
 # --- ライブラリ衛生: API品質 ---
 # 戻り値を無視すべきでない関数に#[must_use]が欠落している場合を検出する
-must_use_candidate = "warn"
+# must_use_candidate = "warn"
 return_self_not_must_use = "warn"
 
 # --- ドキュメント品質 ---
@@ -87,7 +87,7 @@ undocumented_unsafe_blocks = "warn"
 
 # --- インポート衛生 ---
 # glob importを防止し、依存関係を明示的に保つ
-wildcard_imports = "warn"
+# wildcard_imports = "warn"
 
 # --- ポインタ安全性 ---
 # `as`によるポインタキャストより型安全な代替（pointer::cast等）を促進する

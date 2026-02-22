@@ -80,7 +80,13 @@ impl<T> RawDescriptor<T> {
 }
 
 impl<T: AsRef<[u8]>> RawDescriptor<T> {
-    /// Creates a new RawDescriptor
+    /// Creates a new RawDescriptor.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instance size exceeds the maximum representable size
+    /// for MPEG-4 Systems descriptors (`0x0FFFFFFF`).
+    #[allow(clippy::cast_possible_truncation)]
     pub fn new(tag: Tag, instance: T) -> Self {
         let instance_len = instance.as_ref().len() as u32;
         let Some(size_of_instance) = SizeOfInstance::from_u32(instance_len) else {
@@ -94,7 +100,11 @@ impl<T: AsRef<[u8]>> RawDescriptor<T> {
         }
     }
 
-    /// Serializes the RawDescriptor into the provided byte slice
+    /// Serializes the RawDescriptor into the provided byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the buffer is too small to hold the serialized descriptor.
     pub fn write(&self, bytes: &mut [u8]) -> Result<()> {
         let total_size = self.len();
 
@@ -161,7 +171,11 @@ impl<'a> RawDescriptor<&'a [u8]> {
         }
     }
 
-    /// Parses a RawDescriptor from the given byte slice
+    /// Parses a RawDescriptor from the given byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is too short or contains invalid values.
     pub fn parse(bytes: &'a [u8]) -> Result<Self> {
         let mut offset = 0;
 

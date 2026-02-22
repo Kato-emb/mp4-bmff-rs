@@ -95,7 +95,7 @@ pub trait FixedStorage: Copy + Ord {
         if Self::IS_SIGNED {
             sign_extend(self.to_bits(), Self::BITS)
         } else {
-            self.to_bits() as i128
+            self.to_bits().cast_signed()
         }
     }
 
@@ -103,7 +103,7 @@ pub trait FixedStorage: Copy + Ord {
     #[inline]
     fn from_raw_value(raw: i128) -> Self {
         let clamped = Self::clamp_raw(raw);
-        let bits = (clamped as u128) & Self::bit_mask();
+        let bits = clamped.cast_unsigned() & Self::bit_mask();
         Self::from_bits(bits)
     }
 }
@@ -123,20 +123,22 @@ macro_rules! impl_fixed_storage_signed {
     ($($ty:ty),* $(,)?) => {
         $(
             impl FixedStorage for $ty {
+                #[allow(clippy::cast_possible_truncation)]
                 const BITS: u32 = (core::mem::size_of::<Self>() * 8) as u32;
                 const IS_SIGNED: bool = true;
 
                 #[inline]
                 fn to_bits(self) -> u128 {
-                    (self as i128 as u128) & Self::bit_mask()
+                    i128::from(self).cast_unsigned() & Self::bit_mask()
                 }
 
                 #[inline]
+                #[allow(clippy::cast_possible_truncation)]
                 fn from_bits(bits: u128) -> Self {
                     let mask = Self::bit_mask();
                     let bits = bits & mask;
                     let shift = 128 - Self::BITS;
-                    let signed = ((bits << shift) as i128) >> shift;
+                    let signed = (bits << shift).cast_signed() >> shift;
                     signed as Self
                 }
             }
@@ -148,15 +150,17 @@ macro_rules! impl_fixed_storage_unsigned {
     ($($ty:ty),* $(,)?) => {
         $(
             impl FixedStorage for $ty {
+                #[allow(clippy::cast_possible_truncation)]
                 const BITS: u32 = (core::mem::size_of::<Self>() * 8) as u32;
                 const IS_SIGNED: bool = false;
 
                 #[inline]
                 fn to_bits(self) -> u128 {
-                    self as u128
+                    u128::from(self)
                 }
 
                 #[inline]
+                #[allow(clippy::cast_possible_truncation)]
                 fn from_bits(bits: u128) -> Self {
                     (bits & Self::bit_mask()) as Self
                 }
@@ -267,6 +271,7 @@ where
 
     /// Convert to `f64`.
     #[inline]
+    #[allow(clippy::cast_precision_loss)]
     pub fn to_f64(self) -> f64 {
         let scale = scaling_factor(FRACTIONAL) as f64;
         self.to_i128_raw() as f64 / scale
@@ -274,6 +279,7 @@ where
 
     /// Convert to `f32`.
     #[inline]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn to_f32(self) -> f32 {
         self.to_f64() as f32
     }
@@ -292,6 +298,7 @@ where
 
     /// Construct from `f64`, saturating to the representable range.
     #[cfg(any(feature = "std", test))]
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     pub fn from_f64(value: f64) -> Self {
         if value.is_nan() {
             return Fixed::from_raw_value(0);
@@ -315,7 +322,7 @@ where
     #[cfg(any(feature = "std", test))]
     #[inline]
     pub fn from_f32(value: f32) -> Self {
-        Fixed::from_f64(value as f64)
+        Fixed::from_f64(f64::from(value))
     }
 
     /// Smallest representable value.
@@ -341,20 +348,20 @@ fn scaling_factor(bits: u32) -> i128 {
         1u128 << bits
     };
 
-    if scale_u > i128::MAX as u128 {
+    if scale_u > i128::MAX.cast_unsigned() {
         i128::MAX
     } else {
-        scale_u as i128
+        scale_u.cast_signed()
     }
 }
 
 #[inline]
 fn sign_extend(bits: u128, width: u32) -> i128 {
     if width >= 128 {
-        bits as i128
+        bits.cast_signed()
     } else {
         let shift = 128 - width;
-        ((bits << shift) as i128) >> shift
+        (bits << shift).cast_signed() >> shift
     }
 }
 

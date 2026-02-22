@@ -64,6 +64,10 @@ pub struct ElstBoxView<'a> {
 
 impl<'a> ElstBoxView<'a> {
     /// Returns an iterator over the ELST entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the entries data is not properly formatted according to the version and entry count.
     pub fn entries(&'a self) -> Result<impl Iterator<Item = ElstEntry> + 'a> {
         let chunk_size = match self.version {
             0 => 12,
@@ -82,9 +86,12 @@ impl<'a> ElstBoxView<'a> {
         Ok(self.entries.chunks_exact(chunk_size).map(|bytes| {
             if self.version == 0 {
                 ElstEntry {
-                    segment_duration: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
-                        as u64,
-                    media_time: i32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as i64,
+                    segment_duration: u64::from(u32::from_be_bytes([
+                        bytes[0], bytes[1], bytes[2], bytes[3],
+                    ])),
+                    media_time: i64::from(i32::from_be_bytes([
+                        bytes[4], bytes[5], bytes[6], bytes[7],
+                    ])),
                     media_rate_integer: i16::from_be_bytes([bytes[8], bytes[9]]),
                     media_rate_fraction: i16::from_be_bytes([bytes[10], bytes[11]]),
                 }
@@ -223,12 +230,12 @@ mod owned {
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_be_bytes())?;
 
-            cur.write_u32_be(self.entries.len() as u32)?;
+            cur.write_u32_be(u32::try_from(self.entries.len())?)?;
 
             for entry in &self.entries {
                 if self.version == 0 {
-                    cur.write_u32_be(entry.segment_duration as u32)?;
-                    cur.write_i32_be(entry.media_time as i32)?;
+                    cur.write_u32_be(u32::try_from(entry.segment_duration)?)?;
+                    cur.write_i32_be(i32::try_from(entry.media_time)?)?;
                 } else {
                     cur.write_u64_be(entry.segment_duration)?;
                     cur.write_i64_be(entry.media_time)?;

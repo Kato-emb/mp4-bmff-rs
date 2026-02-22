@@ -86,6 +86,10 @@ impl BoxHeader {
     pub const MAX_HEADER_SIZE: usize = Self::BASE_SIZE + 8 + 16; // Max header size with extended size and UUID
 
     /// Creates a new box header.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the total box size (header + payload) overflows `u64`.
     pub fn new(type_: BoxType, payload_len: u64) -> Self {
         // Calculate header length including UUID if applicable
         let mut header_len = Self::BASE_SIZE as u64;
@@ -151,6 +155,10 @@ impl BoxHeader {
     }
 
     /// Parses a box header from the given byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is too short or malformed.
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(bytes);
 
@@ -177,6 +185,14 @@ impl BoxHeader {
     }
 
     /// Writes the box header into the given byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the byte slice is too short to hold the header.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the box size is not EOF or extended and has no value.
     pub fn write(&self, bytes: &mut [u8]) -> Result<()> {
         let mut cur = WriteCursor::new(bytes);
 
@@ -188,6 +204,8 @@ impl BoxHeader {
             cur.write_u32_be(BoxSize::MARKER_EOF)?; // Indicate box extends to end of file
         } else {
             // Write compact size
+            #[allow(clippy::cast_possible_truncation)]
+            // Safety: compact size is guaranteed to fit in u32
             cur.write_u32_be(self.size.value().unwrap() as u32)?; // Write size
         }
 

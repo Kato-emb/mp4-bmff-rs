@@ -102,11 +102,11 @@ impl BoxDecode<'_> for CslgBox {
 
         match version {
             0 => {
-                composition_to_decode_shift = cur.read_i32_be()? as i64;
-                least_decode_to_display_delta = cur.read_i32_be()? as i64;
-                greatest_decode_to_display_delta = cur.read_i32_be()? as i64;
-                composition_start_time = cur.read_i32_be()? as i64;
-                composition_end_time = cur.read_i32_be()? as i64;
+                composition_to_decode_shift = i64::from(cur.read_i32_be()?);
+                least_decode_to_display_delta = i64::from(cur.read_i32_be()?);
+                greatest_decode_to_display_delta = i64::from(cur.read_i32_be()?);
+                composition_start_time = i64::from(cur.read_i32_be()?);
+                composition_end_time = i64::from(cur.read_i32_be()?);
             }
             1 => {
                 composition_to_decode_shift = cur.read_i64_be()?;
@@ -144,6 +144,7 @@ impl BoxEncode for CslgBox {
         4 + if self.version == 0 { 5 * 4 } else { 5 * 8 }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
         let mut cur = WriteCursor::new(bytes);
 

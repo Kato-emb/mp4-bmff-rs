@@ -96,6 +96,7 @@ impl LanguageCode {
     fn fmt_escaped(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &b in &self.0 {
             if (0x20..=0x7E).contains(&b) && b != b'\\' && b != b'"' {
+                // SAFETY: byte is verified to be in printable ASCII range (0x20..=0x7E), which is valid UTF-8.
                 f.write_str(unsafe { core::str::from_utf8_unchecked(slice::from_ref(&b)) })?;
             } else {
                 write!(f, "\\x{b:02X}")?;

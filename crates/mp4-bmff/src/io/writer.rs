@@ -94,6 +94,7 @@ impl<W: Write> BoxWriter<W> {
     /// # Errors
     ///
     /// Returns an error if encoding fails or an I/O error occurs.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn write_box<B>(&mut self, boxed: &B) -> Result<()>
     where
         B: BoxCodec + BoxEncode,

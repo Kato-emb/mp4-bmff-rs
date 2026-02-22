@@ -43,6 +43,10 @@ impl<'a> MinfBoxView<'a> {
     }
 
     /// Returns the Null Media Header Box (`nmhd`) contained in this `minf` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn nmhd(&self) -> Result<Option<NmhdBox>> {
         for b in self.boxes() {
             let b = b?;
@@ -56,6 +60,10 @@ impl<'a> MinfBoxView<'a> {
     }
 
     /// Returns the Sample Table Box (`stbl`) contained in this `minf` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn stbl(&self) -> Result<StblBoxView<'a>> {
         for b in self.boxes() {
             let b = b?;
@@ -74,6 +82,10 @@ impl<'a> MinfBoxView<'a> {
     }
 
     /// Returns the Data Information Box (`dinf`) contained in this `minf` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn dinf(&self) -> Result<DinfBoxView<'a>> {
         for b in self.boxes() {
             let b = b?;
@@ -92,6 +104,10 @@ impl<'a> MinfBoxView<'a> {
     }
 
     /// Returns the Video Media Header Box (`vmhd`) contained in this `minf` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn vmhd(&self) -> Result<Option<VmhdBox>> {
         for b in self.boxes() {
             let b = b?;
@@ -105,6 +121,10 @@ impl<'a> MinfBoxView<'a> {
     }
 
     /// Returns the Sound Media Header Box (`smhd`) contained in this `minf` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn smhd(&self) -> Result<Option<SmhdBox>> {
         for b in self.boxes() {
             let b = b?;

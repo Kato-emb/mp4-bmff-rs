@@ -434,6 +434,15 @@ impl From<CursorError> for Error {
     }
 }
 
+impl From<core::num::TryFromIntError> for Error {
+    fn from(_err: core::num::TryFromIntError) -> Self {
+        let e = Self::new(ErrorKind::Overflow);
+        #[cfg(feature = "std")]
+        let e = e.with_source(_err);
+        e
+    }
+}
+
 #[cfg(feature = "std")]
 impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {

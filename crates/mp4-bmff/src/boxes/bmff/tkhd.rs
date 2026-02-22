@@ -132,15 +132,15 @@ impl BoxDecode<'_> for TkhdBox {
             0 => {
                 // Read creation time (4 bytes)
                 creation_time =
-                    QuickTimeDateTime::from_quicktime_seconds(cur.read_u32_be()? as u64);
+                    QuickTimeDateTime::from_quicktime_seconds(u64::from(cur.read_u32_be()?));
                 // Read modification time (4 bytes)
                 modification_time =
-                    QuickTimeDateTime::from_quicktime_seconds(cur.read_u32_be()? as u64);
+                    QuickTimeDateTime::from_quicktime_seconds(u64::from(cur.read_u32_be()?));
                 // Read track ID (4 bytes)
                 track_id = cur.read_u32_be()?;
                 cur.advance(Self::RESERVED_0)?;
                 // Read duration (4 bytes)
-                duration = cur.read_u32_be()? as u64;
+                duration = u64::from(cur.read_u32_be()?);
             }
             1 => {
                 // Read creation time (8 bytes)
@@ -238,15 +238,17 @@ impl BoxEncode for TkhdBox {
         match self.version {
             0 => {
                 // Write creation time (4 bytes)
-                cur.write_u32_be(self.creation_time.to_quicktime_seconds() as u32)?;
+                cur.write_u32_be(u32::try_from(self.creation_time.to_quicktime_seconds())?)?;
                 // Write modification time (4 bytes)
-                cur.write_u32_be(self.modification_time.to_quicktime_seconds() as u32)?;
+                cur.write_u32_be(u32::try_from(
+                    self.modification_time.to_quicktime_seconds(),
+                )?)?;
                 // Write track ID (4 bytes)
                 cur.write_u32_be(self.track_id)?;
                 // Write reserved (4 bytes)
                 cur.reserve_zeros(TkhdBox::RESERVED_0)?;
                 // Write duration (4 bytes)
-                cur.write_u32_be(self.duration as u32)?;
+                cur.write_u32_be(u32::try_from(self.duration)?)?;
             }
             1 => {
                 // Write creation time (8 bytes)

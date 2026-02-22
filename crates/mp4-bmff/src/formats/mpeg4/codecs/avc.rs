@@ -77,22 +77,32 @@ pub struct AVCDecoderConfigurationRecordView<'a> {
 impl<'a> AVCDecoderConfigurationRecordView<'a> {
     /// Returns an iterator over the sequence parameter sets
     pub fn sps(&self) -> ParameterSetsIter<'a> {
-        ParameterSetsIter::new(self.sps, self.num_of_sps as usize)
+        ParameterSetsIter::new(self.sps, usize::from(self.num_of_sps))
     }
 
     /// Returns an iterator over the picture parameter sets
     pub fn pps(&self) -> ParameterSetsIter<'a> {
-        ParameterSetsIter::new(self.pps, self.num_of_pps as usize)
+        ParameterSetsIter::new(self.pps, usize::from(self.num_of_pps))
     }
 
     /// Returns an iterator over the sequence parameter set extensions
     pub fn sps_ext(&self) -> Option<ParameterSetsIter<'a>> {
         self.sps_ext
             .zip(self.num_of_sps_ext)
-            .map(|(data, num)| ParameterSetsIter::new(data, num as usize))
+            .map(|(data, num)| ParameterSetsIter::new(data, usize::from(num)))
     }
 
     /// Parses an AVCDecoderConfigurationRecord from the given byte slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is too short or contains invalid values.
+    ///
+    /// # Panics
+    ///
+    /// This function does not panic in practice. The internal `unwrap()` call
+    /// on `num_of_sps_ext` is guarded by an immediately preceding assignment
+    /// to `Some(...)`.
     pub fn parse(bytes: &'a [u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(bytes);
 
@@ -108,7 +118,7 @@ impl<'a> AVCDecoderConfigurationRecordView<'a> {
         let num_of_sps = cur.read_u8()? & 0x1F;
         let sps_start_position = cur.position();
         for _ in 0..num_of_sps {
-            let sps_size = cur.read_u16_be()? as usize;
+            let sps_size = usize::from(cur.read_u16_be()?);
             cur.advance(sps_size)?;
         }
         let sps_end_position = cur.position();
@@ -119,7 +129,7 @@ impl<'a> AVCDecoderConfigurationRecordView<'a> {
         let num_of_pps = cur.read_u8()?;
         let pps_start_position = cur.position();
         for _ in 0..num_of_pps {
-            let pps_size = cur.read_u16_be()? as usize;
+            let pps_size = usize::from(cur.read_u16_be()?);
             cur.advance(pps_size)?;
         }
         let pps_end_position = cur.position();
@@ -144,7 +154,7 @@ impl<'a> AVCDecoderConfigurationRecordView<'a> {
             num_of_sps_ext = Some(cur.read_u8()?);
             let sps_ext_start_position = cur.position();
             for _ in 0..num_of_sps_ext.unwrap() {
-                let sps_ext_size = cur.read_u16_be()? as usize;
+                let sps_ext_size = usize::from(cur.read_u16_be()?);
                 cur.advance(sps_ext_size)?;
             }
             let sps_ext_end_position = cur.position();
@@ -267,6 +277,10 @@ mod owned {
 
     impl AVCDecoderConfigurationRecord {
         /// Parses an AVCDecoderConfigurationRecord from the given byte slice.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the data is too short or contains invalid values.
         pub fn parse(bytes: &[u8]) -> Result<Self> {
             let view = AVCDecoderConfigurationRecordView::parse(bytes)?;
             Ok(AVCDecoderConfigurationRecord::from(&view))
@@ -309,6 +323,11 @@ mod owned {
         }
 
         /// Writes the AVCDecoderConfigurationRecord to the given byte slice.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the buffer is too small to hold the encoded data.
+        #[allow(clippy::cast_possible_truncation)]
         pub fn write(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
@@ -538,8 +557,8 @@ mod tests {
         assert_eq!(owned.profile_compatibility, view.profile_compatibility);
         assert_eq!(owned.avc_level_indication, view.avc_level_indication);
         assert_eq!(owned.length_size_minus_one, view.length_size_minus_one);
-        assert_eq!(owned.sps.len(), view.num_of_sps as usize);
-        assert_eq!(owned.pps.len(), view.num_of_pps as usize);
+        assert_eq!(owned.sps.len(), usize::from(view.num_of_sps));
+        assert_eq!(owned.pps.len(), usize::from(view.num_of_pps));
     }
 
     #[cfg(feature = "alloc")]

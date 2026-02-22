@@ -111,14 +111,14 @@ impl<'de> BoxDecode<'de> for MvhdBox {
             0 => {
                 // Read creation_time (4 bytes)
                 creation_time =
-                    QuickTimeDateTime::from_quicktime_seconds(cur.read_u32_be()? as u64);
+                    QuickTimeDateTime::from_quicktime_seconds(u64::from(cur.read_u32_be()?));
                 // Read modification_time (4 bytes)
                 modification_time =
-                    QuickTimeDateTime::from_quicktime_seconds(cur.read_u32_be()? as u64);
+                    QuickTimeDateTime::from_quicktime_seconds(u64::from(cur.read_u32_be()?));
                 // Read timescale (4 bytes)
                 timescale = cur.read_u32_be()?;
                 // Read duration (4 bytes)
-                duration = cur.read_u32_be()? as u64;
+                duration = u64::from(cur.read_u32_be()?);
             }
             1 => {
                 // Read creation_time (8 bytes)
@@ -201,13 +201,15 @@ impl BoxEncode for MvhdBox {
         match self.version {
             0 => {
                 // Write creation_time (4 bytes)
-                cur.write_u32_be(self.creation_time.to_quicktime_seconds() as u32)?;
+                cur.write_u32_be(u32::try_from(self.creation_time.to_quicktime_seconds())?)?;
                 // Write modification_time (4 bytes)
-                cur.write_u32_be(self.modification_time.to_quicktime_seconds() as u32)?;
+                cur.write_u32_be(u32::try_from(
+                    self.modification_time.to_quicktime_seconds(),
+                )?)?;
                 // Write timescale (4 bytes)
                 cur.write_u32_be(self.timescale)?;
                 // Write duration (4 bytes)
-                cur.write_u32_be(self.duration as u32)?;
+                cur.write_u32_be(u32::try_from(self.duration)?)?;
             }
             1 => {
                 // Write creation_time (8 bytes)

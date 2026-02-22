@@ -42,6 +42,10 @@ impl<'a> MoofBoxView<'a> {
     }
 
     /// Returns the Movie Fragment Header Box (`mfhd`) contained in this `moof` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `mfhd` box is missing or if there are multiple `mfhd` boxes.
     pub fn mfhd(&self) -> Result<MfhdBox> {
         for b in self.boxes() {
             let b = b?;
@@ -71,6 +75,10 @@ impl<'a> MoofBoxView<'a> {
     }
 
     /// Returns the Movie Extends Box (`mvex`) contained in this `moof` box if present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are multiple `mvex` boxes. It's valid for the `mvex` box to be missing, in which case this returns `Ok(None)`.
     pub fn mvex(&self) -> Result<Option<MvexBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;

@@ -52,6 +52,10 @@ impl<'a> MfraBoxView<'a> {
     }
 
     /// Returns the Movie Fragment Random Access Offset Box (`mfro`) contained in this `mfra` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `mfro` box is missing or if there are multiple `mfro` boxes. The `mfro` box is required in a valid `mfra` box.
     pub fn mfro(&self) -> Result<MfroBox> {
         for b in self.boxes() {
             let b = b?;

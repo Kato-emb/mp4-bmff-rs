@@ -39,6 +39,10 @@ impl<'a> MdiaBoxView<'a> {
     }
 
     /// Returns the Media Header Box (`mdhd`) contained in this `mdia` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn mdhd(&self) -> Result<MdhdBox> {
         for b in self.boxes() {
             let b = b?;
@@ -57,6 +61,10 @@ impl<'a> MdiaBoxView<'a> {
     }
 
     /// Returns the Handler Reference Box (`hdlr`) contained in this `mdia` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn hdlr(&self) -> Result<HdlrBoxView<'a>> {
         for b in self.boxes() {
             let b = b?;
@@ -75,6 +83,10 @@ impl<'a> MdiaBoxView<'a> {
     }
 
     /// Returns the Media Information Box (`minf`) contained in this `mdia` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn minf(&self) -> Result<MinfBoxView<'a>> {
         for b in self.boxes() {
             let b = b?;
@@ -93,6 +105,10 @@ impl<'a> MdiaBoxView<'a> {
     }
 
     /// Returns the Extended language tag Box (`elng`) contained in this `mdia` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn elng(&self) -> Result<Option<ElngBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;

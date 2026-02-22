@@ -3,7 +3,7 @@
 //! This module provides [`BoxReader`] for reading BMFF boxes from any
 //! type implementing [`std::io::Read`].
 
-use std::io::*;
+use std::io::{Read, Seek, SeekFrom};
 
 use crate::error::Result;
 use crate::{
@@ -76,7 +76,17 @@ impl<R> BoxReader<R> {
 }
 
 impl<R: Read> BoxReader<R> {
-    /// Peeks at the next box header without consuming the payload.                                                                                                         
+    /// Peeks at the next box header without consuming the payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the stream doesn't contain enough data for the header
+    /// or an I/O error occurs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pending header is `None` after a successful read. This
+    /// should never happen in practice.
     pub fn peek_header(&mut self) -> Result<&BoxHeader> {
         if self.pending.is_none() {
             self.pending = Some(self.read_header_in()?);
@@ -102,6 +112,7 @@ impl<R: Read> BoxReader<R> {
     /// - The stream doesn't contain enough data for the header
     /// - The stream doesn't contain enough data for the declared payload size
     /// - An I/O error occurs
+    #[allow(clippy::cast_possible_truncation)]
     pub fn read_box(&mut self) -> Result<RawBoxOwned> {
         let header = self.next_header_in()?;
 
@@ -180,6 +191,7 @@ impl<R: Read + Seek> BoxReader<R> {
     ///
     /// assert_eq!(raw_box.boxtype().type_field().to_string(), "free");
     /// ```
+    #[allow(clippy::cast_possible_truncation)]
     pub fn skip_box(&mut self) -> Result<BoxHeader> {
         let header = self.next_header_in()?;
 
@@ -188,7 +200,8 @@ impl<R: Read + Seek> BoxReader<R> {
             self.inner.seek(SeekFrom::End(0))?;
         } else {
             let payload_len = header.total_size() - header.header_len() as u64;
-            self.inner.seek(SeekFrom::Current(payload_len as i64))?;
+            self.inner
+                .seek(SeekFrom::Current(payload_len.cast_signed()))?;
         }
 
         Ok(header)

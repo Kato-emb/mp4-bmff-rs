@@ -33,6 +33,10 @@ impl<'a> EdtsBoxView<'a> {
     }
 
     /// Returns the Edit List Box (`elst`) contained in this `edts` box if present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are multiple `elst` boxes. The `elst` box is optional, but if present, there must be only one.
     pub fn elst(&self) -> Result<Option<ElstBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;

@@ -156,6 +156,7 @@ pub(crate) trait FixedEntry<const N: usize>: Sized + Copy {
     const ENTRY_SIZE: usize = N;
 
     fn from_bytes(bytes: &[u8; N]) -> Self;
+    #[cfg(feature = "alloc")]
     fn to_bytes(&self) -> [u8; N];
 }
 

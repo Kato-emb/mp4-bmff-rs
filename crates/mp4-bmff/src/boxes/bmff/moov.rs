@@ -39,6 +39,10 @@ impl<'a> MoovBoxView<'a> {
     }
 
     /// Returns the Movie Header Box (`mvhd`) contained in this `moov` box.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn mvhd(&self) -> Result<MvhdBox> {
         for b in self.boxes() {
             let b = b?;
@@ -68,6 +72,10 @@ impl<'a> MoovBoxView<'a> {
     }
 
     /// Returns the Movie Extends Box (`mvex`) contained in this `moov` box if present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
     pub fn mvex(&self) -> Result<Option<MvexBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;

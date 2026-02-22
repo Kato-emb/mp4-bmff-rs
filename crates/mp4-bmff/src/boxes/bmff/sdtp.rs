@@ -48,6 +48,7 @@ impl FixedEntry<1> for SdtpEntry {
         }
     }
 
+    #[cfg(feature = "alloc")]
     fn to_bytes(&self) -> [u8; 1] {
         let mut byte = 0u8;
         byte |= (self.is_leading & 0b11) << 6;
@@ -198,6 +199,7 @@ mod owned {
             + self.entries.len() * SdtpEntry::ENTRY_SIZE // each entry is 1 byte
         }
 
+        #[allow(clippy::cast_possible_truncation)]
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 

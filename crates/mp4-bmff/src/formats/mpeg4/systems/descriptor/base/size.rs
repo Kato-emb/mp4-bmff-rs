@@ -55,7 +55,7 @@ impl SizeOfInstance {
 
         while num_bytes < MAX_BYTES {
             let next_type = (bytes.get(num_bytes)? & 0x80) != 0;
-            let size_byte = (bytes.get(num_bytes)? & 0x7F) as u32;
+            let size_byte = u32::from(bytes.get(num_bytes)? & 0x7F);
             size = (size << 7) | size_byte;
             num_bytes += 1;
 
@@ -67,9 +67,10 @@ impl SizeOfInstance {
         None
     }
 
-    /// Serializes SizeOfInstance to a byte array
+    /// Serializes SizeOfInstance to a byte array.
     /// Returns the byte array and the number of bytes used.
     /// The bytes are stored at the beginning of the array (indices 0..num_bytes).
+    #[allow(clippy::cast_possible_truncation)]
     pub fn to_bytes(&self) -> ([u8; 4], usize) {
         let size = self.0;
         let num_bytes = self.size_in_bytes();
