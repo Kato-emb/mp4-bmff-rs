@@ -1,0 +1,16 @@
+[package]
+name = "benches"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+mp4-bmff = { version = "0.1.0", path = "../crates/mp4-bmff" }
+
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "codec"
+path = "benches/codec.rs"
+harness = false
