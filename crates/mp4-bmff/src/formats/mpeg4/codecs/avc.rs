@@ -107,6 +107,16 @@ impl<'a> AVCDecoderConfigurationRecordView<'a> {
         let mut cur = ReadCursor::new(bytes);
 
         let configuration_version = cur.read_u8()?;
+        if configuration_version != 1 {
+            return Err(Error::at(
+                ErrorKind::InvalidBoxField {
+                    field: "configuration_version",
+                    reason: "expected 1",
+                },
+                cur.position() as u64,
+            ));
+        }
+
         let avc_profile_indication = cur.read_u8()?;
         let profile_compatibility = cur.read_u8()?;
         let avc_level_indication = cur.read_u8()?;
