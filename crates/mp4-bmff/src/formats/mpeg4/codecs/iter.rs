@@ -45,9 +45,20 @@ pub struct ParameterSetsIter<'a> {
 #[cfg(any(feature = "avc", feature = "hevc"))]
 impl core::fmt::Debug for ParameterSetsIter<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("ParameterSetsIter")
-            .field("remaining", &self.remaining)
-            .finish()
+        f.debug_list().entries(self.fork()).finish()
+    }
+}
+
+impl<'a> ParameterSetsIter<'a> {
+    pub(crate) fn new(data: &'a [u8], remaining: usize) -> Self {
+        Self { data, remaining }
+    }
+
+    fn fork(&self) -> Self {
+        Self {
+            data: self.data,
+            remaining: self.remaining,
+        }
     }
 }
 
@@ -81,11 +92,7 @@ impl<'a> Iterator for ParameterSetsIter<'a> {
 }
 
 #[cfg(any(feature = "avc", feature = "hevc"))]
-impl ExactSizeIterator for ParameterSetsIter<'_> {
-    fn len(&self) -> usize {
-        self.remaining
-    }
-}
+impl ExactSizeIterator for ParameterSetsIter<'_> {}
 
 #[cfg(test)]
 mod tests {
@@ -94,10 +101,7 @@ mod tests {
     #[test]
     fn test_empty_iter() {
         let data: [u8; 0] = [];
-        let mut iter = ParameterSetsIter {
-            data: &data,
-            remaining: 0,
-        };
+        let mut iter = ParameterSetsIter::new(&data, 0);
 
         assert_eq!(iter.len(), 0);
         assert!(iter.next().is_none());
@@ -107,10 +111,7 @@ mod tests {
     fn test_single_parameter_set() {
         // length(2) = 4, data = [0x01, 0x02, 0x03, 0x04]
         let data = [0x00, 0x04, 0x01, 0x02, 0x03, 0x04];
-        let mut iter = ParameterSetsIter {
-            data: &data,
-            remaining: 1,
-        };
+        let mut iter = ParameterSetsIter::new(&data, 1);
 
         assert_eq!(iter.len(), 1);
         let ps = iter.next().unwrap();
@@ -129,10 +130,7 @@ mod tests {
             0x00, 0x02, 0xDD, 0xEE, // PS2
             0x00, 0x04, 0x11, 0x22, 0x33, 0x44, // PS3
         ];
-        let mut iter = ParameterSetsIter {
-            data: &data,
-            remaining: 3,
-        };
+        let mut iter = ParameterSetsIter::new(&data, 3);
 
         assert_eq!(iter.len(), 3);
 
@@ -154,10 +152,7 @@ mod tests {
     #[test]
     fn test_size_hint() {
         let data = [0x00, 0x02, 0xAA, 0xBB, 0x00, 0x01, 0xCC];
-        let iter = ParameterSetsIter {
-            data: &data,
-            remaining: 2,
-        };
+        let iter = ParameterSetsIter::new(&data, 2);
 
         assert_eq!(iter.size_hint(), (2, Some(2)));
     }
@@ -166,10 +161,7 @@ mod tests {
     fn test_truncated_length() {
         // Only 1 byte, need 2 for length
         let data = [0x00];
-        let mut iter = ParameterSetsIter {
-            data: &data,
-            remaining: 1,
-        };
+        let mut iter = ParameterSetsIter::new(&data, 1);
 
         assert!(iter.next().is_none());
     }
@@ -178,10 +170,7 @@ mod tests {
     fn test_truncated_data() {
         // length=10 but only 4 bytes of data
         let data = [0x00, 0x0A, 0x01, 0x02, 0x03, 0x04];
-        let mut iter = ParameterSetsIter {
-            data: &data,
-            remaining: 1,
-        };
+        let mut iter = ParameterSetsIter::new(&data, 1);
 
         assert!(iter.next().is_none());
     }
@@ -190,10 +179,7 @@ mod tests {
     fn test_zero_remaining_with_data() {
         // Data exists but remaining is 0
         let data = [0x00, 0x02, 0xAA, 0xBB];
-        let mut iter = ParameterSetsIter {
-            data: &data,
-            remaining: 0,
-        };
+        let mut iter = ParameterSetsIter::new(&data, 0);
 
         assert!(iter.next().is_none());
     }
@@ -204,10 +190,7 @@ mod tests {
             0x00, 0x02, 0xAA, 0xBB, // PS1
             0x00, 0x03, 0xCC, 0xDD, 0xEE, // PS2
         ];
-        let iter = ParameterSetsIter {
-            data: &data,
-            remaining: 2,
-        };
+        let iter = ParameterSetsIter::new(&data, 2);
 
         let collected: Vec<&[u8]> = iter.collect();
         assert_eq!(collected.len(), 2);

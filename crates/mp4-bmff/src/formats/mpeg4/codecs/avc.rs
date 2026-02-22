@@ -77,28 +77,19 @@ pub struct AVCDecoderConfigurationRecordView<'a> {
 impl<'a> AVCDecoderConfigurationRecordView<'a> {
     /// Returns an iterator over the sequence parameter sets
     pub fn sps(&self) -> ParameterSetsIter<'a> {
-        ParameterSetsIter {
-            data: self.sps,
-            remaining: self.num_of_sps as usize,
-        }
+        ParameterSetsIter::new(self.sps, self.num_of_sps as usize)
     }
 
     /// Returns an iterator over the picture parameter sets
     pub fn pps(&self) -> ParameterSetsIter<'a> {
-        ParameterSetsIter {
-            data: self.pps,
-            remaining: self.num_of_pps as usize,
-        }
+        ParameterSetsIter::new(self.pps, self.num_of_pps as usize)
     }
 
     /// Returns an iterator over the sequence parameter set extensions
     pub fn sps_ext(&self) -> Option<ParameterSetsIter<'a>> {
         self.sps_ext
             .zip(self.num_of_sps_ext)
-            .map(|(data, num)| ParameterSetsIter {
-                data,
-                remaining: num as usize,
-            })
+            .map(|(data, num)| ParameterSetsIter::new(data, num as usize))
     }
 
     /// Parses an AVCDecoderConfigurationRecord from the given byte slice.
