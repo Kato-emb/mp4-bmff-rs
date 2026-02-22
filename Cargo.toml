@@ -43,12 +43,6 @@ unused_extern_crates = "warn"
 # 公開型にDebug実装が欠落している場合を検出
 missing_debug_implementations = "warn"
 
-# --- unsafe衛生 ---
-# unsafe fnの本体でもunsafeブロックを強制し、安全性の根拠を局所化する
-# NOTE: Edition 2024ではwarn-by-defaultのため、2024使用時はこの行は冗長
-#       Edition 2021以前との互換性を保つ場合や明示的なポリシー表示として残す
-unsafe_op_in_unsafe_fn = "warn"
-
 ### ============================================================
 ### Clippy lints
 ### ============================================================
