@@ -72,7 +72,7 @@ pub(crate) struct ReadCursor<'a> {
 impl<'a> ReadCursor<'a> {
     /// Creates a new `ReadCursor` from the given byte slice.
     #[inline]
-    pub const fn new(bytes: &'a [u8]) -> Self {
+    pub(crate) const fn new(bytes: &'a [u8]) -> Self {
         Self {
             inner: bytes,
             pos: 0,
@@ -83,54 +83,54 @@ impl<'a> ReadCursor<'a> {
     /// Returns the total length of the inner byte slice.
     #[inline]
     #[track_caller]
-    pub const fn len(&self) -> usize {
+    pub(crate) const fn len(&self) -> usize {
         self.inner.len()
     }
 
     /// Returns the number of bytes remaining to be read.
     #[inline]
     #[track_caller]
-    pub const fn remaining(&self) -> usize {
+    pub(crate) const fn remaining(&self) -> usize {
         self.inner.len() - self.pos
     }
 
     /// Returns `true` if there are no bytes left to read.
     #[inline]
-    pub const fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(&self) -> bool {
         self.remaining() == 0
     }
 
     /// Returns a slice of the remaining unread bytes.
     #[inline]
     #[track_caller]
-    pub fn remaining_slice(&self) -> &'a [u8] {
+    pub(crate) fn remaining_slice(&self) -> &'a [u8] {
         let idx = cmp::min(self.pos, self.inner.len());
         &self.inner[idx..]
     }
 
     /// Returns the entire inner byte slice.
     #[inline]
-    pub const fn inner(&self) -> &'a [u8] {
+    pub(crate) const fn inner(&self) -> &'a [u8] {
         self.inner
     }
 
     /// Returns the current position of the cursor.
     #[inline]
-    pub const fn position(&self) -> usize {
+    pub(crate) const fn position(&self) -> usize {
         self.pos
     }
 
     #[allow(dead_code)]
     /// Sets the current position of the cursor.
     #[inline]
-    pub const fn set_position(&mut self, pos: usize) {
+    pub(crate) const fn set_position(&mut self, pos: usize) {
         self.pos = pos;
     }
 
     /// Advances the cursor by `n` bytes and returns a slice of the taken bytes.
     #[inline]
     #[track_caller]
-    pub fn take(&mut self, n: usize) -> Result<&'a [u8]> {
+    pub(crate) fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let start = self.pos;
         let end = start
             .checked_add(n)
@@ -149,7 +149,7 @@ impl<'a> ReadCursor<'a> {
     /// Takes bytes from the cursor until the specified byte is found. The returned slice does not include the delimiter byte.
     #[inline]
     #[track_caller]
-    pub fn take_until(&mut self, byte: u8) -> Result<&'a [u8]> {
+    pub(crate) fn take_until(&mut self, byte: u8) -> Result<&'a [u8]> {
         let start = self.pos;
         let rem = self.remaining_slice();
 
@@ -171,14 +171,14 @@ impl<'a> ReadCursor<'a> {
     /// Advances the cursor by `len` bytes.
     #[inline]
     #[track_caller]
-    pub fn advance(&mut self, len: usize) -> Result<()> {
+    pub(crate) fn advance(&mut self, len: usize) -> Result<()> {
         self.take(len).map(|_| ())
     }
 
     /// Reads an array of `N` bytes from the cursor.
     #[inline]
     #[track_caller]
-    pub fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> {
+    pub(crate) fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> {
         let bytes = self.take(N)?;
         Ok(bytes.try_into().expect("N-elements array"))
     }
@@ -186,7 +186,7 @@ impl<'a> ReadCursor<'a> {
     /// Reads a single byte from the cursor.
     #[inline]
     #[track_caller]
-    pub fn read_u8(&mut self) -> Result<u8> {
+    pub(crate) fn read_u8(&mut self) -> Result<u8> {
         let bytes = self.read_array::<1>()?;
         Ok(bytes[0])
     }
@@ -194,7 +194,7 @@ impl<'a> ReadCursor<'a> {
     /// Reads a big-endian 16-bit unsigned integer from the cursor.
     #[inline]
     #[track_caller]
-    pub fn read_u16_be(&mut self) -> Result<u16> {
+    pub(crate) fn read_u16_be(&mut self) -> Result<u16> {
         let bytes = self.read_array::<2>()?;
         Ok(u16::from_be_bytes(bytes))
     }
@@ -202,7 +202,7 @@ impl<'a> ReadCursor<'a> {
     /// Reads a big-endian 16-bit signed integer from the cursor.
     #[inline]
     #[track_caller]
-    pub fn read_i16_be(&mut self) -> Result<i16> {
+    pub(crate) fn read_i16_be(&mut self) -> Result<i16> {
         let bytes = self.read_array::<2>()?;
         Ok(i16::from_be_bytes(bytes))
     }
@@ -210,7 +210,7 @@ impl<'a> ReadCursor<'a> {
     /// Reads a big-endian 32-bit unsigned integer from the cursor.
     #[inline]
     #[track_caller]
-    pub fn read_u32_be(&mut self) -> Result<u32> {
+    pub(crate) fn read_u32_be(&mut self) -> Result<u32> {
         let bytes = self.read_array::<4>()?;
         Ok(u32::from_be_bytes(bytes))
     }
@@ -218,7 +218,7 @@ impl<'a> ReadCursor<'a> {
     /// Reads a big-endian 32-bit signed integer from the cursor.
     #[inline]
     #[track_caller]
-    pub fn read_i32_be(&mut self) -> Result<i32> {
+    pub(crate) fn read_i32_be(&mut self) -> Result<i32> {
         let bytes = self.read_array::<4>()?;
         Ok(i32::from_be_bytes(bytes))
     }
@@ -226,7 +226,7 @@ impl<'a> ReadCursor<'a> {
     /// Reads a big-endian 64-bit unsigned integer from the cursor.
     #[inline]
     #[track_caller]
-    pub fn read_u64_be(&mut self) -> Result<u64> {
+    pub(crate) fn read_u64_be(&mut self) -> Result<u64> {
         let bytes = self.read_array::<8>()?;
         Ok(u64::from_be_bytes(bytes))
     }
@@ -234,7 +234,7 @@ impl<'a> ReadCursor<'a> {
     /// Reads a big-endian 64-bit signed integer from the cursor.
     #[inline]
     #[track_caller]
-    pub fn read_i64_be(&mut self) -> Result<i64> {
+    pub(crate) fn read_i64_be(&mut self) -> Result<i64> {
         let bytes = self.read_array::<8>()?;
         Ok(i64::from_be_bytes(bytes))
     }
@@ -249,7 +249,7 @@ pub(crate) struct WriteCursor<'a> {
 impl<'a> WriteCursor<'a> {
     /// Creates a new `WriteCursor` from the given mutable byte slice.
     #[inline]
-    pub const fn new(bytes: &'a mut [u8]) -> Self {
+    pub(crate) const fn new(bytes: &'a mut [u8]) -> Self {
         Self {
             inner: bytes,
             pos: 0,
@@ -260,56 +260,56 @@ impl<'a> WriteCursor<'a> {
     /// Returns the total length of the inner byte slice.
     #[inline]
     #[track_caller]
-    pub const fn len(&self) -> usize {
+    pub(crate) const fn len(&self) -> usize {
         self.inner.len()
     }
 
     /// Returns the number of bytes remaining to be written.
     #[inline]
     #[track_caller]
-    pub const fn remaining(&self) -> usize {
+    pub(crate) const fn remaining(&self) -> usize {
         self.inner.len() - self.pos
     }
 
     #[allow(dead_code)]
     /// Returns `true` if there are no bytes left to write.
     #[inline]
-    pub const fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(&self) -> bool {
         self.remaining() == 0
     }
 
     #[allow(dead_code)]
     /// Returns the entire inner byte slice.
     #[inline]
-    pub const fn inner(&self) -> &[u8] {
+    pub(crate) const fn inner(&self) -> &[u8] {
         self.inner
     }
 
     #[allow(dead_code)]
     /// Returns the entire inner mutable byte slice.
     #[inline]
-    pub fn inner_mut(&mut self) -> &mut [u8] {
+    pub(crate) fn inner_mut(&mut self) -> &mut [u8] {
         self.inner
     }
 
     #[allow(dead_code)]
     /// Returns the current position of the cursor.
     #[inline]
-    pub const fn position(&self) -> usize {
+    pub(crate) const fn position(&self) -> usize {
         self.pos
     }
 
     #[allow(dead_code)]
     /// Sets the current position of the cursor.
     #[inline]
-    pub const fn set_position(&mut self, pos: usize) {
+    pub(crate) const fn set_position(&mut self, pos: usize) {
         self.pos = pos;
     }
 
     /// Advances the cursor by `n` bytes and returns a mutable slice of the taken bytes.
     #[inline]
     #[track_caller]
-    pub fn take_mut(&mut self, n: usize) -> Result<&mut [u8]> {
+    pub(crate) fn take_mut(&mut self, n: usize) -> Result<&mut [u8]> {
         let start = self.pos;
         let end = start
             .checked_add(n)
@@ -331,7 +331,7 @@ impl<'a> WriteCursor<'a> {
     /// Reserves `n` bytes in the cursor and fills them with zeros. Returns the starting position.
     #[inline]
     #[track_caller]
-    pub fn reserve_zeros(&mut self, n: usize) -> Result<usize> {
+    pub(crate) fn reserve_zeros(&mut self, n: usize) -> Result<usize> {
         let at = self.pos;
         let buf = self.take_mut(n)?;
         buf.fill(0);
@@ -342,7 +342,7 @@ impl<'a> WriteCursor<'a> {
     #[cfg(feature = "alloc")]
     #[inline]
     #[track_caller]
-    pub fn write_slice(&mut self, bytes: &[u8]) -> Result<()> {
+    pub(crate) fn write_slice(&mut self, bytes: &[u8]) -> Result<()> {
         let dst = self.take_mut(bytes.len())?;
         dst.copy_from_slice(bytes);
         Ok(())
@@ -351,7 +351,7 @@ impl<'a> WriteCursor<'a> {
     /// Writes an array of `N` bytes to the cursor.
     #[inline]
     #[track_caller]
-    pub fn write_array<const N: usize>(&mut self, bytes: &[u8; N]) -> Result<()> {
+    pub(crate) fn write_array<const N: usize>(&mut self, bytes: &[u8; N]) -> Result<()> {
         let dst = self.take_mut(N)?;
         dst.copy_from_slice(bytes);
         Ok(())
@@ -360,7 +360,7 @@ impl<'a> WriteCursor<'a> {
     /// Writes a single byte to the cursor.
     #[inline]
     #[track_caller]
-    pub fn write_u8(&mut self, value: u8) -> Result<()> {
+    pub(crate) fn write_u8(&mut self, value: u8) -> Result<()> {
         self.write_array(&value.to_be_bytes())?;
         Ok(())
     }
@@ -368,7 +368,7 @@ impl<'a> WriteCursor<'a> {
     /// Writes a big-endian 16-bit unsigned integer to the cursor.
     #[inline]
     #[track_caller]
-    pub fn write_u16_be(&mut self, value: u16) -> Result<()> {
+    pub(crate) fn write_u16_be(&mut self, value: u16) -> Result<()> {
         self.write_array(&value.to_be_bytes())?;
         Ok(())
     }
@@ -376,7 +376,7 @@ impl<'a> WriteCursor<'a> {
     /// Writes a big-endian 16-bit signed integer to the cursor.
     #[inline]
     #[track_caller]
-    pub fn write_i16_be(&mut self, value: i16) -> Result<()> {
+    pub(crate) fn write_i16_be(&mut self, value: i16) -> Result<()> {
         self.write_array(&value.to_be_bytes())?;
         Ok(())
     }
@@ -384,7 +384,7 @@ impl<'a> WriteCursor<'a> {
     /// Writes a big-endian 32-bit unsigned integer to the cursor.
     #[inline]
     #[track_caller]
-    pub fn write_u32_be(&mut self, value: u32) -> Result<()> {
+    pub(crate) fn write_u32_be(&mut self, value: u32) -> Result<()> {
         self.write_array(&value.to_be_bytes())?;
         Ok(())
     }
@@ -392,7 +392,7 @@ impl<'a> WriteCursor<'a> {
     /// Writes a big-endian 32-bit signed integer to the cursor.
     #[inline]
     #[track_caller]
-    pub fn write_i32_be(&mut self, value: i32) -> Result<()> {
+    pub(crate) fn write_i32_be(&mut self, value: i32) -> Result<()> {
         self.write_array(&value.to_be_bytes())?;
         Ok(())
     }
@@ -400,7 +400,7 @@ impl<'a> WriteCursor<'a> {
     /// Writes a big-endian 64-bit unsigned integer to the cursor.
     #[inline]
     #[track_caller]
-    pub fn write_u64_be(&mut self, value: u64) -> Result<()> {
+    pub(crate) fn write_u64_be(&mut self, value: u64) -> Result<()> {
         self.write_array(&value.to_be_bytes())?;
         Ok(())
     }
@@ -408,7 +408,7 @@ impl<'a> WriteCursor<'a> {
     /// Writes a big-endian 64-bit signed integer to the cursor.
     #[inline]
     #[track_caller]
-    pub fn write_i64_be(&mut self, value: i64) -> Result<()> {
+    pub(crate) fn write_i64_be(&mut self, value: i64) -> Result<()> {
         self.write_array(&value.to_be_bytes())?;
         Ok(())
     }

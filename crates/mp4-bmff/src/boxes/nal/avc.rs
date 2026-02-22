@@ -164,6 +164,7 @@ impl<'de, S> BoxDecode<'de> for AVCSampleEntryView<'de, S> {
 /// Marker type for AVC1 Sample Entry (`avc1`).
 ///
 /// AVC1 stores all parameter sets (SPS/PPS) in the configuration record.
+#[derive(Debug)]
 pub struct Avc1;
 
 /// A reference to an AVC1 Sample Entry (`avc1`).
@@ -180,6 +181,7 @@ impl BoxCodec for Avc1SampleEntryView<'_> {
 /// Marker type for AVC3 Sample Entry (`avc3`).
 ///
 /// AVC3 indicates parameter sets may be stored in-band within samples.
+#[derive(Debug)]
 pub struct Avc3;
 
 /// A reference to an AVC3 Sample Entry (`avc3`).
@@ -268,6 +270,7 @@ impl<'de, S> BoxDecode<'de> for AVC2SampleEntryView<'de, S> {
 /// Marker type for AVC2 Sample Entry (`avc2`).
 ///
 /// AVC2 stores all parameter sets in the configuration record.
+#[derive(Debug)]
 pub struct Avc2;
 
 /// A reference to an AVC2 Sample Entry (`avc2`).
@@ -282,6 +285,7 @@ impl BoxCodec for Avc2SampleEntryView<'_> {
 /// Marker type for AVC4 Sample Entry (`avc4`).
 ///
 /// AVC4 indicates parameter sets may be stored in-band within samples.
+#[derive(Debug)]
 pub struct Avc4;
 
 /// A reference to an AVC4 Sample Entry (`avc4`).

@@ -35,6 +35,7 @@ use crate::{
 ///
 /// assert_eq!(raw_box.payload(), b"isom");
 /// ```
+#[derive(Debug)]
 pub struct BoxReader<R> {
     inner: R,
     pending: Option<BoxHeader>,

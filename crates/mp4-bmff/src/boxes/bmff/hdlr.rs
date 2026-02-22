@@ -159,7 +159,7 @@ mod owned {
     }
 
     impl From<&HdlrBoxView<'_>> for HdlrBox {
-        fn from(view: &HdlrBoxView) -> Self {
+        fn from(view: &HdlrBoxView<'_>) -> Self {
             HdlrBox {
                 version: view.version,
                 flags: view.flags,

@@ -372,7 +372,7 @@ mod tests {
         ];
 
         let raw = RawBoxRef::parse(&data).unwrap();
-        let ftyp: FtypBoxView = raw.decode().unwrap();
+        let ftyp = raw.decode::<FtypBoxView<'_>>().unwrap();
 
         assert_eq!(ftyp.major_brand, FourCC::new(*b"isom"));
         assert_eq!(ftyp.minor_version, 512);
@@ -410,7 +410,7 @@ mod tests {
 
         let raw_ref = RawBoxRef::parse(&data).unwrap();
         let raw_owned = raw_ref.to_owned();
-        let ftyp: FtypBoxView = raw_owned.decode().unwrap();
+        let ftyp = raw_owned.decode::<FtypBoxView<'_>>().unwrap();
 
         assert_eq!(ftyp.major_brand, FourCC::new(*b"isom"));
         assert_eq!(ftyp.minor_version, 512);

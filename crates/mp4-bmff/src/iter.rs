@@ -289,7 +289,7 @@ impl<'a, E: FixedSizeEntry> FixedSizeEntryIter<'a, E> {
     }
 }
 
-impl<'a, E: FixedSizeEntry> Iterator for FixedSizeEntryIter<'a, E> {
+impl<E: FixedSizeEntry> Iterator for FixedSizeEntryIter<'_, E> {
     type Item = E;
 
     fn next(&mut self) -> Option<Self::Item> {

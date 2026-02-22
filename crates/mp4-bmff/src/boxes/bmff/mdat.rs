@@ -29,6 +29,14 @@ pub struct MdatBoxView<'a> {
     pub data: &'a [u8],
 }
 
+impl core::fmt::Debug for MdatBoxView<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MdatBoxView")
+            .field("data_length", &self.data.len())
+            .finish()
+    }
+}
+
 impl BoxCodec for MdatBoxView<'_> {
     fn boxtype(&self) -> BoxType {
         BoxType::MDAT
@@ -72,7 +80,7 @@ mod owned {
     }
 
     impl From<&MdatBoxView<'_>> for MdatBox {
-        fn from(view: &MdatBoxView) -> Self {
+        fn from(view: &MdatBoxView<'_>) -> Self {
             MdatBox {
                 data: view.data.to_vec(),
             }

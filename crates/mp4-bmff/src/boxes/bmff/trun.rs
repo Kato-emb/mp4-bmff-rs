@@ -74,7 +74,7 @@ pub struct TrunSampleIter<'a> {
     version: u8,
 }
 
-impl<'a> Iterator for TrunSampleIter<'a> {
+impl Iterator for TrunSampleIter<'_> {
     type Item = Result<TrunSample>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -154,7 +154,7 @@ impl<'a> Iterator for TrunSampleIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for TrunSampleIter<'a> {}
+impl ExactSizeIterator for TrunSampleIter<'_> {}
 
 /// A reference to a Track Run Box (`trun`).
 ///

@@ -49,7 +49,7 @@ pub struct TfraEntryIter<'a> {
     length_size_of_sample_num: u8,
 }
 
-impl<'a> TfraEntryIter<'a> {
+impl TfraEntryIter<'_> {
     fn entry_size(&self) -> usize {
         let time_size = if self.version == 1 { 8 } else { 4 };
         let moof_offset_size = if self.version == 1 { 8 } else { 4 };
@@ -76,7 +76,7 @@ impl<'a> TfraEntryIter<'a> {
     }
 }
 
-impl<'a> Iterator for TfraEntryIter<'a> {
+impl Iterator for TfraEntryIter<'_> {
     type Item = Result<TfraEntry>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -159,7 +159,7 @@ impl<'a> Iterator for TfraEntryIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for TfraEntryIter<'a> {}
+impl ExactSizeIterator for TfraEntryIter<'_> {}
 
 /// A reference to a Track Fragment Random Access Box (`tfra`).
 ///

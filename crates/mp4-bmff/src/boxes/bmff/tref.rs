@@ -130,7 +130,7 @@ mod owned {
     }
 
     impl From<&TrefTypeBoxView<'_>> for TrefTypeBox {
-        fn from(view: &TrefTypeBoxView) -> Self {
+        fn from(view: &TrefTypeBoxView<'_>) -> Self {
             let track_ids = view.track_ids().collect();
             TrefTypeBox { track_ids }
         }

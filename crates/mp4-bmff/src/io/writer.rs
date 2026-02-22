@@ -40,6 +40,7 @@ use crate::write_box;
 /// // The output now contains the serialized box
 /// assert_eq!(output.len(), 8); // header only (no payload)
 /// ```
+#[derive(Debug)]
 pub struct BoxWriter<W> {
     inner: W,
     buf: Vec<u8>,

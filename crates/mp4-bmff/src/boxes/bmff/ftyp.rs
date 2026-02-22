@@ -121,7 +121,7 @@ mod owned {
     }
 
     impl From<&FtypBoxView<'_>> for FtypBox {
-        fn from(view: &FtypBoxView) -> Self {
+        fn from(view: &FtypBoxView<'_>) -> Self {
             let compatible_brands = view.compatible_brands().collect::<Vec<FourCC>>();
 
             FtypBox {

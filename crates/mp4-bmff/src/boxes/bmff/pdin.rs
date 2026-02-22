@@ -165,7 +165,7 @@ mod owned {
     }
 
     impl From<&PdinBoxView<'_>> for PdinBox {
-        fn from(view: &PdinBoxView) -> Self {
+        fn from(view: &PdinBoxView<'_>) -> Self {
             let entries = view.entries().collect();
             PdinBox {
                 version: view.version,

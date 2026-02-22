@@ -119,7 +119,7 @@ mod owned {
     }
 
     impl From<&StypBoxView<'_>> for StypBox {
-        fn from(view: &StypBoxView) -> Self {
+        fn from(view: &StypBoxView<'_>) -> Self {
             let compatible_brands = view.compatible_brands().collect::<Vec<FourCC>>();
 
             StypBox {

@@ -20,10 +20,17 @@ use crate::error::*;
 /// # Structure
 ///
 /// - `data`: Arbitrary padding bytes. The contents are not defined and may be any value.
-#[derive(Debug)]
 pub struct FreeBoxView<'a> {
     /// Arbitrary padding bytes (contents are undefined).
     pub data: &'a [u8],
+}
+
+impl core::fmt::Debug for FreeBoxView<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("FreeBoxView")
+            .field("data_length", &self.data.len())
+            .finish()
+    }
 }
 
 impl BoxCodec for FreeBoxView<'_> {
@@ -69,7 +76,7 @@ mod owned {
     }
 
     impl From<&FreeBoxView<'_>> for FreeBox {
-        fn from(view: &FreeBoxView) -> Self {
+        fn from(view: &FreeBoxView<'_>) -> Self {
             let data = view.data.to_vec();
             FreeBox { data }
         }

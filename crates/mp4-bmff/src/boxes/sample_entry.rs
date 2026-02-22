@@ -185,7 +185,7 @@ mod visual {
             }
         }
 
-        pub(crate) fn parse_in(cur: &mut crate::cursor::ReadCursor<'_>) -> Result<Self> {
+        pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
             let base = SampleEntry::parse_in(cur)?;
 
             // Skip pre_defined (2 bytes)
@@ -227,7 +227,7 @@ mod visual {
         }
 
         #[cfg(feature = "alloc")]
-        pub(crate) fn write_in(&self, cur: &mut crate::cursor::WriteCursor<'_>) -> Result<()> {
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             self.base.write_in(cur)?;
 
             // pre_defined (2 bytes)
@@ -326,7 +326,7 @@ mod audio {
             &self.base
         }
 
-        pub(crate) fn parse_in(cur: &mut crate::cursor::ReadCursor<'_>) -> Result<Self> {
+        pub(crate) fn parse_in(cur: &mut ReadCursor<'_>) -> Result<Self> {
             let base = SampleEntry::parse_in(cur)?;
 
             // Skip reserved (4 bytes)
@@ -351,7 +351,7 @@ mod audio {
         }
 
         #[cfg(feature = "alloc")]
-        pub(crate) fn write_in(&self, cur: &mut crate::cursor::WriteCursor<'_>) -> Result<()> {
+        pub(crate) fn write_in(&self, cur: &mut WriteCursor<'_>) -> Result<()> {
             self.base.write_in(cur)?;
 
             // reserved (8 bytes)

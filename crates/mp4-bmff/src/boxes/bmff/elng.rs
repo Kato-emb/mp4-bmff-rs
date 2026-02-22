@@ -123,7 +123,7 @@ mod owned {
     }
 
     impl From<&ElngBoxView<'_>> for ElngBox {
-        fn from(view: &ElngBoxView) -> Self {
+        fn from(view: &ElngBoxView<'_>) -> Self {
             ElngBox {
                 version: view.version,
                 flags: view.flags,

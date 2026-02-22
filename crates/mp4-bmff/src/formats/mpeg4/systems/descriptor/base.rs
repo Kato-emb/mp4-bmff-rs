@@ -1,3 +1,3 @@
-pub mod raw;
-pub mod size;
-pub mod tag;
+pub(crate) mod raw;
+pub(crate) mod size;
+pub(crate) mod tag;

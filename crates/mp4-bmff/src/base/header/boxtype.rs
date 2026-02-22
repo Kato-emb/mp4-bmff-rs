@@ -31,7 +31,7 @@ use crate::types::{
 pub type UserType = Uuid;
 
 /// The FourCC code used for UUID-based box types.
-pub const UUID: FourCC = FourCC::new(*b"uuid");
+pub(super) const UUID: FourCC = FourCC::new(*b"uuid");
 
 /// Type-safe representation of BMFF box type values.
 ///

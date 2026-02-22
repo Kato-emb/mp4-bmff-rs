@@ -148,7 +148,7 @@ mod owned {
     impl TryFrom<&TrgrBoxView<'_>> for TrgrBox {
         type Error = Error;
 
-        fn try_from(view: &TrgrBoxView) -> Result<Self> {
+        fn try_from(view: &TrgrBoxView<'_>) -> Result<Self> {
             let mut track_groups = Vec::new();
             for result in view.track_groups() {
                 let (boxtype, track_group_box) = result?;

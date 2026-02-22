@@ -43,6 +43,15 @@ pub struct ParameterSetsIter<'a> {
 }
 
 #[cfg(any(feature = "avc", feature = "hevc"))]
+impl core::fmt::Debug for ParameterSetsIter<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ParameterSetsIter")
+            .field("remaining", &self.remaining)
+            .finish()
+    }
+}
+
+#[cfg(any(feature = "avc", feature = "hevc"))]
 impl<'a> Iterator for ParameterSetsIter<'a> {
     type Item = &'a [u8];
 
