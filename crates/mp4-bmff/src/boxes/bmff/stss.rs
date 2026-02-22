@@ -271,6 +271,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn test_stss_entry_round_trip() {
         let entry = StssEntry {

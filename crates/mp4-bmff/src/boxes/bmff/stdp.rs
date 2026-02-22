@@ -262,6 +262,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn test_stdp_entry_round_trip() {
         let entry = StdpEntry { priority: 12345 };

@@ -292,6 +292,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn test_ctts_entry_round_trip() {
         let entry = CttsEntry {

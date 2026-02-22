@@ -264,6 +264,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn test_stsz_entry_round_trip() {
         let entry = StszEntry { entry_size: 1024 };

@@ -86,7 +86,7 @@ impl<'a> StblBoxView<'a> {
     pub fn stdp(&self) -> Result<Option<StdpBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;
-            if b.boxtype() == BoxType::SDTP {
+            if b.boxtype() == BoxType::STDP {
                 let stdp = StdpBoxView::decode(b.into_payload())?;
                 return Ok(Some(stdp));
             }
