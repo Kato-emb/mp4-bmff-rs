@@ -9,10 +9,9 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
-use crate::iter::FixedSizeEntry;
-use crate::iter::FixedSizeEntryIter;
 
 use crate::cursor::ReadCursor;
+use crate::iter::FixedEntry;
 
 define_box_flags!(
     /// Flags for the Composition Time to Sample Box (`ctts`).
@@ -34,12 +33,8 @@ pub struct CttsEntry {
     pub sample_offset: i32,
 }
 
-impl FixedSizeEntry for CttsEntry {
-    const ENTRY_SIZE: usize = 8;
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-
+impl FixedEntry<8> for CttsEntry {
+    fn from_bytes(bytes: &[u8; 8]) -> Self {
         let sample_count = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let sample_offset = i32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
 
@@ -49,12 +44,18 @@ impl FixedSizeEntry for CttsEntry {
         }
     }
 
-    fn to_bytes(&self, bytes: &mut [u8]) {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+    fn to_bytes(&self) -> [u8; 8] {
+        let mut bytes = [0u8; 8];
         bytes[0..4].copy_from_slice(&self.sample_count.to_be_bytes());
         bytes[4..8].copy_from_slice(&self.sample_offset.to_be_bytes());
+        bytes
     }
 }
+
+define_entry_iter!(
+    /// An iterator over entries in the Composition Time to Sample Box (`ctts`).
+    pub struct CttsEntryIter(CttsEntry, 8);
+);
 
 /// A reference to a Composition Time to Sample Box (`ctts`).
 ///
@@ -80,8 +81,8 @@ pub struct CttsBoxView<'a> {
 
 impl<'a> CttsBoxView<'a> {
     /// Returns an iterator over the entries in the Composition Time to Sample Box (`ctts`).
-    pub fn entries(&self) -> FixedSizeEntryIter<'a, CttsEntry> {
-        FixedSizeEntryIter::new(self.entries)
+    pub fn entries(&self) -> CttsEntryIter<'a> {
+        CttsEntryIter::new(self.entries)
     }
 }
 
@@ -205,8 +206,8 @@ mod owned {
             cur.write_u32_be(self.entries.len() as u32)?;
 
             for entry in &self.entries {
-                let buf = cur.take_mut(CttsEntry::ENTRY_SIZE)?;
-                entry.to_bytes(buf);
+                let bytes = entry.to_bytes();
+                cur.write_array(&bytes)?;
             }
 
             Ok(cur.position())
@@ -296,8 +297,7 @@ mod tests {
             sample_offset: -67890,
         };
 
-        let mut bytes = [0u8; 8];
-        entry.to_bytes(&mut bytes);
+        let bytes = entry.to_bytes();
 
         let decoded = CttsEntry::from_bytes(&bytes);
         assert_eq!(decoded.sample_count, entry.sample_count);

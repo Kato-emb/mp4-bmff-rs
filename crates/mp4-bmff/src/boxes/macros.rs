@@ -199,3 +199,39 @@ macro_rules! define_box_flags {
         }
     };
 }
+
+macro_rules! define_entry_iter {
+    (
+        $(#[$meta:meta])*
+        $vis:vis struct $name:ident($entry:ty, $n:literal);
+    ) => {
+        $(#[$meta])*
+        $vis struct $name<'a>($crate::iter::FixedEntryIter<'a, $entry, $n>);
+
+        impl<'a> $name<'a> {
+            pub(crate) fn new(data: &'a [u8]) -> Self {
+                Self($crate::iter::FixedEntryIter::new(data))
+            }
+        }
+
+        impl Iterator for $name<'_> {
+            type Item = $entry;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                self.0.next()
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                self.0.size_hint()
+            }
+        }
+
+        impl ExactSizeIterator for $name<'_> {}
+
+        impl core::fmt::Debug for $name<'_> {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.debug_list().entries(self.0.fork()).finish()
+            }
+        }
+    };
+}

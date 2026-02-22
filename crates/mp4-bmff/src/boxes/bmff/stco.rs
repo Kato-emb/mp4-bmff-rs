@@ -8,8 +8,7 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
-use crate::iter::FixedSizeEntry;
-use crate::iter::FixedSizeEntryIter;
+use crate::iter::FixedEntry;
 
 use crate::cursor::ReadCursor;
 
@@ -29,22 +28,22 @@ pub struct StcoEntry {
     pub chunk_offset: u32,
 }
 
-impl FixedSizeEntry for StcoEntry {
-    const ENTRY_SIZE: usize = 4;
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-
+impl FixedEntry<4> for StcoEntry {
+    fn from_bytes(bytes: &[u8; 4]) -> Self {
         StcoEntry {
             chunk_offset: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
         }
     }
 
-    fn to_bytes(&self, bytes: &mut [u8]) {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-        bytes[0..4].copy_from_slice(&self.chunk_offset.to_be_bytes());
+    fn to_bytes(&self) -> [u8; 4] {
+        self.chunk_offset.to_be_bytes()
     }
 }
+
+define_entry_iter!(
+    /// An iterator over entries in the Chunk Offset Box (`stco`).
+    pub struct StcoEntryIter(StcoEntry, 4);
+);
 
 /// A reference to a Chunk Offset Box (`stco`).
 ///
@@ -70,8 +69,8 @@ pub struct StcoBoxView<'a> {
 
 impl<'a> StcoBoxView<'a> {
     /// Returns an iterator over the entries in the Chunk Offset Box.
-    pub fn entries(&self) -> FixedSizeEntryIter<'a, StcoEntry> {
-        FixedSizeEntryIter::new(self.entries)
+    pub fn entries(&self) -> StcoEntryIter<'a> {
+        StcoEntryIter::new(self.entries)
     }
 }
 
@@ -189,8 +188,8 @@ mod owned {
             cur.write_u32_be(self.entries.len() as u32)?;
 
             for entry in &self.entries {
-                let buf = cur.take_mut(StcoEntry::ENTRY_SIZE)?;
-                entry.to_bytes(buf);
+                let bytes = entry.to_bytes();
+                cur.write_array(&bytes)?;
             }
 
             Ok(cur.position())
@@ -256,8 +255,7 @@ mod tests {
             chunk_offset: 12345,
         };
 
-        let mut bytes = [0u8; 4];
-        entry.to_bytes(&mut bytes);
+        let bytes = entry.to_bytes();
 
         let decoded = StcoEntry::from_bytes(&bytes);
         assert_eq!(decoded.chunk_offset, entry.chunk_offset);

@@ -8,8 +8,7 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
-use crate::iter::FixedSizeEntry;
-use crate::iter::FixedSizeEntryIter;
+use crate::iter::FixedEntry;
 
 use crate::cursor::ReadCursor;
 
@@ -33,24 +32,26 @@ pub struct SttsEntry {
     pub sample_delta: u32,
 }
 
-impl FixedSizeEntry for SttsEntry {
-    const ENTRY_SIZE: usize = 8;
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-
+impl FixedEntry<8> for SttsEntry {
+    fn from_bytes(bytes: &[u8; 8]) -> Self {
         SttsEntry {
             sample_count: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
             sample_delta: u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
         }
     }
 
-    fn to_bytes(&self, bytes: &mut [u8]) {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+    fn to_bytes(&self) -> [u8; 8] {
+        let mut bytes = [0u8; 8];
         bytes[0..4].copy_from_slice(&self.sample_count.to_be_bytes());
         bytes[4..8].copy_from_slice(&self.sample_delta.to_be_bytes());
+        bytes
     }
 }
+
+define_entry_iter!(
+    /// An iterator over entries in the Decoding Time to Sample Box (`stts`).
+    pub struct SttsEntryIter(SttsEntry, 8);
+);
 
 /// A reference to a Decoding Time to Sample Box (`stts`).
 ///
@@ -76,8 +77,8 @@ pub struct SttsBoxView<'a> {
 
 impl<'a> SttsBoxView<'a> {
     /// Returns an iterator over the STTS entries.
-    pub fn entries(&self) -> FixedSizeEntryIter<'a, SttsEntry> {
-        FixedSizeEntryIter::new(self.entries)
+    pub fn entries(&self) -> SttsEntryIter<'a> {
+        SttsEntryIter::new(self.entries)
     }
 }
 
@@ -96,7 +97,7 @@ impl<'de> BoxDecode<'de> for SttsBoxView<'de> {
 
         let entry_count = cur.read_u32_be()?;
 
-        let expected_size = entry_count as usize * SttsEntry::ENTRY_SIZE;
+        let expected_size = entry_count as usize * SttsEntry::ENTRY_SIZE; // Each entry is 8 bytes
 
         if cur.remaining() != expected_size {
             return Err(Error::at_in_box(
@@ -197,8 +198,8 @@ mod owned {
             cur.write_u32_be(self.entries.len() as u32)?;
 
             for entry in &self.entries {
-                let buf = cur.take_mut(SttsEntry::ENTRY_SIZE)?;
-                entry.to_bytes(buf);
+                let bytes = entry.to_bytes();
+                cur.write_array(&bytes)?;
             }
 
             Ok(cur.position())
@@ -288,8 +289,7 @@ mod tests {
             sample_delta: 67890,
         };
 
-        let mut bytes = [0u8; 8];
-        entry.to_bytes(&mut bytes);
+        let bytes = entry.to_bytes();
 
         let decoded = SttsEntry::from_bytes(&bytes);
         assert_eq!(decoded.sample_count, entry.sample_count);

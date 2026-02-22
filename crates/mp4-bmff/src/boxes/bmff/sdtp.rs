@@ -9,8 +9,7 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
-use crate::iter::FixedSizeEntry;
-use crate::iter::FixedSizeEntryIter;
+use crate::iter::FixedEntry;
 
 use crate::cursor::ReadCursor;
 
@@ -37,11 +36,8 @@ pub struct SdtpEntry {
     pub sample_has_redundancy: u8,
 }
 
-impl FixedSizeEntry for SdtpEntry {
-    const ENTRY_SIZE: usize = 1;
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+impl FixedEntry<1> for SdtpEntry {
+    fn from_bytes(bytes: &[u8; 1]) -> Self {
         let byte = bytes[0];
 
         SdtpEntry {
@@ -52,16 +48,20 @@ impl FixedSizeEntry for SdtpEntry {
         }
     }
 
-    fn to_bytes(&self, bytes: &mut [u8]) {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+    fn to_bytes(&self) -> [u8; 1] {
         let mut byte = 0u8;
         byte |= (self.is_leading & 0b11) << 6;
         byte |= (self.sample_depends_on & 0b11) << 4;
         byte |= (self.sample_is_depended_on & 0b11) << 2;
         byte |= self.sample_has_redundancy & 0b11;
-        bytes[0] = byte;
+        [byte]
     }
 }
+
+define_entry_iter!(
+    /// An iterator over entries in the Sample Dependency Type Box (`sdtp`).
+    pub struct SdtpEntryIter(SdtpEntry, 1);
+);
 
 /// A reference to a Sample Dependency Type Box (`sdtp`).
 ///
@@ -87,8 +87,8 @@ pub struct SdtpBoxView<'a> {
 
 impl<'a> SdtpBoxView<'a> {
     /// Returns an iterator over the SDTP entries.
-    pub fn entries(&self) -> FixedSizeEntryIter<'a, SdtpEntry> {
-        FixedSizeEntryIter::new(self.entries)
+    pub fn entries(&self) -> SdtpEntryIter<'a> {
+        SdtpEntryIter::new(self.entries)
     }
 }
 
@@ -107,7 +107,7 @@ impl<'de> BoxDecode<'de> for SdtpBoxView<'de> {
 
         let entry_count = cur.read_u32_be()?;
 
-        let expected_size = entry_count as usize * SdtpEntry::ENTRY_SIZE;
+        let expected_size = entry_count as usize * SdtpEntry::ENTRY_SIZE; // Each entry is 1 byte
 
         if cur.remaining() != expected_size {
             return Err(Error::at_in_box(
@@ -195,7 +195,7 @@ mod owned {
         fn encoded_len(&self) -> usize {
             4 // version + flags
             + 4 // entry count
-            + self.entries.len() * SdtpEntry::ENTRY_SIZE // entries
+            + self.entries.len() * SdtpEntry::ENTRY_SIZE // each entry is 1 byte
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
@@ -207,8 +207,8 @@ mod owned {
             cur.write_u32_be(self.entries.len() as u32)?;
 
             for entry in &self.entries {
-                let buf = cur.take_mut(SdtpEntry::ENTRY_SIZE)?;
-                entry.to_bytes(buf);
+                let bytes = entry.to_bytes();
+                cur.write_array(&bytes)?;
             }
 
             Ok(cur.position())
@@ -310,8 +310,7 @@ mod tests {
             sample_has_redundancy: 0,
         };
 
-        let mut bytes = [0u8; 1];
-        entry.to_bytes(&mut bytes);
+        let bytes = entry.to_bytes();
 
         let decoded = SdtpEntry::from_bytes(&bytes);
         assert_eq!(decoded.is_leading, entry.is_leading);

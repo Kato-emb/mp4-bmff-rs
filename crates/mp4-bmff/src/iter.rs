@@ -29,6 +29,8 @@
 //! [`FixedSizeEntryIter`] provides efficient iteration over entries
 //! without individual allocations.
 
+use core::fmt;
+
 use crate::base::rawbox::RawBoxRef;
 use crate::cursor::ReadCursor;
 
@@ -68,11 +70,23 @@ pub struct BoxIter<'a> {
     cur: ReadCursor<'a>,
 }
 
+impl fmt::Debug for BoxIter<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.fork()).finish()
+    }
+}
+
 impl<'a> BoxIter<'a> {
     /// Creates a new `BoxIter` from the given byte slice.
     pub(crate) fn new(content: &'a [u8]) -> Self {
         Self {
             cur: ReadCursor::new(content),
+        }
+    }
+
+    pub(crate) fn fork(&self) -> Self {
+        Self {
+            cur: self.cur.fork(),
         }
     }
 }
@@ -138,158 +152,38 @@ pub fn iter_boxes(data: &[u8]) -> BoxIter<'_> {
     BoxIter::new(data)
 }
 
-/// A trait for entries with fixed size that can be converted to and from bytes.
-///
-/// This trait enables zero-copy iteration over arrays of fixed-size entries
-/// commonly found in BMFF sample tables (stts, stss, stsc, etc.). Types
-/// implementing this trait can be efficiently parsed from and written to
-/// byte slices without intermediate allocations.
-///
-/// # Requirements
-///
-/// Implementors must:
-/// - Be `Sized` and `Copy` (typically small structs)
-/// - Define a constant `ENTRY_SIZE` for the byte representation
-/// - Implement bidirectional conversion between bytes and the type
-///
-/// # Example
-///
-/// ```
-/// use mp4_bmff::iter::FixedSizeEntry;
-///
-/// #[derive(Debug, Clone, Copy, PartialEq)]
-/// struct TimeEntry {
-///     sample_count: u32,
-///     sample_delta: u32,
-/// }
-///
-/// impl FixedSizeEntry for TimeEntry {
-///     const ENTRY_SIZE: usize = 8;
-///
-///     fn from_bytes(bytes: &[u8]) -> Self {
-///         Self {
-///             sample_count: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-///             sample_delta: u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
-///         }
-///     }
-///
-///     fn to_bytes(&self, bytes: &mut [u8]) {
-///         bytes[0..4].copy_from_slice(&self.sample_count.to_be_bytes());
-///         bytes[4..8].copy_from_slice(&self.sample_delta.to_be_bytes());
-///     }
-/// }
-///
-/// let data = [0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x10, 0x00];
-/// let entry = TimeEntry::from_bytes(&data);
-/// assert_eq!(entry.sample_count, 10);
-/// assert_eq!(entry.sample_delta, 4096);
-/// ```
-pub trait FixedSizeEntry: Sized + Copy {
-    /// The size of the entry in bytes.
-    ///
-    /// This constant defines how many bytes each entry occupies in the
-    /// serialized form. The iterator uses this to split the byte slice
-    /// into individual entries.
-    const ENTRY_SIZE: usize;
+pub(crate) trait FixedEntry<const N: usize>: Sized + Copy {
+    const ENTRY_SIZE: usize = N;
 
-    /// Creates an entry from the given byte slice.
-    ///
-    /// # Arguments
-    ///
-    /// * `bytes` - A byte slice with at least `ENTRY_SIZE` bytes
-    ///
-    /// # Panics
-    ///
-    /// May panic if `bytes.len() < ENTRY_SIZE`.
-    fn from_bytes(bytes: &[u8]) -> Self;
-
-    /// Writes the entry into the given byte slice.
-    ///
-    /// # Arguments
-    ///
-    /// * `bytes` - A mutable byte slice with at least `ENTRY_SIZE` bytes
-    ///
-    /// # Panics
-    ///
-    /// May panic if `bytes.len() < ENTRY_SIZE`.
-    fn to_bytes(&self, bytes: &mut [u8]);
+    fn from_bytes(bytes: &[u8; N]) -> Self;
+    fn to_bytes(&self) -> [u8; N];
 }
 
-/// Zero-copy iterator over fixed-size entries in a byte slice.
-///
-/// This iterator efficiently parses arrays of fixed-size entries without
-/// allocating memory for each entry. It's designed for BMFF sample table
-/// boxes that contain arrays of uniform entries.
-///
-/// # How It Works
-///
-/// The iterator divides the input byte slice into chunks of `E::ENTRY_SIZE`
-/// bytes and converts each chunk to type `E` on demand. Any trailing bytes
-/// that don't form a complete entry are ignored.
-///
-/// # Type Parameters
-///
-/// * `'a` - Lifetime of the underlying byte slice
-/// * `E` - Entry type implementing [`FixedSizeEntry`]
-///
-/// # Example
-///
-/// ```
-/// use mp4_bmff::iter::{FixedSizeEntry, FixedSizeEntryIter};
-///
-/// #[derive(Debug, Clone, Copy, PartialEq)]
-/// struct SyncSample(u32);
-///
-/// impl FixedSizeEntry for SyncSample {
-///     const ENTRY_SIZE: usize = 4;
-///
-///     fn from_bytes(bytes: &[u8]) -> Self {
-///         Self(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-///     }
-///
-///     fn to_bytes(&self, bytes: &mut [u8]) {
-///         bytes[0..4].copy_from_slice(&self.0.to_be_bytes());
-///     }
-/// }
-///
-/// // Data containing 3 sync sample entries
-/// let data = [
-///     0x00, 0x00, 0x00, 0x01, // sample 1
-///     0x00, 0x00, 0x00, 0x0A, // sample 10
-///     0x00, 0x00, 0x00, 0x14, // sample 20
-/// ];
-///
-/// let samples: Vec<_> = FixedSizeEntryIter::<SyncSample>::new(&data).collect();
-/// assert_eq!(samples.len(), 3);
-/// assert_eq!(samples[0].0, 1);
-/// assert_eq!(samples[1].0, 10);
-/// assert_eq!(samples[2].0, 20);
-/// ```
-pub struct FixedSizeEntryIter<'a, E: FixedSizeEntry> {
+pub(crate) struct FixedEntryIter<'a, E: FixedEntry<N>, const N: usize> {
     bytes: &'a [u8],
     remaining: usize,
     _marker: core::marker::PhantomData<E>,
 }
 
-impl<'a, E: FixedSizeEntry> FixedSizeEntryIter<'a, E> {
-    /// Creates a new `FixedSizeEntryIter` from the given byte slice.
-    ///
-    /// The iterator will yield `data.len() / E::ENTRY_SIZE` entries.
-    /// Any trailing bytes that don't form a complete entry are ignored.
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - Byte slice containing zero or more serialized entries
-    pub fn new(data: &'a [u8]) -> Self {
+impl<'a, E: FixedEntry<N>, const N: usize> FixedEntryIter<'a, E, N> {
+    pub(crate) fn new(data: &'a [u8]) -> Self {
         Self {
             bytes: data,
-            remaining: data.len() / E::ENTRY_SIZE,
+            remaining: data.len() / N,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    pub(crate) fn fork(&self) -> Self {
+        Self {
+            bytes: self.bytes,
+            remaining: self.remaining,
             _marker: core::marker::PhantomData,
         }
     }
 }
 
-impl<E: FixedSizeEntry> Iterator for FixedSizeEntryIter<'_, E> {
+impl<E: FixedEntry<N>, const N: usize> Iterator for FixedEntryIter<'_, E, N> {
     type Item = E;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -298,12 +192,19 @@ impl<E: FixedSizeEntry> Iterator for FixedSizeEntryIter<'_, E> {
         }
         self.remaining -= 1;
 
-        let (entry_bytes, rest) = self.bytes.split_at(E::ENTRY_SIZE);
+        let (entry_bytes, rest) = self.bytes.split_at(N);
         self.bytes = rest;
 
-        Some(E::from_bytes(entry_bytes))
+        let entry_array: &[u8; N] = entry_bytes.try_into().expect("slice length checked above");
+        Some(E::from_bytes(entry_array))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
     }
 }
+
+impl<E: FixedEntry<N>, const N: usize> ExactSizeIterator for FixedEntryIter<'_, E, N> {}
 
 #[cfg(test)]
 mod tests {

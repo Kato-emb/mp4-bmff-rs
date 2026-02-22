@@ -192,11 +192,24 @@ pub struct DataEntryBoxIter<'a> {
     remaining: usize,
 }
 
+impl core::fmt::Debug for DataEntryBoxIter<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_list().entries(self.fork()).finish()
+    }
+}
+
 impl<'a> DataEntryBoxIter<'a> {
     pub fn new(data: &'a [u8], entry_count: u32) -> Self {
         DataEntryBoxIter {
             iter: BoxIter::new(data),
             remaining: entry_count as usize,
+        }
+    }
+
+    fn fork(&self) -> Self {
+        DataEntryBoxIter {
+            iter: self.iter.fork(),
+            remaining: self.remaining,
         }
     }
 }

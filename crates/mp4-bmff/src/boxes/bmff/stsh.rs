@@ -9,8 +9,7 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
-use crate::iter::FixedSizeEntry;
-use crate::iter::FixedSizeEntryIter;
+use crate::iter::FixedEntry;
 
 use crate::cursor::ReadCursor;
 
@@ -33,24 +32,26 @@ pub struct StshEntry {
     pub sync_sample_number: u32,
 }
 
-impl FixedSizeEntry for StshEntry {
-    const ENTRY_SIZE: usize = 8;
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-
+impl FixedEntry<8> for StshEntry {
+    fn from_bytes(bytes: &[u8; 8]) -> Self {
         StshEntry {
             shadowed_sample_number: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
             sync_sample_number: u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
         }
     }
 
-    fn to_bytes(&self, bytes: &mut [u8]) {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+    fn to_bytes(&self) -> [u8; 8] {
+        let mut bytes = [0u8; 8];
         bytes[0..4].copy_from_slice(&self.shadowed_sample_number.to_be_bytes());
         bytes[4..8].copy_from_slice(&self.sync_sample_number.to_be_bytes());
+        bytes
     }
 }
+
+define_entry_iter!(
+    /// An iterator over entries in the Shadow Sync Sample Box (`stsh`).
+    pub struct StshEntryIter(StshEntry, 8);
+);
 
 /// A reference to a Shadow Sync Sample Box (`stsh`).
 ///
@@ -73,8 +74,8 @@ pub struct StshBoxView<'a> {
 
 impl<'a> StshBoxView<'a> {
     /// Returns an iterator over the entries in the Shadow Sync Sample Box (`stsh`).
-    pub fn entries(&self) -> FixedSizeEntryIter<'a, StshEntry> {
-        FixedSizeEntryIter::new(self.entries)
+    pub fn entries(&self) -> StshEntryIter<'a> {
+        StshEntryIter::new(self.entries)
     }
 }
 
@@ -198,8 +199,8 @@ mod owned {
 
             // Write entries
             for entry in &self.entries {
-                let buf = cur.take_mut(StshEntry::ENTRY_SIZE)?;
-                entry.to_bytes(buf);
+                let bytes = entry.to_bytes();
+                cur.write_array(&bytes)?;
             }
 
             Ok(cur.position())
@@ -287,8 +288,7 @@ mod tests {
             sync_sample_number: 67890,
         };
 
-        let mut bytes = [0u8; 8];
-        entry.to_bytes(&mut bytes);
+        let bytes = entry.to_bytes();
 
         let decoded = StshEntry::from_bytes(&bytes);
         assert_eq!(decoded.shadowed_sample_number, entry.shadowed_sample_number);

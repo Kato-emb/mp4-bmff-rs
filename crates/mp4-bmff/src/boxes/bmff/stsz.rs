@@ -9,8 +9,7 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
-use crate::iter::FixedSizeEntry;
-use crate::iter::FixedSizeEntryIter;
+use crate::iter::FixedEntry;
 
 define_box_flags!(
     /// Flags for the Sample Size Box (`stsz`).
@@ -28,22 +27,22 @@ pub struct StszEntry {
     pub entry_size: u32,
 }
 
-impl FixedSizeEntry for StszEntry {
-    const ENTRY_SIZE: usize = 4;
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-
-        let entry_size = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-
-        StszEntry { entry_size }
+impl FixedEntry<4> for StszEntry {
+    fn from_bytes(bytes: &[u8; 4]) -> Self {
+        StszEntry {
+            entry_size: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+        }
     }
 
-    fn to_bytes(&self, bytes: &mut [u8]) {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-        bytes[0..4].copy_from_slice(&self.entry_size.to_be_bytes());
+    fn to_bytes(&self) -> [u8; 4] {
+        self.entry_size.to_be_bytes()
     }
 }
+
+define_entry_iter!(
+    /// An iterator over entries in the Sample Size Box (`stsz`).
+    pub struct StszEntryIter(StszEntry, 4);
+);
 
 /// A reference to a Sample Size Box (`stsz`).
 ///
@@ -72,8 +71,8 @@ pub struct StszBoxView<'a> {
 
 impl<'a> StszBoxView<'a> {
     /// Returns an iterator over the entries in the Sample Size Box (`stsz`).
-    pub fn entries(&self) -> FixedSizeEntryIter<'a, StszEntry> {
-        FixedSizeEntryIter::new(self.entries)
+    pub fn entries(&self) -> StszEntryIter<'a> {
+        StszEntryIter::new(self.entries)
     }
 }
 
@@ -93,7 +92,7 @@ impl<'de> BoxDecode<'de> for StszBoxView<'de> {
         let sample_size = cur.read_u32_be()?;
         let sample_count = cur.read_u32_be()?;
 
-        let expected_size = sample_count as usize * StszEntry::ENTRY_SIZE;
+        let expected_size = sample_count as usize * 4; // Each entry is 4 bytes
 
         if cur.remaining() != expected_size {
             return Err(Error::in_box(
@@ -187,7 +186,7 @@ mod owned {
             4 // version + flags
             + 4 // sample_size
             + 4 // sample_count
-            + (self.entries.len() * StszEntry::ENTRY_SIZE) // entries
+            + (self.entries.len() * 4) // entries
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
@@ -200,8 +199,8 @@ mod owned {
             cur.write_u32_be(self.entries.len() as u32)?;
 
             for entry in &self.entries {
-                let buf = cur.take_mut(StszEntry::ENTRY_SIZE)?;
-                entry.to_bytes(buf);
+                let bytes = entry.to_bytes();
+                cur.write_array(&bytes)?;
             }
 
             Ok(cur.position())
@@ -268,8 +267,7 @@ mod tests {
     fn test_stsz_entry_round_trip() {
         let entry = StszEntry { entry_size: 1024 };
 
-        let mut bytes = [0u8; 4];
-        entry.to_bytes(&mut bytes);
+        let bytes = entry.to_bytes();
 
         let decoded = StszEntry::from_bytes(&bytes);
         assert_eq!(decoded.entry_size, entry.entry_size);

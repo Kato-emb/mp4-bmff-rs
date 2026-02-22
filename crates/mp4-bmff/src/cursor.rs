@@ -127,6 +127,15 @@ impl<'a> ReadCursor<'a> {
         self.pos = pos;
     }
 
+    /// Creates a new `ReadCursor` with the same inner byte slice and position as the current cursor.
+    #[inline]
+    pub(crate) const fn fork(&self) -> Self {
+        Self {
+            inner: self.inner,
+            pos: self.pos,
+        }
+    }
+
     /// Advances the cursor by `n` bytes and returns a slice of the taken bytes.
     #[inline]
     #[track_caller]

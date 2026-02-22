@@ -4,6 +4,8 @@
 //! from a byte slice, commonly used within ES_Descriptor and
 //! DecoderConfigDescriptor instances.
 
+use core::fmt;
+
 use crate::error::*;
 
 use crate::cursor::ReadCursor;
@@ -37,10 +39,22 @@ pub struct DescriptorIter<'a> {
     cur: ReadCursor<'a>,
 }
 
+impl fmt::Debug for DescriptorIter<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.fork()).finish()
+    }
+}
+
 impl<'a> DescriptorIter<'a> {
     pub(crate) fn new(content: &'a [u8]) -> Self {
         Self {
             cur: ReadCursor::new(content),
+        }
+    }
+
+    fn fork(&self) -> Self {
+        Self {
+            cur: self.cur.fork(),
         }
     }
 }

@@ -9,8 +9,7 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
-use crate::iter::FixedSizeEntry;
-use crate::iter::FixedSizeEntryIter;
+use crate::iter::FixedEntry;
 
 use crate::cursor::ReadCursor;
 
@@ -35,12 +34,8 @@ pub struct StscEntry {
     pub sample_description_index: u32,
 }
 
-impl FixedSizeEntry for StscEntry {
-    const ENTRY_SIZE: usize = 12;
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-
+impl FixedEntry<12> for StscEntry {
+    fn from_bytes(bytes: &[u8; 12]) -> Self {
         let first_chunk = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let samples_per_chunk = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
         let sample_description_index =
@@ -53,13 +48,19 @@ impl FixedSizeEntry for StscEntry {
         }
     }
 
-    fn to_bytes(&self, bytes: &mut [u8]) {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+    fn to_bytes(&self) -> [u8; 12] {
+        let mut bytes = [0u8; 12];
         bytes[0..4].copy_from_slice(&self.first_chunk.to_be_bytes());
         bytes[4..8].copy_from_slice(&self.samples_per_chunk.to_be_bytes());
         bytes[8..12].copy_from_slice(&self.sample_description_index.to_be_bytes());
+        bytes
     }
 }
+
+define_entry_iter!(
+    /// An iterator over entries in the Sample to Chunk Box (`stsc`).
+    pub struct StscEntryIter(StscEntry, 12);
+);
 
 /// A reference to a Sample to Chunk Box (`stsc`).
 ///
@@ -85,8 +86,8 @@ pub struct StscBoxView<'a> {
 
 impl<'a> StscBoxView<'a> {
     /// Returns an iterator over the entries in the Sample to Chunk Box (`stsc`).
-    pub fn entries(&self) -> FixedSizeEntryIter<'a, StscEntry> {
-        FixedSizeEntryIter::new(self.entries)
+    pub fn entries(&self) -> StscEntryIter<'a> {
+        StscEntryIter::new(self.entries)
     }
 }
 
@@ -197,8 +198,8 @@ mod owned {
             cur.write_u32_be(self.entries.len() as u32)?;
 
             for entry in &self.entries {
-                let buf = cur.take_mut(StscEntry::ENTRY_SIZE)?;
-                entry.to_bytes(buf);
+                let bytes = entry.to_bytes();
+                cur.write_array(&bytes)?;
             }
 
             Ok(cur.position())
@@ -269,8 +270,7 @@ mod tests {
             sample_description_index: 1,
         };
 
-        let mut bytes = [0u8; 12];
-        entry.to_bytes(&mut bytes);
+        let bytes = entry.to_bytes();
 
         let decoded = StscEntry::from_bytes(&bytes);
         assert_eq!(decoded.first_chunk, entry.first_chunk);

@@ -8,8 +8,7 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
-use crate::iter::FixedSizeEntry;
-use crate::iter::FixedSizeEntryIter;
+use crate::iter::FixedEntry;
 
 use crate::cursor::ReadCursor;
 
@@ -30,22 +29,22 @@ pub struct StssEntry {
     pub sample_number: u32,
 }
 
-impl FixedSizeEntry for StssEntry {
-    const ENTRY_SIZE: usize = 4;
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-
+impl FixedEntry<4> for StssEntry {
+    fn from_bytes(bytes: &[u8; 4]) -> Self {
         StssEntry {
             sample_number: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
         }
     }
 
-    fn to_bytes(&self, bytes: &mut [u8]) {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-        bytes[0..4].copy_from_slice(&self.sample_number.to_be_bytes());
+    fn to_bytes(&self) -> [u8; 4] {
+        self.sample_number.to_be_bytes()
     }
 }
+
+define_entry_iter!(
+    /// An iterator over entries in the Sync Sample Box (`stss`).
+    pub struct StssEntryIter(StssEntry, 4);
+);
 
 /// A reference to a Sync Sample Box (`stss`).
 ///
@@ -71,8 +70,8 @@ pub struct StssBoxView<'a> {
 
 impl<'a> StssBoxView<'a> {
     /// Returns an iterator over the entries in the Sync Sample Box (`stss`).
-    pub fn entries(&self) -> FixedSizeEntryIter<'a, StssEntry> {
-        FixedSizeEntryIter::new(self.entries)
+    pub fn entries(&self) -> StssEntryIter<'a> {
+        StssEntryIter::new(self.entries)
     }
 }
 
@@ -192,8 +191,8 @@ mod owned {
             cur.write_u32_be(self.entries.len() as u32)?;
 
             for entry in &self.entries {
-                let buf = cur.take_mut(StssEntry::ENTRY_SIZE)?;
-                entry.to_bytes(buf);
+                let bytes = entry.to_bytes();
+                cur.write_array(&bytes)?;
             }
 
             Ok(cur.position())
@@ -277,8 +276,7 @@ mod tests {
             sample_number: 12345,
         };
 
-        let mut bytes = [0u8; 4];
-        entry.to_bytes(&mut bytes);
+        let bytes = entry.to_bytes();
 
         let decoded = StssEntry::from_bytes(&bytes);
         assert_eq!(decoded.sample_number, entry.sample_number);

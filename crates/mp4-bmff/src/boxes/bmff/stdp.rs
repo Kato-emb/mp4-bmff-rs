@@ -11,8 +11,7 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
-use crate::iter::FixedSizeEntry;
-use crate::iter::FixedSizeEntryIter;
+use crate::iter::FixedEntry;
 
 define_box_flags!(
     /// Flags for the Degradation Priority Box (`stdp`).
@@ -32,22 +31,22 @@ pub struct StdpEntry {
     pub priority: u16,
 }
 
-impl FixedSizeEntry for StdpEntry {
-    const ENTRY_SIZE: usize = 2;
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-
+impl FixedEntry<2> for StdpEntry {
+    fn from_bytes(bytes: &[u8; 2]) -> Self {
         StdpEntry {
             priority: u16::from_be_bytes([bytes[0], bytes[1]]),
         }
     }
 
-    fn to_bytes(&self, bytes: &mut [u8]) {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
-        bytes[0..2].copy_from_slice(&self.priority.to_be_bytes());
+    fn to_bytes(&self) -> [u8; 2] {
+        self.priority.to_be_bytes()
     }
 }
+
+define_entry_iter!(
+    /// An iterator over entries in the Degradation Priority Box (`stdp`).
+    pub struct StdpEntryIter(StdpEntry, 2);
+);
 
 /// A reference to a Degradation Priority Box (`stdp`).
 ///
@@ -71,8 +70,8 @@ pub struct StdpBoxView<'a> {
 
 impl<'a> StdpBoxView<'a> {
     /// Returns an iterator over the STDP entries.
-    pub fn entries(&self) -> FixedSizeEntryIter<'a, StdpEntry> {
-        FixedSizeEntryIter::new(self.entries)
+    pub fn entries(&self) -> StdpEntryIter<'a> {
+        StdpEntryIter::new(self.entries)
     }
 }
 
@@ -187,8 +186,8 @@ mod owned {
             cur.write_array(&self.flags.to_be_bytes())?;
 
             for entry in &self.entries {
-                let buf = cur.take_mut(StdpEntry::ENTRY_SIZE)?;
-                entry.to_bytes(buf);
+                let bytes = entry.to_bytes();
+                cur.write_array(&bytes)?;
             }
 
             Ok(cur.position())
@@ -266,8 +265,7 @@ mod tests {
     fn test_stdp_entry_round_trip() {
         let entry = StdpEntry { priority: 12345 };
 
-        let mut bytes = [0u8; 2];
-        entry.to_bytes(&mut bytes);
+        let bytes = entry.to_bytes();
 
         let decoded = StdpEntry::from_bytes(&bytes);
         assert_eq!(decoded.priority, entry.priority);

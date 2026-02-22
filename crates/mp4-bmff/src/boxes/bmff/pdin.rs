@@ -9,8 +9,7 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
-use crate::iter::FixedSizeEntry;
-use crate::iter::FixedSizeEntryIter;
+use crate::iter::FixedEntry;
 
 define_box_flags!(
     /// Flags for the Progressive Download Information Box (`pdin`).
@@ -36,24 +35,29 @@ pub struct PdinEntry {
     pub initial_delay: u32,
 }
 
-impl FixedSizeEntry for PdinEntry {
-    const ENTRY_SIZE: usize = 8;
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+impl FixedEntry<8> for PdinEntry {
+    fn from_bytes(bytes: &[u8; 8]) -> Self {
+        let rate = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let initial_delay = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
 
         PdinEntry {
-            rate: u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-            initial_delay: u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
+            rate,
+            initial_delay,
         }
     }
 
-    fn to_bytes(&self, bytes: &mut [u8]) {
-        debug_assert_eq!(bytes.len(), Self::ENTRY_SIZE);
+    fn to_bytes(&self) -> [u8; 8] {
+        let mut bytes = [0u8; 8];
         bytes[0..4].copy_from_slice(&self.rate.to_be_bytes());
         bytes[4..8].copy_from_slice(&self.initial_delay.to_be_bytes());
+        bytes
     }
 }
+
+define_entry_iter!(
+    /// An iterator over entries in the Progressive Download Information Box (`pdin`).
+    pub struct PdinEntryIter(PdinEntry, 8);
+);
 
 /// A reference to a Progressive Download Information Box (`pdin`).
 ///
@@ -81,8 +85,8 @@ pub struct PdinBoxView<'a> {
 
 impl<'a> PdinBoxView<'a> {
     /// Returns an iterator over the PDIN entries.
-    pub fn entries(&self) -> FixedSizeEntryIter<'a, PdinEntry> {
-        FixedSizeEntryIter::new(self.entries)
+    pub fn entries(&self) -> PdinEntryIter<'a> {
+        PdinEntryIter::new(self.entries)
     }
 }
 
@@ -198,7 +202,7 @@ mod owned {
     impl BoxEncode for PdinBox {
         #[inline]
         fn encoded_len(&self) -> usize {
-            4 + self.entries.len() * PdinEntry::ENTRY_SIZE
+            4 + self.entries.len() * PdinEntry::ENTRY_SIZE // 4 bytes for version + flags, 8 bytes per entry
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
@@ -208,8 +212,8 @@ mod owned {
             cur.write_array(&self.flags.to_be_bytes())?;
 
             for entry in &self.entries {
-                let buf = cur.take_mut(PdinEntry::ENTRY_SIZE)?;
-                entry.to_bytes(buf);
+                let bytes = entry.to_bytes();
+                cur.write_array(&bytes)?;
             }
 
             Ok(cur.position())
@@ -294,8 +298,7 @@ mod tests {
             initial_delay: 500,
         };
 
-        let mut bytes = [0u8; 8];
-        entry.to_bytes(&mut bytes);
+        let bytes = entry.to_bytes();
 
         let decoded = PdinEntry::from_bytes(&bytes);
         assert_eq!(decoded.rate, entry.rate);
