@@ -93,7 +93,12 @@ impl<'de> BoxDecode<'de> for StszBoxView<'de> {
         let sample_size = cur.read_u32_be()?;
         let sample_count = cur.read_u32_be()?;
 
-        let expected_size = sample_count as usize * 4; // Each entry is 4 bytes
+        // When sample_size is non-zero (uniform), no per-sample entries are stored.
+        let expected_size = if sample_size == 0 {
+            sample_count as usize * 4 // Each entry is 4 bytes
+        } else {
+            0
+        };
 
         if cur.remaining() != expected_size {
             return Err(Error::in_box(
@@ -254,6 +259,22 @@ mod tests {
 
         let stsz = StszBoxView::decode(&data).unwrap();
         assert_eq!(stsz.sample_count, 0);
+        assert_eq!(stsz.entries().count(), 0);
+    }
+
+    #[test]
+    fn test_stsz_box_view_uniform_size() {
+        // sample_size=512, sample_count=100, no entries table
+        let data: [u8; 12] = [
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
+            0x00, 0x00, 0x02, 0x00, // sample_size = 512
+            0x00, 0x00, 0x00, 0x64, // sample_count = 100
+        ];
+
+        let stsz = StszBoxView::decode(&data).unwrap();
+        assert_eq!(stsz.sample_size, 512);
+        assert_eq!(stsz.sample_count, 100);
         assert_eq!(stsz.entries().count(), 0);
     }
 

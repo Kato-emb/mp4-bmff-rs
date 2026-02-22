@@ -170,7 +170,7 @@ extern crate alloc;
 
 mod lib {
     #[cfg(all(feature = "alloc", not(feature = "std")))]
-    pub use alloc::{
+    pub(crate) use alloc::{
         string::String, //
         string::ToString,
         vec,
