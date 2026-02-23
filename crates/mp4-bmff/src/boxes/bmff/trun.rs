@@ -11,6 +11,8 @@ use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
 
+use super::common::SampleFlags;
+
 use crate::cursor::ReadCursor;
 
 define_box_flags!(
@@ -61,7 +63,7 @@ pub struct TrunSample {
     /// Sample size in bytes.
     pub size: Option<u32>,
     /// Sample flags (sync, dependency info, degradation priority).
-    pub flags: Option<u32>,
+    pub flags: Option<SampleFlags>,
     /// Composition time offset relative to decode time (signed in v1).
     pub composition_time_offset: Option<i32>,
 }
@@ -109,7 +111,7 @@ impl Iterator for TrunSampleIter<'_> {
 
         let sample_flags = if self.flags.contains(TrunFlags::SAMPLE_FLAGS_PRESENT) {
             match cursor.read_u32_be() {
-                Ok(v) => Some(v),
+                Ok(v) => Some(SampleFlags::from_raw(v)),
                 Err(e) => return Some(Err(e.into())),
             }
         } else {
@@ -180,7 +182,7 @@ pub struct TrunBoxView<'a> {
     /// Signed offset from base to first sample's data in `mdat`.
     pub data_offset: Option<i32>,
     /// Flags for first sample (overrides per-sample flags if both present).
-    pub first_sample_flags: Option<u32>,
+    pub first_sample_flags: Option<SampleFlags>,
     samples: &'a [u8],
 }
 
@@ -227,7 +229,7 @@ impl<'de> BoxDecode<'de> for TrunBoxView<'de> {
         };
 
         let first_sample_flags = if flags.contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT) {
-            Some(cur.read_u32_be()?)
+            Some(SampleFlags::from_raw(cur.read_u32_be()?))
         } else {
             None
         };
@@ -287,7 +289,7 @@ mod owned {
         /// Signed offset from base to first sample's data.
         pub data_offset: Option<i32>,
         /// Flags for first sample (overrides sample\[0\].flags if present).
-        pub first_sample_flags: Option<u32>,
+        pub first_sample_flags: Option<SampleFlags>,
         /// Per-sample information for this run.
         pub samples: Vec<TrunSample>,
     }
@@ -364,7 +366,7 @@ mod owned {
 
             if self.flags.contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT) {
                 if let Some(first_sample_flags) = self.first_sample_flags {
-                    cur.write_u32_be(first_sample_flags)?;
+                    cur.write_u32_be(first_sample_flags.to_raw())?;
                 } else {
                     return Err(Error::in_box(
                         ErrorKind::InvalidBoxField {
@@ -407,7 +409,7 @@ mod owned {
 
                 if self.flags.contains(TrunFlags::SAMPLE_FLAGS_PRESENT) {
                     if let Some(flags) = sample.flags {
-                        cur.write_u32_be(flags)?;
+                        cur.write_u32_be(flags.to_raw())?;
                     } else {
                         return Err(Error::in_box(
                             ErrorKind::InvalidBoxField {

@@ -12,6 +12,8 @@ use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 
+use super::common::SampleFlags;
+
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
@@ -69,7 +71,7 @@ pub struct TfhdBox {
     /// Default sample size in bytes.
     pub default_sample_size: Option<u32>,
     /// Default sample flags (sync, dependency info, etc.).
-    pub default_sample_flags: Option<u32>,
+    pub default_sample_flags: Option<SampleFlags>,
 }
 
 impl BoxCodec for TfhdBox {
@@ -114,7 +116,7 @@ impl BoxDecode<'_> for TfhdBox {
         };
 
         let default_sample_flags = if flags.contains(TfhdFlags::DEFAULT_SAMPLE_FLAGS_PRESENT) {
-            Some(cur.read_u32_be()?)
+            Some(SampleFlags::from_raw(cur.read_u32_be()?))
         } else {
             None
         };
@@ -189,7 +191,7 @@ impl BoxEncode for TfhdBox {
         }
 
         if let Some(default_sample_flags) = self.default_sample_flags {
-            cur.write_u32_be(default_sample_flags)?;
+            cur.write_u32_be(default_sample_flags.to_raw())?;
         }
 
         Ok(cur.position())
@@ -248,7 +250,10 @@ mod tests {
         assert_eq!(tfhd.sample_description_index, Some(1));
         assert_eq!(tfhd.default_sample_duration, Some(1000));
         assert_eq!(tfhd.default_sample_size, Some(1024));
-        assert_eq!(tfhd.default_sample_flags, Some(0x00010000));
+        assert_eq!(
+            tfhd.default_sample_flags.map(|f| f.to_raw()),
+            Some(0x00010000)
+        );
     }
 
     #[test]

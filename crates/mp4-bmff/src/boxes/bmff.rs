@@ -73,6 +73,8 @@
 //! ## Segment Boxes
 //! - `StypBox`/[`StypBoxView`]: Segment Type Box - segment branding.
 
+mod common;
+
 mod free;
 mod ftyp;
 mod mdat;
@@ -131,6 +133,8 @@ mod mfro;
 mod tfra;
 
 mod styp;
+
+pub use common::SampleFlags;
 
 // Variable-size boxes - View types
 pub use ctts::CttsBoxView;

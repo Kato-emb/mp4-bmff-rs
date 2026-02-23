@@ -14,6 +14,8 @@ use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
 
+use super::common::SampleFlags;
+
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
@@ -75,7 +77,7 @@ pub struct TrexBox {
     /// Default sample size in bytes.
     pub default_sample_size: u32,
     /// Default sample flags (sync, dependency info, etc.).
-    pub default_sample_flags: u32,
+    pub default_sample_flags: SampleFlags,
 }
 
 impl BoxCodec for TrexBox {
@@ -95,7 +97,7 @@ impl BoxDecode<'_> for TrexBox {
         let default_sample_description_index = cur.read_u32_be()?;
         let default_sample_duration = cur.read_u32_be()?;
         let default_sample_size = cur.read_u32_be()?;
-        let default_sample_flags = cur.read_u32_be()?;
+        let default_sample_flags = SampleFlags::from_raw(cur.read_u32_be()?);
 
         Ok(TrexBox {
             version,
@@ -130,7 +132,7 @@ impl BoxEncode for TrexBox {
         cur.write_u32_be(self.default_sample_description_index)?;
         cur.write_u32_be(self.default_sample_duration)?;
         cur.write_u32_be(self.default_sample_size)?;
-        cur.write_u32_be(self.default_sample_flags)?;
+        cur.write_u32_be(self.default_sample_flags.to_raw())?;
 
         Ok(cur.position())
     }
@@ -163,7 +165,7 @@ mod tests {
         assert_eq!(trex.default_sample_description_index, 1);
         assert_eq!(trex.default_sample_duration, 1000);
         assert_eq!(trex.default_sample_size, 0);
-        assert_eq!(trex.default_sample_flags, 0x00010000);
+        assert_eq!(trex.default_sample_flags.to_raw(), 0x00010000);
     }
 
     #[test]
