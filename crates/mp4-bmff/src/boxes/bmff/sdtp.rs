@@ -11,6 +11,13 @@ use crate::BoxType;
 use crate::error::*;
 use crate::iter::FixedEntry;
 
+use super::common::{
+    IsLeading, //
+    SampleDependsOn,
+    SampleHasRedundancy,
+    SampleIsDependedOn,
+};
+
 use crate::cursor::ReadCursor;
 
 define_box_flags!(
@@ -27,13 +34,13 @@ define_box_flags!(
 #[derive(Debug, Clone, Copy)]
 pub struct SdtpEntry {
     /// Whether the sample is leading.
-    pub is_leading: u8,
+    pub is_leading: IsLeading,
     /// The sample depends on other samples.
-    pub sample_depends_on: u8,
+    pub sample_depends_on: SampleDependsOn,
     /// The sample is depended on by other samples.
-    pub sample_is_depended_on: u8,
+    pub sample_is_depended_on: SampleIsDependedOn,
     /// The sample has redundancy.
-    pub sample_has_redundancy: u8,
+    pub sample_has_redundancy: SampleHasRedundancy,
 }
 
 impl FixedEntry<1> for SdtpEntry {
@@ -41,20 +48,40 @@ impl FixedEntry<1> for SdtpEntry {
         let byte = bytes[0];
 
         SdtpEntry {
-            is_leading: (byte & 0b1100_0000) >> 6,
-            sample_depends_on: (byte & 0b0011_0000) >> 4,
-            sample_is_depended_on: (byte & 0b0000_1100) >> 2,
-            sample_has_redundancy: byte & 0b0000_0011,
+            is_leading: match (byte & 0b1100_0000) >> 6 {
+                1 => IsLeading::HasDependencyBefore,
+                2 => IsLeading::NotLeading,
+                3 => IsLeading::NoDependencyBefore,
+                _ => IsLeading::Unknown,
+            },
+            sample_depends_on: match (byte & 0b0011_0000) >> 4 {
+                1 => SampleDependsOn::Others,
+                2 => SampleDependsOn::NotOthers,
+                3 => SampleDependsOn::Reserved,
+                _ => SampleDependsOn::Unknown,
+            },
+            sample_is_depended_on: match (byte & 0b0000_1100) >> 2 {
+                1 => SampleIsDependedOn::Yes,
+                2 => SampleIsDependedOn::No,
+                3 => SampleIsDependedOn::Reserved,
+                _ => SampleIsDependedOn::Unknown,
+            },
+            sample_has_redundancy: match byte & 0b0000_0011 {
+                1 => SampleHasRedundancy::Redundant,
+                2 => SampleHasRedundancy::NotRedundant,
+                3 => SampleHasRedundancy::Reserved,
+                _ => SampleHasRedundancy::Unknown,
+            },
         }
     }
 
     #[cfg(feature = "alloc")]
     fn to_bytes(&self) -> [u8; 1] {
         let mut byte = 0u8;
-        byte |= (self.is_leading & 0b11) << 6;
-        byte |= (self.sample_depends_on & 0b11) << 4;
-        byte |= (self.sample_is_depended_on & 0b11) << 2;
-        byte |= self.sample_has_redundancy & 0b11;
+        byte |= (self.is_leading as u8 & 0b11) << 6;
+        byte |= (self.sample_depends_on as u8 & 0b11) << 4;
+        byte |= (self.sample_is_depended_on as u8 & 0b11) << 2;
+        byte |= self.sample_has_redundancy as u8 & 0b11;
         [byte]
     }
 }
@@ -253,16 +280,16 @@ mod tests {
 
         let mut entries = sdtp.entries();
         let first = entries.next().unwrap();
-        assert_eq!(first.is_leading, 3);
-        assert_eq!(first.sample_depends_on, 2);
-        assert_eq!(first.sample_is_depended_on, 1);
-        assert_eq!(first.sample_has_redundancy, 0);
+        assert_eq!(first.is_leading, IsLeading::NoDependencyBefore);
+        assert_eq!(first.sample_depends_on, SampleDependsOn::NotOthers);
+        assert_eq!(first.sample_is_depended_on, SampleIsDependedOn::Yes);
+        assert_eq!(first.sample_has_redundancy, SampleHasRedundancy::Unknown);
 
         let second = entries.next().unwrap();
-        assert_eq!(second.is_leading, 0);
-        assert_eq!(second.sample_depends_on, 1);
-        assert_eq!(second.sample_is_depended_on, 2);
-        assert_eq!(second.sample_has_redundancy, 3);
+        assert_eq!(second.is_leading, IsLeading::Unknown);
+        assert_eq!(second.sample_depends_on, SampleDependsOn::Others);
+        assert_eq!(second.sample_is_depended_on, SampleIsDependedOn::No);
+        assert_eq!(second.sample_has_redundancy, SampleHasRedundancy::Reserved);
 
         assert!(entries.next().is_none());
     }
@@ -307,10 +334,10 @@ mod tests {
     #[test]
     fn test_sdtp_entry_round_trip() {
         let entry = SdtpEntry {
-            is_leading: 2,
-            sample_depends_on: 1,
-            sample_is_depended_on: 3,
-            sample_has_redundancy: 0,
+            is_leading: IsLeading::NotLeading,
+            sample_depends_on: SampleDependsOn::Others,
+            sample_is_depended_on: SampleIsDependedOn::Reserved,
+            sample_has_redundancy: SampleHasRedundancy::Unknown,
         };
 
         let bytes = entry.to_bytes();
