@@ -1,0 +1,16 @@
+[package]
+name = "examples"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+mp4-bmff = { workspace = true, features = ["std"] }
+mp4-inspect = { workspace = true, features = ["std"] }
+
+[[example]]
+name = "dump"
+path = "./src/dump.rs"
+harness = false
