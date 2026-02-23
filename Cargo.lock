@@ -3,5 +3,20 @@
 version = 4
 
 [[package]]
+name = "examples"
+version = "0.0.0"
+dependencies = [
+ "mp4-bmff",
+ "mp4-inspect",
+]
+
+[[package]]
 name = "mp4-bmff"
 version = "0.1.0"
+
+[[package]]
+name = "mp4-inspect"
+version = "0.1.0"
+dependencies = [
+ "mp4-bmff",
+]

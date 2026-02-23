@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/mp4-bmff",
+    "crates/mp4-inspect",
 ]
 
 [workspace.package]
@@ -12,6 +13,9 @@ repository = "https://github.com/Kato-emb/mp4-bmff-rs"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+mp4-bmff = { version = "0.1.0", path = "crates/mp4-bmff", default-features = false }
+mp4-inspect = { version = "0.1.0", path = "crates/mp4-inspect", default-features = false }
+
 clap = { version = "4", default-features = false, features = ["std", "derive"] }
 
 ### ============================================================
