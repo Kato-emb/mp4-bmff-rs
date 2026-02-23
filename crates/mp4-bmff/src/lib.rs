@@ -244,7 +244,7 @@ pub mod formats;
 pub use base::rawbox::RawBoxOwned;
 
 // =============================================================================
-// Layer 3 -  I/O (std)
+// Layer 3 - High-level abstractions
 // =============================================================================
 #[cfg(feature = "std")]
 pub mod io;

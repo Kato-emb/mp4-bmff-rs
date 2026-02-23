@@ -7,10 +7,14 @@ use core::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u8)]
 pub enum IsLeading {
+    /// Unknown leading status. Should be treated as "not leading" for compatibility.
     #[default]
     Unknown = 0,
+    /// Sample is leading and has dependencies on previous samples.
     HasDependencyBefore = 1,
+    /// Sample is leading but has no dependencies on previous samples.
     NotLeading = 2,
+    /// Sample is leading and has no dependencies on previous samples, and no other samples depend on it.
     NoDependencyBefore = 3,
 }
 
@@ -18,10 +22,14 @@ pub enum IsLeading {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u8)]
 pub enum SampleDependsOn {
+    /// Unknown dependency status. Should be treated as "depends on others" for compatibility.
     #[default]
     Unknown = 0,
+    /// Sample depends on other samples (e.g. non-keyframe).
     Others = 1,
+    /// Sample does not depend on other samples (e.g. keyframe).
     NotOthers = 2,
+    /// Reserved value (should not be used).
     Reserved = 3,
 }
 
@@ -29,10 +37,14 @@ pub enum SampleDependsOn {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u8)]
 pub enum SampleIsDependedOn {
+    /// Unknown depended-on status. Should be treated as "not depended on" for compatibility.
     #[default]
     Unknown = 0,
+    /// Sample is depended on by other samples (e.g. keyframe).
     Yes = 1,
+    /// Sample is not depended on by other samples (e.g. non-keyframe).
     No = 2,
+    /// Reserved value (should not be used).
     Reserved = 3,
 }
 
@@ -40,10 +52,14 @@ pub enum SampleIsDependedOn {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u8)]
 pub enum SampleHasRedundancy {
+    /// Unknown redundancy status. Should be treated as "redundant" for compatibility.
     #[default]
     Unknown = 0,
+    /// Sample has redundancy (e.g. redundant frame).
     Redundant = 1,
+    /// Sample has no redundancy (e.g. non-redundant frame).
     NotRedundant = 2,
+    /// Reserved value (should not be used).
     Reserved = 3,
 }
 

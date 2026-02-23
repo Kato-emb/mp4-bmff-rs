@@ -134,7 +134,13 @@ mod tfra;
 
 mod styp;
 
-pub use common::SampleFlags;
+pub use common::{
+    IsLeading, //
+    SampleDependsOn,
+    SampleFlags,
+    SampleHasRedundancy,
+    SampleIsDependedOn,
+};
 
 // Variable-size boxes - View types
 pub use ctts::CttsBoxView;
