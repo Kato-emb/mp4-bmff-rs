@@ -2,7 +2,7 @@
 
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 
 use mp4_bmff::boxes::bmff::{
     FtypBox, FtypBoxView, MoovBox, MoovBoxView, SttsBox, SttsBoxView, SttsEntry, SttsFlags,

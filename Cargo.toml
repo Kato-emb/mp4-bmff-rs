@@ -4,6 +4,7 @@ members = [
     "crates/mp4-bmff",
     "crates/mp4-inspect",
     "examples",
+    "benches",
 ]
 
 [workspace.package]
