@@ -186,11 +186,7 @@ fn analyze_stbl(
 
 impl fmt::Display for SampleTableStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
-            f,
-            "Track {} ({}):",
-            self.track_id, self.handler_type
-        )?;
+        writeln!(f, "Track {} ({}):", self.track_id, self.handler_type)?;
         writeln!(f, "  timescale:    {}", self.timescale)?;
         writeln!(
             f,
@@ -213,11 +209,7 @@ impl fmt::Display for SampleTableStats {
                 self.avg_sample_size()
             )?;
         }
-        writeln!(
-            f,
-            "  total size:   {} bytes",
-            self.total_size
-        )?;
+        writeln!(f, "  total size:   {} bytes", self.total_size)?;
 
         // Timing
         writeln!(
@@ -334,15 +326,14 @@ fn analyze_traf(traf: &TrafBoxView<'_>) -> Result<FragmentStats> {
                 None => duration_ticks = None,
             }
 
-            // Resolve sync flag
-            // Bit 16 of sample_flags: sample_is_non_sync_sample
-            let raw_flags = if i == 0 {
+            // Resolve sync flag: per-sample → first_sample → tfhd default
+            let resolved_flags = if i == 0 {
                 sample.flags.or(trun.first_sample_flags)
             } else {
                 sample.flags
-            };
-            let resolved_flags = raw_flags.or(tfhd.default_sample_flags);
-            let is_sync = resolved_flags.is_none_or(|f| f & 0x0001_0000 == 0);
+            }
+            .or(tfhd.default_sample_flags);
+            let is_sync = resolved_flags.is_none_or(|f| f.is_sync());
 
             if is_sync {
                 sync_sample_count += 1;
