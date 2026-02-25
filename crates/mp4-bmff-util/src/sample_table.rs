@@ -7,6 +7,8 @@ use mp4_bmff::boxes::bmff::SampleFlags;
 mod builder;
 mod iter;
 
+pub use iter::ResolvedSample;
+
 /// Metadata for a single sample
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Sample {
