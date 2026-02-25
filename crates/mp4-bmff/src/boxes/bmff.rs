@@ -144,12 +144,8 @@ pub use common::{
 
 // Variable-size boxes - View types
 pub use ctts::CttsBoxView;
-pub use dref::{
-    DataEntryBoxView, //
-    DrefBoxView,
-    UrlBoxView,
-    UrnBoxView,
-};
+pub use dref::DrefBoxView;
+pub use dref::{DataEntryBoxView, UrlBoxView, UrnBoxView};
 pub use elng::ElngBoxView;
 pub use elst::ElstBoxView;
 pub use free::FreeBoxView;
@@ -205,11 +201,9 @@ pub use vmhd::VmhdBox;
 // Re-export fullbox flags
 pub use cslg::CslgFlags;
 pub use ctts::CttsFlags;
-pub use dref::{
-    DrefFlags, //
-    UrlFlags,
-    UrnFlags,
-};
+pub use dref::DrefFlags;
+pub use dref::UrlFlags;
+pub use dref::UrnFlags;
 pub use elng::ElngFlags;
 pub use elst::ElstFlags;
 pub use hdlr::HdlrFlags;
@@ -238,25 +232,19 @@ pub use trun::TrunFlags;
 pub use vmhd::VmhdFlags;
 
 // Re-export entry structs
-pub use ctts::CttsEntry;
+pub use ctts::{CttsEntry, CttsEntryIter};
 pub use elst::ElstEntry;
-pub use pdin::PdinEntry;
-pub use sdtp::SdtpEntry;
-pub use stco::StcoEntry;
-pub use stdp::StdpEntry;
-pub use stsc::StscEntry;
-pub use stsh::StshEntry;
-pub use stss::StssEntry;
-pub use stsz::StszEntry;
-pub use stts::SttsEntry;
-pub use tfra::{
-    TfraEntry, //
-    TfraEntryIter,
-};
-pub use trun::{
-    TrunSample, //
-    TrunSampleIter,
-};
+pub use pdin::{PdinEntry, PdinEntryIter};
+pub use sdtp::{SdtpEntry, SdtpEntryIter};
+pub use stco::{StcoEntry, StcoEntryIter};
+pub use stdp::{StdpEntry, StdpEntryIter};
+pub use stsc::{StscEntry, StscEntryIter};
+pub use stsh::{StshEntry, StshEntryIter};
+pub use stss::{StssEntry, StssEntryIter};
+pub use stsz::{StszEntry, StszEntryIter};
+pub use stts::{SttsEntry, SttsEntryIter};
+pub use tfra::{TfraEntry, TfraEntryIter};
+pub use trun::{TrunSample, TrunSampleIter};
 
 #[cfg(feature = "alloc")]
 mod owned_exports {
@@ -264,12 +252,8 @@ mod owned_exports {
 
     // Variable-size boxes - Owned types
     pub use ctts::CttsBox;
-    pub use dref::{
-        DataEntryBox, //
-        DrefBox,
-        UrlBox,
-        UrnBox,
-    };
+    pub use dref::DrefBox;
+    pub use dref::{DataEntryBox, UrlBox, UrnBox};
     pub use elng::ElngBox;
     pub use elst::ElstBox;
     pub use free::FreeBox;
@@ -288,10 +272,7 @@ mod owned_exports {
     pub use stts::SttsBox;
     pub use styp::StypBox;
     pub use tfra::TfraBox;
-    pub use tref::{
-        TrefBox, //
-        TrefTypeBox,
-    };
+    pub use tref::{TrefBox, TrefTypeBox};
     pub use trgr::TrgrBox;
     pub use trun::TrunBox;
 
@@ -300,10 +281,7 @@ mod owned_exports {
     pub use edts::EdtsBox;
     pub use mdia::MdiaBox;
     pub use mfra::MfraBox;
-    pub use minf::{
-        MediaHeaderBox, //
-        MinfBox,
-    };
+    pub use minf::{MediaHeaderBox, MinfBox};
     pub use moof::MoofBox;
     pub use moov::MoovBox;
     pub use mvex::MvexBox;
