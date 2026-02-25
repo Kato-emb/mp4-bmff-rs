@@ -5,3 +5,6 @@ pub mod io;
 
 #[cfg(feature = "time")]
 pub mod time;
+
+#[cfg(feature = "sample")]
+pub mod sample;
