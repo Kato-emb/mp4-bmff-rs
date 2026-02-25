@@ -22,20 +22,6 @@ pub struct Sample {
     pub dependency: Option<SampleFlags>,
 }
 
-/// A sample with all metadata resolved, including the description index and file offset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ResolvedSample {
-    /// Sample metadata from the sample table.
-    pub sample: Sample,
-    /// Index into `stsd` (1-based).
-    pub description_index: u32,
-    /// Byte offset of the sample in the file.
-    pub offset: u64,
-    /// Decode time (DTS) in media timescale units.
-    /// TODO: デコードタイミングは、サンプルが時間的にどの位置にあるかを表現するため必要。
-    pub decode_time: u64,
-}
-
 // struct StscState<I: Iterator<Item = StscEntry>> {
 //     inner: core::iter::Peekable<I>,
 //     current_chunk: u32,
