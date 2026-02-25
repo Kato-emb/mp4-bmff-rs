@@ -57,7 +57,7 @@ fn sample_data_size(flags: TrunFlags) -> usize {
 /// Contains per-sample properties. Fields are `Some` only when the
 /// corresponding flag is set in the parent `trun` box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TrunSample {
+pub struct TrunEntry {
     /// Sample duration in track timescale units.
     pub duration: Option<u32>,
     /// Sample size in bytes.
@@ -70,14 +70,14 @@ pub struct TrunSample {
 
 /// An iterator over samples in a Track Run Box (`trun`).
 #[derive(Debug)]
-pub struct TrunSampleIter<'a> {
+pub struct TrunEntryIter<'a> {
     samples: &'a [u8],
     flags: TrunFlags,
     version: u8,
 }
 
-impl Iterator for TrunSampleIter<'_> {
-    type Item = Result<TrunSample>;
+impl Iterator for TrunEntryIter<'_> {
+    type Item = Result<TrunEntry>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // When samples slice is empty, return None immediately
@@ -137,7 +137,7 @@ impl Iterator for TrunSampleIter<'_> {
             None
         };
 
-        Some(Ok(TrunSample {
+        Some(Ok(TrunEntry {
             duration: sample_duration,
             size: sample_size,
             flags: sample_flags,
@@ -156,7 +156,7 @@ impl Iterator for TrunSampleIter<'_> {
     }
 }
 
-impl ExactSizeIterator for TrunSampleIter<'_> {}
+impl ExactSizeIterator for TrunEntryIter<'_> {}
 
 /// A reference to a Track Run Box (`trun`).
 ///
@@ -188,8 +188,8 @@ pub struct TrunBoxView<'a> {
 
 impl<'a> TrunBoxView<'a> {
     /// Returns an iterator over the samples in the Track Run Box (`trun`).
-    pub fn samples(&self) -> TrunSampleIter<'a> {
-        TrunSampleIter {
+    pub fn samples(&self) -> TrunEntryIter<'a> {
+        TrunEntryIter {
             samples: self.samples,
             flags: self.flags,
             version: self.version,
@@ -291,14 +291,14 @@ mod owned {
         /// Flags for first sample (overrides sample\[0\].flags if present).
         pub first_sample_flags: Option<SampleFlags>,
         /// Per-sample information for this run.
-        pub samples: Vec<TrunSample>,
+        pub samples: Vec<TrunEntry>,
     }
 
     impl TryFrom<&TrunBoxView<'_>> for TrunBox {
         type Error = Error;
 
         fn try_from(view: &TrunBoxView<'_>) -> Result<Self> {
-            let samples: Result<Vec<TrunSample>> = view.samples().collect();
+            let samples: Result<Vec<TrunEntry>> = view.samples().collect();
             Ok(TrunBox {
                 version: view.version,
                 flags: view.flags,

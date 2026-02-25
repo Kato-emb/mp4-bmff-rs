@@ -244,7 +244,7 @@ pub use stss::{StssEntry, StssEntryIter};
 pub use stsz::{StszEntry, StszEntryIter};
 pub use stts::{SttsEntry, SttsEntryIter};
 pub use tfra::{TfraEntry, TfraEntryIter};
-pub use trun::{TrunSample, TrunSampleIter};
+pub use trun::{TrunEntry, TrunEntryIter};
 
 #[cfg(feature = "alloc")]
 mod owned_exports {
