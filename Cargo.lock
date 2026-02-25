@@ -265,6 +265,13 @@ name = "mp4-bmff"
 version = "0.1.0"
 
 [[package]]
+name = "mp4-bmff-util"
+version = "0.1.0"
+dependencies = [
+ "mp4-bmff",
+]
+
+[[package]]
 name = "mp4-inspect"
 version = "0.1.0"
 dependencies = [

@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-mp4-bmff = { workspace = true, features = ["std"] }
+mp4-bmff = { workspace = true, features = ["alloc"] }
 mp4-inspect = { workspace = true, features = ["std"] }
 
 [[example]]

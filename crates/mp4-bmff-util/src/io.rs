@@ -9,8 +9,8 @@
 //! - [`BoxReader`]: Reads boxes from a stream (file, socket, etc.)
 //! - [`BoxWriter`]: Writes boxes to a stream
 //!
-//! These types complement the in-memory [`read_box`](crate::codec::read_box) and
-//! [`write_box`](crate::codec::write_box) functions by providing stream-based I/O.
+//! These types complement the in-memory [`read_box`](mp4_bmff::codec::read_box) and
+//! [`write_box`](mp4_bmff::codec::write_box) functions by providing stream-based I/O.
 //!
 //! # Reading Boxes
 //!
@@ -19,7 +19,7 @@
 //!
 //! ```no_run
 //! use std::fs::File;
-//! use mp4_bmff::io::BoxReader;
+//! use mp4_bmff_util::io::BoxReader;
 //!
 //! let file = File::open("video.mp4").unwrap();
 //! let mut reader = BoxReader::new(file);
@@ -36,7 +36,7 @@
 //!
 //! ```no_run
 //! use std::fs::File;
-//! use mp4_bmff::io::BoxWriter;
+//! use mp4_bmff_util::io::BoxWriter;
 //! use mp4_bmff::BoxType;
 //! use mp4_bmff::RawBox;
 //!
@@ -49,7 +49,7 @@
 //!
 //! # Feature Flag
 //!
-//! This module requires the `std` feature (enabled by default).
+//! This module requires the `io` feature.
 
 pub mod reader;
 pub mod writer;

@@ -3,10 +3,14 @@
 //! This module provides [`BoxReader`] for reading BMFF boxes from any
 //! type implementing [`std::io::Read`].
 
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{
+    self, //
+    Read,
+    Seek,
+    SeekFrom,
+};
 
-use crate::error::Result;
-use crate::{
+use mp4_bmff::{
     BoxHeader, //
     RawBoxOwned,
 };
@@ -21,7 +25,7 @@ use crate::{
 ///
 /// ```
 /// use std::io::Cursor;
-/// use mp4_bmff::io::BoxReader;
+/// use mp4_bmff_util::io::BoxReader;
 ///
 /// // Create a minimal BMFF stream with one box
 /// let data = vec![
@@ -87,7 +91,7 @@ impl<R: Read> BoxReader<R> {
     ///
     /// Panics if the pending header is `None` after a successful read. This
     /// should never happen in practice.
-    pub fn peek_header(&mut self) -> Result<&BoxHeader> {
+    pub fn peek_header(&mut self) -> io::Result<&BoxHeader> {
         if self.pending.is_none() {
             self.pending = Some(self.read_header_in()?);
         }
@@ -112,8 +116,7 @@ impl<R: Read> BoxReader<R> {
     /// - The stream doesn't contain enough data for the header
     /// - The stream doesn't contain enough data for the declared payload size
     /// - An I/O error occurs
-    #[allow(clippy::cast_possible_truncation)]
-    pub fn read_box(&mut self) -> Result<RawBoxOwned> {
+    pub fn read_box(&mut self) -> io::Result<RawBoxOwned> {
         let header = self.next_header_in()?;
 
         let payload = if header.boxsize().is_eof() {
@@ -130,7 +133,7 @@ impl<R: Read> BoxReader<R> {
         Ok(RawBoxOwned::from_parts(header, payload))
     }
 
-    fn read_header_in(&mut self) -> Result<BoxHeader> {
+    fn read_header_in(&mut self) -> io::Result<BoxHeader> {
         let mut buf = [0u8; BoxHeader::MAX_HEADER_SIZE];
         self.inner.read_exact(&mut buf[..BoxHeader::BASE_SIZE])?;
 
@@ -144,9 +147,10 @@ impl<R: Read> BoxReader<R> {
         }
 
         BoxHeader::parse(&buf[..header_len])
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
-    fn next_header_in(&mut self) -> Result<BoxHeader> {
+    fn next_header_in(&mut self) -> io::Result<BoxHeader> {
         if let Some(header) = self.pending.take() {
             Ok(header)
         } else {
@@ -175,7 +179,7 @@ impl<R: Read + Seek> BoxReader<R> {
     /// # Example
     /// ```
     /// use std::io::Cursor;
-    /// use mp4_bmff::io::BoxReader;
+    /// use mp4_bmff_util::io::BoxReader;
     ///
     /// let data = vec![
     ///     0x00, 0x00, 0x00, 0x0C, // size = 12
@@ -191,8 +195,7 @@ impl<R: Read + Seek> BoxReader<R> {
     ///
     /// assert_eq!(raw_box.boxtype().type_field().to_string(), "free");
     /// ```
-    #[allow(clippy::cast_possible_truncation)]
-    pub fn skip_box(&mut self) -> Result<BoxHeader> {
+    pub fn skip_box(&mut self) -> io::Result<BoxHeader> {
         let header = self.next_header_in()?;
 
         if header.boxsize().is_eof() {
@@ -216,7 +219,7 @@ impl<R: Read + Seek> BoxReader<R> {
     /// # Errors
     ///
     /// Returns an error if an I/O error occurs.
-    pub fn stream_position(&mut self) -> Result<u64> {
+    pub fn stream_position(&mut self) -> io::Result<u64> {
         let pos = self.inner.stream_position()?;
         Ok(pos)
     }
@@ -226,7 +229,7 @@ impl<R: Read + Seek> BoxReader<R> {
     /// # Errors
     ///
     /// Returns an error if an I/O error occurs.
-    pub fn rewind(&mut self) -> Result<()> {
+    pub fn rewind(&mut self) -> io::Result<()> {
         self.inner.rewind()?;
         Ok(())
     }
@@ -246,7 +249,7 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    use crate::types::FourCC;
+    use mp4_bmff::types::FourCC;
 
     #[test]
     fn accessors() {

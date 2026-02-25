@@ -39,8 +39,7 @@ const QUICKTIME_UNIX_OFFSET: i64 = 2_082_844_800;
 ///
 /// - `from_quicktime_seconds()` / `to_quicktime_seconds()`: Raw epoch value.
 /// - `from_unix_seconds()` / `to_unix_seconds()`: Unix epoch conversion.
-/// - `now()`: Current time (requires `std` feature).
-/// - `From<SystemTime>` / `Into<SystemTime>`: System time conversion (requires `std`).
+/// - `SystemTime` conversions are available in the `mp4-bmff-util` crate.
 ///
 /// # Example
 ///
@@ -91,11 +90,6 @@ impl QuickTimeDateTime {
         }
     }
 
-    /// Get the current system time as a `QuickTimeDateTime`.
-    #[cfg(feature = "std")]
-    pub fn now() -> Self {
-        std::time::SystemTime::now().into()
-    }
 }
 
 impl fmt::Debug for QuickTimeDateTime {
@@ -125,29 +119,6 @@ impl From<u64> for QuickTimeDateTime {
     }
 }
 
-#[cfg(feature = "std")]
-impl From<std::time::SystemTime> for QuickTimeDateTime {
-    fn from(value: std::time::SystemTime) -> Self {
-        let duration_since_epoch = value
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        let unix_seconds = duration_since_epoch.as_secs().cast_signed();
-        QuickTimeDateTime::from_unix_seconds(unix_seconds).unwrap_or_default()
-    }
-}
-
-#[cfg(feature = "std")]
-impl From<QuickTimeDateTime> for std::time::SystemTime {
-    fn from(value: QuickTimeDateTime) -> Self {
-        match value.to_unix_seconds() {
-            Some(unix) if unix >= 0 => {
-                std::time::UNIX_EPOCH + core::time::Duration::from_secs(unix.cast_unsigned())
-            }
-            _ => std::time::UNIX_EPOCH,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,17 +135,5 @@ mod tests {
         let quicktime =
             QuickTimeDateTime::from_quicktime_seconds((QUICKTIME_UNIX_OFFSET - 1).cast_unsigned());
         assert_eq!(quicktime.to_unix_seconds(), None);
-    }
-
-    #[cfg(feature = "std")]
-    #[test]
-    fn system_time_conversion() {
-        let system_time = std::time::SystemTime::now();
-        let quicktime: QuickTimeDateTime = system_time.into();
-        let converted_back: std::time::SystemTime = quicktime.into();
-        let duration = converted_back
-            .duration_since(system_time)
-            .unwrap_or_default();
-        assert!(duration.as_secs() < 2); // Allow up to 2 seconds difference
     }
 }

@@ -6,7 +6,7 @@ use super::size::SizeOfInstance;
 use super::tag::Tag;
 
 #[cfg(feature = "alloc")]
-use crate::lib::Vec;
+use alloc::vec::Vec;
 
 /// Generic MPEG-4 Systems descriptor with tag, size, and instance data.
 ///
@@ -162,7 +162,7 @@ impl<'a> RawDescriptor<&'a [u8]> {
     /// Converts the RawDescriptor to an owned version
     #[cfg(feature = "alloc")]
     pub fn to_owned(&self) -> RawDescriptor<Vec<u8>> {
-        use crate::lib::Vec;
+        use alloc::vec::Vec;
 
         RawDescriptor {
             tag: self.tag,

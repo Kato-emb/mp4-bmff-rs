@@ -317,7 +317,8 @@ impl BoxCodec for Avc4SampleEntryView<'_> {
 mod owned {
     use core::fmt;
 
-    use crate::lib::String;
+    use alloc::string::String;
+    use alloc::vec::Vec;
 
     use super::*;
     use crate::BoxEncode;

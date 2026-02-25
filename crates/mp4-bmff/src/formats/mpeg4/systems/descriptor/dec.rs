@@ -156,7 +156,7 @@ impl<'a> DecoderConfigDescriptorView<'a> {
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::lib::Vec;
+    use alloc::vec::Vec;
 
     use super::*;
 

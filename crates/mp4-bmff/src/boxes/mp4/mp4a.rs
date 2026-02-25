@@ -86,7 +86,7 @@ impl<'de> BoxDecode<'de> for Mp4aSampleEntryView<'de> {
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::lib::String;
+    use alloc::string::String;
 
     use super::*;
     use crate::BoxEncode;

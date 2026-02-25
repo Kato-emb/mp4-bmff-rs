@@ -103,7 +103,7 @@ impl<'de> BoxDecode<'de> for MoovBoxView<'de> {
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::lib::Vec;
+    use alloc::vec::Vec;
 
     use super::*;
     use crate::BoxEncode;

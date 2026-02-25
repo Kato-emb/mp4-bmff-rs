@@ -62,7 +62,7 @@ use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
 
 #[cfg(feature = "alloc")]
-use crate::lib::Vec;
+use alloc::vec::Vec;
 
 /// Trait identifying a BMFF box by its type.
 ///
@@ -201,7 +201,7 @@ pub trait BoxEncode {
     #[cfg(feature = "alloc")]
     fn encode_to_vec(&self) -> Result<Vec<u8>> {
         let len = self.encoded_len();
-        let mut buf = crate::lib::vec![0u8; len];
+        let mut buf = alloc::vec![0u8; len];
         self.encode(&mut buf)?;
 
         Ok(buf)

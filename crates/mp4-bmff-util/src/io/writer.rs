@@ -3,14 +3,16 @@
 //! This module provides [`BoxWriter`] for writing BMFF boxes to any
 //! type implementing [`std::io::Write`].
 
-use std::io::Write;
+use std::io::{
+    self, //
+    Write,
+};
 
-use crate::BoxCodec;
-use crate::BoxEncode;
-use crate::BoxHeader;
-use crate::base::rawbox::RawBox;
-use crate::error::Result;
-use crate::write_box;
+use mp4_bmff::BoxCodec;
+use mp4_bmff::BoxEncode;
+use mp4_bmff::BoxHeader;
+use mp4_bmff::base::rawbox::RawBox;
+use mp4_bmff::write_box;
 
 /// A writer for BMFF boxes to a stream.
 ///
@@ -26,7 +28,7 @@ use crate::write_box;
 /// # Example
 ///
 /// ```
-/// use mp4_bmff::io::BoxWriter;
+/// use mp4_bmff_util::io::BoxWriter;
 /// use mp4_bmff::BoxType;
 /// use mp4_bmff::RawBox;
 ///
@@ -94,8 +96,7 @@ impl<W: Write> BoxWriter<W> {
     /// # Errors
     ///
     /// Returns an error if encoding fails or an I/O error occurs.
-    #[allow(clippy::cast_possible_truncation)]
-    pub fn write_box<B>(&mut self, boxed: &B) -> Result<()>
+    pub fn write_box<B>(&mut self, boxed: &B) -> io::Result<()>
     where
         B: BoxCodec + BoxEncode,
     {
@@ -108,7 +109,8 @@ impl<W: Write> BoxWriter<W> {
             self.buf.resize(total_size, 0);
         }
 
-        let written = write_box(&mut self.buf, boxed)?;
+        let written = write_box(&mut self.buf, boxed)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         debug_assert!(
             written == total_size,
             "[BUG] Written size does not match expected total size"
@@ -131,13 +133,14 @@ impl<W: Write> BoxWriter<W> {
     /// # Errors
     ///
     /// Returns an error if an I/O error occurs while writing.
-    pub fn write_raw_box<T: AsRef<[u8]>>(&mut self, raw: &RawBox<T>) -> Result<()> {
+    pub fn write_raw_box<T: AsRef<[u8]>>(&mut self, raw: &RawBox<T>) -> io::Result<()> {
         let total_size = raw.len();
         if total_size > self.buf.len() {
             self.buf.resize(total_size, 0);
         }
 
-        raw.write(&mut self.buf[..total_size])?;
+        raw.write(&mut self.buf[..total_size])
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         self.inner.write_all(&self.buf[..total_size])?;
         Ok(())
     }
@@ -146,7 +149,7 @@ impl<W: Write> BoxWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::BoxType;
+    use mp4_bmff::BoxType;
 
     #[test]
     fn accessors() {

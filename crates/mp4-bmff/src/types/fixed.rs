@@ -196,7 +196,7 @@ impl_fixed_storage_unsigned!(u8, u16, u32, u64);
 /// - `from_raw()` / `to_raw()`: Direct access to storage value.
 /// - `from_integer()`: Create from whole number.
 /// - `to_f64()` / `to_f32()`: Convert to floating-point.
-/// - `from_f64()` / `from_f32()`: Convert from floating-point (requires `std`).
+/// - `from_f64()` / `from_f32()`: Convert from floating-point.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Fixed<Storage, const FRACTIONAL: u32>
@@ -273,8 +273,7 @@ where
     #[inline]
     #[allow(clippy::cast_precision_loss)]
     pub fn to_f64(self) -> f64 {
-        let scale = scaling_factor(FRACTIONAL) as f64;
-        self.to_i128_raw() as f64 / scale
+        self.to_i128_raw() as f64 / pow2_f64(FRACTIONAL)
     }
 
     /// Convert to `f32`.
@@ -297,29 +296,18 @@ where
     }
 
     /// Construct from `f64`, saturating to the representable range.
-    #[cfg(any(feature = "std", test))]
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+    ///
+    /// Special values are handled via the saturating semantics of `as i128`:
+    /// `NaN` → 0, `±Infinity` → `i128::MAX`/`MIN` → clamped to storage range.
+    #[inline]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn from_f64(value: f64) -> Self {
-        if value.is_nan() {
-            return Fixed::from_raw_value(0);
-        }
-
-        if value.is_infinite() {
-            return if value.is_sign_positive() {
-                Fixed::max_value()
-            } else {
-                Fixed::min_value()
-            };
-        }
-
-        let scale = scaling_factor(FRACTIONAL) as f64;
-        let scaled = (value * scale).round();
-        let limited = scaled.clamp(i128::MIN as f64, i128::MAX as f64);
-        Fixed::from_raw_value(limited as i128)
+        let scaled = value * pow2_f64(FRACTIONAL);
+        let rounded = if scaled >= 0.0 { scaled + 0.5 } else { scaled - 0.5 };
+        Fixed::from_raw_value(rounded as i128)
     }
 
     /// Construct from `f32`, saturating on overflow/underflow.
-    #[cfg(any(feature = "std", test))]
     #[inline]
     pub fn from_f32(value: f32) -> Self {
         Fixed::from_f64(f64::from(value))
@@ -352,6 +340,16 @@ fn scaling_factor(bits: u32) -> i128 {
         i128::MAX
     } else {
         scale_u.cast_signed()
+    }
+}
+
+/// Return `2^n` as an exact `f64` (IEEE 754 exponent construction).
+#[inline]
+fn pow2_f64(n: u32) -> f64 {
+    if n >= 1024 {
+        f64::INFINITY
+    } else {
+        f64::from_bits((u64::from(n) + 1023) << 52)
     }
 }
 
@@ -396,7 +394,6 @@ where
     }
 }
 
-#[cfg(any(feature = "std", test))]
 impl<Storage, const FRACTIONAL: u32> From<f32> for Fixed<Storage, FRACTIONAL>
 where
     Storage: FixedStorage,
@@ -406,7 +403,6 @@ where
     }
 }
 
-#[cfg(feature = "std")]
 impl<Storage, const FRACTIONAL: u32> From<f64> for Fixed<Storage, FRACTIONAL>
 where
     Storage: FixedStorage,

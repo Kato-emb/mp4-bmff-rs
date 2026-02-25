@@ -10,16 +10,14 @@ repository.workspace = true
 license.workspace = true
 keywords = ["no_std", "isobmff", "mp4", "parser", "multimedia"]
 categories = ["data-structures", "no-std"]
-exclude = ["examples/", "benches/", ".github/"]
 
 [package.metadata.docs.rs]
 all-features = true
 
 [features]
-default = ["std", "avc", "mp4"]
+default = ["alloc", "avc", "mp4"]
 
 alloc = []
-std = ["alloc"]
 
 # ISO/IEC 14496-1
 systems = []

@@ -60,20 +60,6 @@
 //! assert_eq!(written, 12); // 8-byte header + 4-byte payload
 //! ```
 //!
-//! ## Stream-based I/O (requires `std` feature)
-//!
-//! ```no_run
-//! use std::fs::File;
-//! use mp4_bmff::io::BoxReader;
-//!
-//! let file = File::open("video.mp4").unwrap();
-//! let mut reader = BoxReader::new(file);
-//!
-//! while let Ok(raw_box) = reader.read_box() {
-//!     println!("Box: {} at offset {}", raw_box.boxtype(), raw_box.len());
-//! }
-//! ```
-//!
 //! # Crate Structure
 //!
 //! The crate is organized into layers, each building on the previous:
@@ -83,7 +69,6 @@
 //! | 0 | [`types`] | Primitive types (FourCC, fixed-point, timestamps) |
 //! | 1 | [`base`], [`codec`], [`error`], [`iter`] | Core BMFF structures (`no_std` compatible) |
 //! | 2 | [`boxes`], [`formats`] | Typed box representations (View/Copy: `no_std`, Owned: `alloc`) |
-//! | 3 | `io` | Stream-based I/O (requires `std`) |
 //!
 //! # Key Types
 //!
@@ -100,16 +85,11 @@
 //! - [`BoxDecode`]: Decodes a box from bytes
 //! - [`BoxEncode`]: Encodes a box to bytes
 //!
-//! ## I/O Types (with `std` feature)
-//!
-//! - `io::BoxReader`: Reads boxes from any `std::io::Read`
-//! - `io::BoxWriter`: Writes boxes to any `std::io::Write`
-//!
 //! # Feature Flags
 //!
 //! | Feature | Default | Description |
 //! |---------|---------|-------------|
-//! | `std` | ✓ | Enables standard library support (implies `alloc`) |
+//! | `std` | ✓ | Enables standard library support and `std::io::Error` integration (implies `alloc`) |
 //! | `alloc` | | Enables heap allocation for typed box representations |
 //!
 //! ## `no_std` Support
@@ -121,8 +101,8 @@
 //! mp4-bmff = { version = "0.1", default-features = false, features = ["alloc"] }
 //! ```
 //!
-//! In `no_std` mode, the `io` module is unavailable, but all parsing and
-//! encoding functionality works with byte slices.
+//! In `no_std` mode, all parsing and encoding functionality works with byte slices.
+//! Stream-based I/O is available in the `mp4-bmff-util` crate.
 //!
 //! # Box Type Reference
 //!
@@ -163,28 +143,10 @@
 //! }
 //! ```
 
-#![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
+#![cfg_attr(not(test), no_std)]
 
-#[cfg(any(feature = "std", feature = "alloc"))]
+#[cfg(feature = "alloc")]
 extern crate alloc;
-
-mod lib {
-    #[cfg(all(feature = "alloc", not(feature = "std")))]
-    pub(crate) use alloc::{
-        string::String, //
-        string::ToString,
-        vec,
-        vec::Vec,
-    };
-
-    #[cfg(feature = "std")]
-    pub(crate) use alloc::{
-        string::String, //
-        string::ToString,
-        vec,
-        vec::Vec,
-    };
-}
 
 // =============================================================================
 // Internal - Byte Slice Cursor Module
@@ -242,12 +204,6 @@ pub mod formats;
 // Re-export owned box types
 #[cfg(feature = "alloc")]
 pub use base::rawbox::RawBoxOwned;
-
-// =============================================================================
-// Layer 3 - High-level abstractions
-// =============================================================================
-#[cfg(feature = "std")]
-pub mod io;
 
 // =============================================================================
 // Prelude - Convenient imports

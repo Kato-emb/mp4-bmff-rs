@@ -154,8 +154,8 @@ impl<'a> EsDescriptorView<'a> {
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::lib::Vec;
-    use crate::lib::{String, ToString};
+    use alloc::string::{String, ToString};
+    use alloc::vec::Vec;
 
     use super::*;
 

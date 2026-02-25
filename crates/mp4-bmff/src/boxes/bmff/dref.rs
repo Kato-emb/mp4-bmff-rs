@@ -322,11 +322,11 @@ impl<'de> BoxDecode<'de> for DrefBoxView<'de> {
 
 #[cfg(feature = "alloc")]
 mod owned {
-    use crate::lib::Vec;
-    use crate::lib::{
+    use alloc::string::{
         String, //
         ToString,
     };
+    use alloc::vec::Vec;
 
     use super::*;
     use crate::BoxEncode;

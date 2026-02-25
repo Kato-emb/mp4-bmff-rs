@@ -37,7 +37,7 @@ use crate::BoxType;
 use crate::error::*;
 
 #[cfg(feature = "alloc")]
-use crate::lib::Vec;
+use alloc::vec::Vec;
 
 /// A raw BMFF box with header and uninterpreted payload.
 ///
@@ -78,8 +78,8 @@ impl<T: Clone> Clone for RawBox<T> {
 }
 
 impl<T> RawBox<T> {
-    #[cfg(feature = "std")]
-    pub(crate) fn from_parts(header: BoxHeader, payload: T) -> Self {
+    /// Creates a `RawBox` directly from a pre-parsed header and payload.
+    pub fn from_parts(header: BoxHeader, payload: T) -> Self {
         Self { header, payload }
     }
 
