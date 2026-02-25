@@ -13,7 +13,7 @@ std = ["alloc"]
 alloc = ["mp4-bmff/alloc"]
 
 [dependencies]
-mp4-bmff = { path = "../mp4-bmff", default-features = false }
+mp4-bmff = { workspace = true, default-features = false }
 
 [lints]
 workspace = true
