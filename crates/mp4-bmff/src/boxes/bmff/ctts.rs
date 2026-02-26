@@ -158,6 +158,16 @@ mod owned {
         pub entries: Vec<CttsEntry>,
     }
 
+    impl Default for CttsBox {
+        fn default() -> Self {
+            CttsBox {
+                version: 0,
+                flags: CttsFlags::empty(),
+                entries: Vec::new(),
+            }
+        }
+    }
+
     impl From<&CttsBoxView<'_>> for CttsBox {
         fn from(view: &CttsBoxView<'_>) -> Self {
             let entries = view.entries().collect();

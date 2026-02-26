@@ -154,6 +154,17 @@ mod owned {
         pub entries: Vec<StszEntry>,
     }
 
+    impl Default for StszBox {
+        fn default() -> Self {
+            StszBox {
+                version: 0,
+                flags: StszFlags::empty(),
+                sample_size: 0,
+                entries: Vec::new(),
+            }
+        }
+    }
+
     impl From<&StszBoxView<'_>> for StszBox {
         fn from(view: &StszBoxView<'_>) -> Self {
             let entries = view.entries().collect();

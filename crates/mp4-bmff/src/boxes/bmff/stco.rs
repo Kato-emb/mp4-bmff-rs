@@ -141,6 +141,16 @@ mod owned {
         pub entries: Vec<StcoEntry>,
     }
 
+    impl Default for StcoBox {
+        fn default() -> Self {
+            StcoBox {
+                version: 0,
+                flags: StcoFlags::empty(),
+                entries: Vec::new(),
+            }
+        }
+    }
+
     impl From<&StcoBoxView<'_>> for StcoBox {
         fn from(view: &StcoBoxView<'_>) -> Self {
             let entries = view.entries().collect();

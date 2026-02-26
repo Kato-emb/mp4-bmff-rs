@@ -31,7 +31,7 @@ define_box_flags!(
 ///
 /// Each entry is a single byte containing four 2-bit fields describing
 /// the sample's dependency characteristics.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SdtpEntry {
     /// Whether the sample is leading.
     pub is_leading: IsLeading,
@@ -186,6 +186,16 @@ mod owned {
         pub flags: SdtpFlags,
         /// Sample dependency type entries.
         pub entries: Vec<SdtpEntry>,
+    }
+
+    impl Default for SdtpBox {
+        fn default() -> Self {
+            SdtpBox {
+                version: 0,
+                flags: SdtpFlags::empty(),
+                entries: Vec::new(),
+            }
+        }
     }
 
     impl From<&SdtpBoxView<'_>> for SdtpBox {

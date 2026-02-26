@@ -117,6 +117,16 @@ mod owned {
         pub entries: Vec<RawBoxOwned>,
     }
 
+    impl Default for StsdBox {
+        fn default() -> Self {
+            StsdBox {
+                version: 0,
+                flags: StsdFlags::empty(),
+                entries: Vec::new(),
+            }
+        }
+    }
+
     impl TryFrom<&StsdBoxView<'_>> for StsdBox {
         type Error = Error;
 
