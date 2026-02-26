@@ -355,6 +355,26 @@ mod owned {
         pub location: Option<String>,
     }
 
+    impl UrlBox {
+        /// Creates a new self-contained URL box (data is in the same file).
+        pub fn new_self_contained() -> Self {
+            UrlBox {
+                version: 0,
+                flags: UrlFlags::SELF_CONTAINED,
+                location: None,
+            }
+        }
+
+        /// Creates a new URL box with the specified location string.
+        pub fn new_with_location(location: impl Into<String>) -> Self {
+            UrlBox {
+                version: 0,
+                flags: UrlFlags::empty(),
+                location: Some(location.into()),
+            }
+        }
+    }
+
     impl From<&UrlBoxView<'_>> for UrlBox {
         fn from(view: &UrlBoxView<'_>) -> Self {
             UrlBox {
