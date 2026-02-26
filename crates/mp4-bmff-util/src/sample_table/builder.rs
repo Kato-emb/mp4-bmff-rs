@@ -32,26 +32,17 @@ impl StblBuilder {
     }
 
     /// Adds a chunk of samples to the sample table.
-    pub fn add_chunk(&mut self, samples: &[Sample], description_index: u32, offset: u64) {
-        let sample_count = samples.len() as u32;
-        // TODO: Handle 64-bit chunk offsets with `co64`
-        let chunk_offset = offset as u32;
-
-        // Update stsc
-        if self.inner.stsc.entries.last().map_or(true, |e| {
-            e.sample_description_index != description_index || e.samples_per_chunk != sample_count
-        }) {
-            self.inner.stsc.entries.push(StscEntry {
-                first_chunk: (self.inner.stco.entries.len() as u32) + 1,
-                samples_per_chunk: sample_count,
-                sample_description_index: description_index,
-            });
-        }
-
-        // Update stco
-        self.inner.stco.entries.push(StcoEntry { chunk_offset });
+    pub fn add_chunk(
+        &mut self,
+        samples: impl IntoIterator<Item = Sample>,
+        description_index: u32,
+        offset: u64,
+    ) {
+        let mut sample_count = 0;
 
         for sample in samples {
+            sample_count += 1;
+
             // Update stts
             if let Some(last_entry) = self
                 .inner
@@ -139,6 +130,23 @@ impl StblBuilder {
 
             // TODO: Handle chunk offsets > 4GB with `co64`
         }
+
+        // TODO: Handle 64-bit chunk offsets with `co64`
+        let chunk_offset = offset as u32;
+
+        // Update stsc
+        if self.inner.stsc.entries.last().map_or(true, |e| {
+            e.sample_description_index != description_index || e.samples_per_chunk != sample_count
+        }) {
+            self.inner.stsc.entries.push(StscEntry {
+                first_chunk: (self.inner.stco.entries.len() as u32) + 1,
+                samples_per_chunk: sample_count,
+                sample_description_index: description_index,
+            });
+        }
+
+        // Update stco
+        self.inner.stco.entries.push(StcoEntry { chunk_offset });
     }
 
     /// Finalizes the sample table and returns the constructed `StblBox`.
@@ -183,7 +191,7 @@ mod tests {
     fn single_chunk() {
         let mut b = StblBuilder::new(stsd());
         b.add_chunk(
-            &[sample(100, 1024), sample(200, 1024), sample(300, 512)],
+            [sample(100, 1024), sample(200, 1024), sample(300, 512)].into_iter(),
             1,
             1000,
         );
@@ -224,8 +232,8 @@ mod tests {
     #[test]
     fn multiple_chunks_same_run() {
         let mut b = StblBuilder::new(stsd());
-        b.add_chunk(&[sample(100, 1024), sample(200, 1024)], 1, 1000);
-        b.add_chunk(&[sample(300, 1024), sample(400, 1024)], 1, 5000);
+        b.add_chunk([sample(100, 1024), sample(200, 1024)].into_iter(), 1, 1000);
+        b.add_chunk([sample(300, 1024), sample(400, 1024)].into_iter(), 1, 5000);
         let stbl = b.build();
 
         // stsc: same samples_per_chunk and desc → single entry
@@ -247,8 +255,8 @@ mod tests {
     #[test]
     fn stsc_run_changes_on_sample_count() {
         let mut b = StblBuilder::new(stsd());
-        b.add_chunk(&[sample(100, 1024), sample(200, 1024)], 1, 1000);
-        b.add_chunk(&[sample(300, 1024)], 1, 5000); // different sample count
+        b.add_chunk([sample(100, 1024), sample(200, 1024)].into_iter(), 1, 1000);
+        b.add_chunk([sample(300, 1024)].into_iter(), 1, 5000); // different sample count
         let stbl = b.build();
 
         assert_eq!(stbl.stsc.entries.len(), 2);
@@ -263,8 +271,8 @@ mod tests {
     #[test]
     fn stsc_run_changes_on_description_index() {
         let mut b = StblBuilder::new(stsd());
-        b.add_chunk(&[sample(100, 1024)], 1, 1000);
-        b.add_chunk(&[sample(200, 1024)], 2, 2000); // different desc
+        b.add_chunk([sample(100, 1024)].into_iter(), 1, 1000);
+        b.add_chunk([sample(200, 1024)].into_iter(), 2, 2000); // different desc
         let stbl = b.build();
 
         assert_eq!(stbl.stsc.entries.len(), 2);
@@ -286,7 +294,7 @@ mod tests {
             is_sync: false,
             ..sample(100, 1024)
         };
-        b.add_chunk(&[sync, non_sync, sync, non_sync], 1, 0);
+        b.add_chunk([sync, non_sync, sync, non_sync].into_iter(), 1, 0);
         let stbl = b.build();
 
         let stss = stbl.stss.as_ref().expect("stss should be present");
@@ -298,7 +306,7 @@ mod tests {
     #[test]
     fn stss_all_sync_omitted() {
         let mut b = StblBuilder::new(stsd());
-        b.add_chunk(&[sample(100, 1024), sample(200, 1024)], 1, 0);
+        b.add_chunk([sample(100, 1024), sample(200, 1024)].into_iter(), 1, 0);
         let stbl = b.build();
 
         assert!(stbl.stss.is_none());
@@ -309,7 +317,7 @@ mod tests {
     #[test]
     fn ctts_all_zero_omitted() {
         let mut b = StblBuilder::new(stsd());
-        b.add_chunk(&[sample(100, 1024)], 1, 0);
+        b.add_chunk([sample(100, 1024)].into_iter(), 1, 0);
         let stbl = b.build();
 
         assert!(stbl.ctts.is_none());
@@ -330,7 +338,7 @@ mod tests {
             composition_time_offset: 256,
             ..sample(100, 1024)
         };
-        b.add_chunk(&[s1, s2, s3], 1, 0);
+        b.add_chunk([s1, s2, s3].into_iter(), 1, 0);
         let stbl = b.build();
 
         let ctts = stbl.ctts.as_ref().expect("ctts should be present");
@@ -350,7 +358,7 @@ mod tests {
             composition_time_offset: 512,
             ..sample(100, 1024)
         };
-        b.add_chunk(&[zero, zero, nonzero], 1, 0);
+        b.add_chunk([zero, zero, nonzero].into_iter(), 1, 0);
         let stbl = b.build();
 
         let ctts = stbl.ctts.as_ref().expect("ctts should be present");
@@ -369,7 +377,7 @@ mod tests {
             composition_time_offset: -256,
             ..sample(100, 1024)
         };
-        b.add_chunk(&[s], 1, 0);
+        b.add_chunk([s].into_iter(), 1, 0);
         let stbl = b.build();
 
         let ctts = stbl.ctts.as_ref().unwrap();
@@ -382,7 +390,7 @@ mod tests {
     #[test]
     fn sdtp_absent_when_no_dependency() {
         let mut b = StblBuilder::new(stsd());
-        b.add_chunk(&[sample(100, 1024)], 1, 0);
+        b.add_chunk([sample(100, 1024)].into_iter(), 1, 0);
         let stbl = b.build();
 
         assert!(stbl.sdtp.is_none());
@@ -399,7 +407,7 @@ mod tests {
             is_sync: false,
             ..sample(100, 1024)
         };
-        b.add_chunk(&[plain, plain, with_dep], 1, 0);
+        b.add_chunk([plain, plain, with_dep].into_iter(), 1, 0);
         let stbl = b.build();
 
         let sdtp = stbl.sdtp.as_ref().expect("sdtp should be present");
@@ -424,7 +432,7 @@ mod tests {
             ..sample(100, 1024)
         };
         let plain = sample(100, 1024);
-        b.add_chunk(&[with_dep, plain], 1, 0);
+        b.add_chunk([with_dep, plain].into_iter(), 1, 0);
         let stbl = b.build();
 
         let sdtp = stbl.sdtp.as_ref().unwrap();
@@ -443,7 +451,7 @@ mod tests {
 
         let mut b = StblBuilder::new(stsd());
         let samples = [sample(100, 1024), sample(200, 1024), sample(300, 512)];
-        b.add_chunk(&samples, 1, 1000);
+        b.add_chunk(samples.into_iter(), 1, 1000);
         let stbl = b.build();
 
         let resolved: Vec<_> = stbl.resolved_samples().unwrap().collect();
@@ -470,8 +478,8 @@ mod tests {
         use crate::sample_table::SampleTableExt;
 
         let mut b = StblBuilder::new(stsd());
-        b.add_chunk(&[sample(100, 1024), sample(200, 1024)], 1, 1000);
-        b.add_chunk(&[sample(300, 512)], 2, 5000);
+        b.add_chunk([sample(100, 1024), sample(200, 1024)].into_iter(), 1, 1000);
+        b.add_chunk([sample(300, 512)].into_iter(), 2, 5000);
         let stbl = b.build();
 
         let resolved: Vec<_> = stbl.resolved_samples().unwrap().collect();
