@@ -4,8 +4,12 @@
 
 use mp4_bmff::boxes::bmff::SampleFlags;
 
+#[cfg(feature = "alloc")]
 mod builder;
 mod iter;
+
+#[cfg(feature = "alloc")]
+pub use builder::StblBuilder;
 
 pub use iter::{ResolvedSample, SampleTableExt};
 
@@ -13,7 +17,7 @@ pub use iter::{ResolvedSample, SampleTableExt};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Sample {
     /// Byte size of the sample.
-    pub size: u64,
+    pub size: u32,
     /// Duration in media timescale units.
     pub duration: u32,
     /// Composition time offset (CTS - DTS).

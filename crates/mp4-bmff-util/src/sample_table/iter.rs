@@ -1,9 +1,12 @@
 use core::iter::Peekable;
 
 use mp4_bmff::boxes::bmff::{
-    CttsEntry, SampleFlags, SdtpEntry, StblBox, StblBoxView, StcoEntry, StscEntry, StssEntry,
-    StszEntry, SttsEntry, TrafBox, TrafBoxView, TrunEntry,
+    CttsEntry, SampleFlags, SdtpEntry, StblBoxView, StcoEntry, StscEntry, StssEntry, StszEntry,
+    SttsEntry, TrafBoxView, TrunEntry,
 };
+
+#[cfg(feature = "alloc")]
+use mp4_bmff::boxes::bmff::{StblBox, TrafBox};
 
 use super::Sample;
 
@@ -18,6 +21,15 @@ pub struct ResolvedSample {
     pub offset: u64,
     /// Decode time (DTS) in media timescale units.
     pub decode_time: u64,
+}
+
+impl ResolvedSample {
+    /// Returns the sample data slice from the given byte buffer, if it is within bounds.
+    pub fn data<'a>(&self, src: &'a [u8]) -> Option<&'a [u8]> {
+        let start = self.offset as usize;
+        let end = start.checked_add(self.sample.size as usize)?;
+        src.get(start..end)
+    }
 }
 
 /// Extension trait for sample tables.
@@ -64,6 +76,7 @@ impl SampleTableExt for StblBoxView<'_> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl SampleTableExt for StblBox {
     fn resolved_samples(
         &self,
@@ -140,6 +153,7 @@ impl SampleTableExt for TrafBoxView<'_> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl SampleTableExt for TrafBox {
     fn resolved_samples(
         &self,
@@ -215,7 +229,7 @@ where
             .as_mut()
             .and_then(|c| c.next_offset())
             .unwrap_or(0);
-        let size = u64::from(self.stsz.next()?.entry_size);
+        let size = self.stsz.next()?.entry_size;
 
         let is_sync = match &mut self.stss {
             Some(stss) => {
@@ -272,7 +286,7 @@ where
             decode_time: self.decode_time,
         };
 
-        self.offset_in_chunk += size;
+        self.offset_in_chunk += u64::from(size);
         self.remaining_in_chunk -= 1;
         self.sample_number += 1;
         self.decode_time += u64::from(duration);
@@ -430,7 +444,7 @@ where
                 let offset = self.current_offset;
 
                 let sample = Sample {
-                    size: u64::from(size),
+                    size,
                     duration,
                     composition_time_offset,
                     is_sync,
