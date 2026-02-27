@@ -8,42 +8,171 @@ use mp4_bmff::boxes::bmff::{
 #[cfg(feature = "alloc")]
 use mp4_bmff::boxes::bmff::{StblBox, TrafBox};
 
-use super::Sample;
+use super::{Chunk, Sample};
 
-/// A sample with all metadata resolved, including the description index and file offset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ResolvedSample {
-    /// Sample metadata from the sample table.
-    pub sample: Sample,
-    /// Index into `stsd` (1-based).
-    pub description_index: u32,
-    /// Byte offset of the sample in the file.
-    pub offset: u64,
-    /// Decode time (DTS) in media timescale units.
-    pub decode_time: u64,
+struct SampleResolver<Stts, Ctts, Stsz, Stss, Sdtp>
+where
+    Stts: Iterator,
+    Ctts: Iterator,
+    Stss: Iterator,
+{
+    stts: RunLengthIter<Stts>,
+    ctts: Option<RunLengthIter<Ctts>>,
+    stsz: Stsz,
+    stss: Option<Peekable<Stss>>,
+    sdtp: Option<Sdtp>,
+
+    sample_number: u32,
 }
 
-impl ResolvedSample {
-    /// Returns the sample data slice from the given byte buffer, if it is within bounds.
-    pub fn data<'a>(&self, src: &'a [u8]) -> Option<&'a [u8]> {
-        let start = self.offset as usize;
-        let end = start.checked_add(self.sample.size as usize)?;
-        src.get(start..end)
+impl<Stts, Ctts, Stsz, Stss, Sdtp> SampleResolver<Stts, Ctts, Stsz, Stss, Sdtp>
+where
+    Stts: Iterator<Item = SttsEntry>,
+    Ctts: Iterator<Item = CttsEntry>,
+    Stsz: Iterator<Item = StszEntry>,
+    Stss: Iterator<Item = StssEntry>,
+    Sdtp: Iterator<Item = SdtpEntry>,
+{
+    fn next_sample(&mut self) -> Option<Sample> {
+        let duration = self.stts.next_delta()?;
+        let composition_time_offset = self
+            .ctts
+            .as_mut()
+            .and_then(|c| c.next_offset())
+            .unwrap_or(0);
+        let size = self.stsz.next()?.entry_size;
+
+        let is_sync = match &mut self.stss {
+            Some(stss) => {
+                if stss
+                    .peek()
+                    .map_or(false, |e| e.sample_number == self.sample_number + 1)
+                {
+                    stss.next();
+                    true
+                } else {
+                    false
+                }
+            }
+            None => true,
+        };
+
+        let mut sample = Sample {
+            size,
+            duration,
+            composition_time_offset,
+            is_sync,
+            dependency: None,
+        };
+
+        if let Some(sdtp_entry) = self.sdtp.as_mut().and_then(|s| s.next()) {
+            let sample_flags = if is_sync {
+                SampleFlags::sync()
+            } else {
+                SampleFlags::non_sync()
+            }
+            .with_is_leading(sdtp_entry.is_leading)
+            .with_sample_depends_on(sdtp_entry.sample_depends_on)
+            .with_sample_is_depended_on(sdtp_entry.sample_is_depended_on)
+            .with_sample_has_redundancy(sdtp_entry.sample_has_redundancy);
+
+            sample.dependency = Some(sample_flags);
+        }
+
+        self.sample_number += 1;
+        Some(sample)
+    }
+}
+
+struct ChunkInfo {
+    /// Index into `stsd` (1-based).
+    description_index: u32,
+    /// Byte offset of the chunk in the file.
+    offset: u64,
+    /// Number of samples in this chunk.
+    sample_count: u32,
+}
+
+struct ChunkResolver<Stsc, Stco>
+where
+    Stsc: Iterator,
+{
+    stsc: Peekable<Stsc>,
+    stco: Stco,
+
+    current_chunk: u32,
+    current: Option<Stsc::Item>,
+}
+
+impl<Stsc, Stco> ChunkResolver<Stsc, Stco>
+where
+    Stsc: Iterator<Item = StscEntry>,
+    Stco: Iterator<Item = StcoEntry>,
+{
+    fn next_chunk(&mut self) -> Option<ChunkInfo> {
+        let stco_entry = self.stco.next()?;
+        self.current_chunk += 1;
+
+        if self
+            .stsc
+            .peek()
+            .is_some_and(|e| e.first_chunk <= self.current_chunk)
+        {
+            let entry = self.stsc.next().unwrap();
+            self.current = Some(entry);
+        }
+
+        let stsc_entry = self.current?;
+
+        Some(ChunkInfo {
+            description_index: stsc_entry.sample_description_index,
+            offset: u64::from(stco_entry.chunk_offset),
+            sample_count: stsc_entry.samples_per_chunk,
+        })
+    }
+}
+
+impl<Stsc, Stco> Iterator for ChunkResolver<Stsc, Stco>
+where
+    Stsc: Iterator<Item = StscEntry>,
+    Stco: Iterator<Item = StcoEntry>,
+{
+    type Item = ChunkInfo;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let stco_entry = self.stco.next()?;
+        self.current_chunk += 1;
+
+        if self
+            .stsc
+            .peek()
+            .is_some_and(|e| e.first_chunk <= self.current_chunk)
+        {
+            let entry = self.stsc.next().unwrap();
+            self.current = Some(entry);
+        }
+
+        let stsc_entry = self.current?;
+
+        Some(ChunkInfo {
+            description_index: stsc_entry.sample_description_index,
+            offset: u64::from(stco_entry.chunk_offset),
+            sample_count: stsc_entry.samples_per_chunk,
+        })
     }
 }
 
 /// Extension trait for sample tables.
 pub trait SampleTableExt {
     /// Returns an iterator over all samples in the table, with metadata resolved from all relevant boxes.
-    fn resolved_samples(
-        &self,
-    ) -> Result<impl Iterator<Item = ResolvedSample> + '_, mp4_bmff::Error>;
+    fn resolved_samples(&self) -> Result<impl Iterator<Item = Sample> + '_, mp4_bmff::Error>;
+
+    #[cfg(feature = "alloc")]
+    fn resolved_chunks(&self) -> Result<impl Iterator<Item = Chunk> + '_, mp4_bmff::Error>;
 }
 
 impl SampleTableExt for StblBoxView<'_> {
-    fn resolved_samples(
-        &self,
-    ) -> Result<impl Iterator<Item = ResolvedSample> + '_, mp4_bmff::Error> {
+    fn resolved_samples(&self) -> Result<impl Iterator<Item = Sample> + '_, mp4_bmff::Error> {
         let stts = RunLengthIter::new(self.stts()?.entries());
         let ctts = self.ctts()?.map(|ctts| RunLengthIter::new(ctts.entries()));
         let stsz = self.stsz()?.entries();
@@ -74,13 +203,16 @@ impl SampleTableExt for StblBoxView<'_> {
             offset_in_chunk: 0,
         })
     }
+
+    #[cfg(feature = "alloc")]
+    fn resolved_chunks(&self) -> Result<impl Iterator<Item = Chunk> + '_, mp4_bmff::Error> {
+        Ok(Vec::new().into_iter()) // TODO
+    }
 }
 
 #[cfg(feature = "alloc")]
 impl SampleTableExt for StblBox {
-    fn resolved_samples(
-        &self,
-    ) -> Result<impl Iterator<Item = ResolvedSample> + '_, mp4_bmff::Error> {
+    fn resolved_samples(&self) -> Result<impl Iterator<Item = Sample> + '_, mp4_bmff::Error> {
         let stts = RunLengthIter::new(self.stts.entries.iter().copied());
         let ctts = self
             .ctts
@@ -117,6 +249,11 @@ impl SampleTableExt for StblBox {
             offset_in_chunk: 0,
         })
     }
+
+    #[cfg(feature = "alloc")]
+    fn resolved_chunks(&self) -> Result<impl Iterator<Item = Chunk> + '_, mp4_bmff::Error> {
+        Ok(Vec::new().into_iter()) // TODO
+    }
 }
 
 impl SampleTableExt for TrafBoxView<'_> {
@@ -151,6 +288,11 @@ impl SampleTableExt for TrafBoxView<'_> {
             current_offset: base_offset,
         })
     }
+
+    #[cfg(feature = "alloc")]
+    fn resolved_chunks(&self) -> Result<impl Iterator<Item = Chunk> + '_, mp4_bmff::Error> {
+        Ok(Vec::new().into_iter()) // TODO
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -184,6 +326,11 @@ impl SampleTableExt for TrafBox {
             base_offset,
             current_offset: base_offset,
         })
+    }
+
+    #[cfg(feature = "alloc")]
+    fn resolved_chunks(&self) -> Result<impl Iterator<Item = Chunk> + '_, mp4_bmff::Error> {
+        Ok(Vec::new().into_iter()) // TODO
     }
 }
 
@@ -341,15 +488,6 @@ impl<I: Iterator<Item = CttsEntry>> RunLengthIter<I> {
         self.remaining -= 1;
         self.current.map(|e| e.sample_offset)
     }
-}
-
-struct ChunkInfo {
-    /// Index into `stsd` (1-based).
-    description_index: u32,
-    /// Byte offset of the chunk in the file.
-    offset: u64,
-    /// Number of samples in this chunk.
-    sample_count: u32,
 }
 
 struct ChunkIter<Stsc: Iterator, Stco> {

@@ -5,13 +5,16 @@
 use mp4_bmff::boxes::bmff::SampleFlags;
 
 #[cfg(feature = "alloc")]
-mod builder;
+use alloc::vec::Vec;
+
+// #[cfg(feature = "alloc")]
+// mod builder;
+// #[cfg(feature = "alloc")]
+// pub use builder::StblBuilder;
+
 mod iter;
 
-#[cfg(feature = "alloc")]
-pub use builder::StblBuilder;
-
-pub use iter::{ResolvedSample, SampleTableExt};
+pub use iter::SampleTableExt;
 
 /// Metadata for a single sample
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -26,4 +29,16 @@ pub struct Sample {
     pub is_sync: bool,
     /// Per-sample dependency flags from `sdtp`. `None` if `sdtp` was absent.
     pub dependency: Option<SampleFlags>,
+}
+
+/// A chunk of samples, along with its file offset and description index.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Chunk {
+    /// Sample description index (1-based).
+    pub description_index: u32,
+    /// File offset of the chunk's data.
+    pub offset: u64,
+    /// Samples in this chunk.
+    pub samples: Vec<Sample>,
 }

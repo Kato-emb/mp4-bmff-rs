@@ -12,5 +12,5 @@ pub mod time;
 #[cfg(feature = "sample_table")]
 pub mod sample_table;
 
-#[cfg(feature = "defragment")]
-pub mod defragment;
+#[cfg(feature = "remux")]
+pub mod remux;
