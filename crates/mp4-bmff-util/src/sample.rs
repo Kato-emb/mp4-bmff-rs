@@ -14,6 +14,8 @@ use mp4_bmff::boxes::bmff::{
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
+mod resolve;
+
 /// Metadata for a single sample
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Sample {
@@ -48,6 +50,7 @@ pub struct StblBuilder {
     inner: StblBox,
 }
 
+#[cfg(feature = "alloc")]
 impl StblBuilder {
     /// Creates a new `StblBuilder` from the given `stsd` box.
     pub fn new(stsd: StsdBox) -> Self {
