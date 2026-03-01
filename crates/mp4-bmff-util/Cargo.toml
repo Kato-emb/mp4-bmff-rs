@@ -8,14 +8,14 @@ repository.workspace = true
 license.workspace = true
 
 [features]
-default = ["std", "io", "time", "remux"]
+default = ["std", "io", "time", "sample"]
 
 std = ["alloc"]
 alloc = ["mp4-bmff/alloc"]
 
 io = ["std"]
 time = ["std"]
-sample_table = []
+sample = []
 
 remux = ["alloc"]
 

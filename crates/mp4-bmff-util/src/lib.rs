@@ -9,8 +9,8 @@ pub mod io;
 #[cfg(feature = "time")]
 pub mod time;
 
-#[cfg(feature = "sample_table")]
-pub mod sample_table;
+#[cfg(feature = "sample")]
+pub mod sample;
 
 #[cfg(feature = "remux")]
 pub mod remux;

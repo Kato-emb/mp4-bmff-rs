@@ -1,6 +1,9 @@
-//! Sample table iteration utilities.
+//! Utilities for working with MP4 sample tables (`stbl` and its child boxes).
 //!
-//! Resolves per-sample metadata from `stbl` child boxes.
+//! This module provides:
+//! - `Sample`: A struct representing metadata for a single sample, including size, duration, composition time offset, sync sample status, and dependency flags.
+//! - `Chunk`: A struct representing a chunk of samples, including its file offset and description index.
+//! - `StblBuilder`: A builder for constructing `StblBox` instances from chunks of samples, automatically handling the logic for
 
 use mp4_bmff::boxes::bmff::{
     ChunkOffset, Co64Box, Co64Entry, CttsBox, CttsEntry, SampleFlags, SampleSize, SdtpBox,
