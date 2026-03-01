@@ -334,15 +334,39 @@ mod owned {
     /// An owned reference to a sample size box, which can be either `stsz` or `stz2`.
     #[derive(Debug, Clone)]
     pub enum SampleSize {
+        /// Sample Size Box (`stsz`) - stores sizes for each sample, or a default size if all samples are the same size.
         Stsz(StszBox),
+        /// Compact Sample Size Box (`stz2`) - stores sizes for each sample using a compact representation.
         Stz2(Stz2Box),
+    }
+
+    impl SampleSize {
+        /// Returns the number of sample size entries stored in this `SampleSize`, which is the number of entries in the underlying `stsz` or `stz2` box.
+        pub fn entries_count(&self) -> usize {
+            match self {
+                SampleSize::Stsz(stsz) => stsz.entries.len(),
+                SampleSize::Stz2(stz2) => stz2.entries.len(),
+            }
+        }
     }
 
     /// An owned reference to a chunk offset box, which can be either `stco` or `co64`.
     #[derive(Debug, Clone)]
     pub enum ChunkOffset {
+        /// Chunk Offset Box (`stco`) - stores 32-bit file offsets for each chunk.
         Stco(StcoBox),
+        /// Chunk Large Offset Box (`co64`) - stores 64-bit file offsets for each chunk, used for files larger than 4GB.
         Co64(Co64Box),
+    }
+
+    impl ChunkOffset {
+        /// Returns the number of chunk offsets stored in this `ChunkOffset`, which is the number of entries in the underlying `stco` or `co64` box.
+        pub fn entries_count(&self) -> usize {
+            match self {
+                ChunkOffset::Stco(stco) => stco.entries.len(),
+                ChunkOffset::Co64(co64) => co64.entries.len(),
+            }
+        }
     }
 
     /// An owned Sample Table Box (`stbl`).

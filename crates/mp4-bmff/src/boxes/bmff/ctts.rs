@@ -158,6 +158,12 @@ mod owned {
         pub entries: Vec<CttsEntry>,
     }
 
+    impl CttsBox {
+        fn has_negative_offsets(&self) -> bool {
+            self.entries.iter().any(|e| e.sample_offset.is_negative())
+        }
+    }
+
     impl Default for CttsBox {
         fn default() -> Self {
             CttsBox {
@@ -212,7 +218,8 @@ mod owned {
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
-            cur.write_u8(self.version)?;
+            let version = if self.has_negative_offsets() { 1 } else { 0 };
+            cur.write_u8(version)?;
             cur.write_array(&self.flags.to_be_bytes())?;
 
             cur.write_u32_be(self.entries.len() as u32)?;

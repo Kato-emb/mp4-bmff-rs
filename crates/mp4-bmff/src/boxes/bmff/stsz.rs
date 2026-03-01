@@ -148,10 +148,20 @@ mod owned {
         pub version: u8,
         /// Reserved flags (should be 0).
         pub flags: StszFlags,
-        /// Default sample size if all samples are equal, 0 for variable.
-        pub sample_size: u32,
         /// Individual sample sizes (empty when sample_size is non-zero).
         pub entries: Vec<StszEntry>,
+    }
+
+    impl StszBox {
+        fn is_uniform(&self) -> bool {
+            match self.entries.first() {
+                Some(first) => self
+                    .entries
+                    .iter()
+                    .all(|e| e.entry_size == first.entry_size),
+                None => false,
+            }
+        }
     }
 
     impl Default for StszBox {
@@ -159,7 +169,6 @@ mod owned {
             StszBox {
                 version: 0,
                 flags: StszFlags::empty(),
-                sample_size: 0,
                 entries: Vec::new(),
             }
         }
@@ -167,11 +176,22 @@ mod owned {
 
     impl From<&StszBoxView<'_>> for StszBox {
         fn from(view: &StszBoxView<'_>) -> Self {
-            let entries = view.entries().collect();
+            let entries = if view.sample_size == 0 {
+                view.entries().collect()
+            } else {
+                // Uniform sample size, so we create entries with the same size.
+                let mut entries = Vec::with_capacity(view.sample_count as usize);
+                for _ in 0..view.sample_count {
+                    entries.push(StszEntry {
+                        entry_size: view.sample_size,
+                    });
+                }
+                entries
+            };
+
             StszBox {
                 version: view.version,
                 flags: view.flags,
-                sample_size: view.sample_size,
                 entries,
             }
         }
@@ -200,10 +220,15 @@ mod owned {
     impl BoxEncode for StszBox {
         #[inline]
         fn encoded_len(&self) -> usize {
-            4 // version + flags
+            let mut size = 4 // version + flags
             + 4 // sample_size
-            + 4 // sample_count
-            + (self.entries.len() * 4) // entries
+            + 4; // sample_count
+
+            if !self.is_uniform() {
+                size += self.entries.len() * 4; // Each entry is 4 bytes
+            }
+
+            size
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
@@ -212,12 +237,20 @@ mod owned {
             cur.write_u8(self.version)?; // version
             cur.write_array(&self.flags.to_be_bytes())?; // flags
 
-            cur.write_u32_be(self.sample_size)?;
-            cur.write_u32_be(u32::try_from(self.entries.len())?)?;
+            let sample_count = u32::try_from(self.entries.len())?;
 
-            for entry in &self.entries {
-                let bytes = entry.to_bytes();
-                cur.write_array(&bytes)?;
+            if self.is_uniform() {
+                // All entries have the same size, so we can use the sample_size field.
+                cur.write_u32_be(self.entries[0].entry_size)?; // sample_size
+                cur.write_u32_be(sample_count)?; // sample_count
+            } else {
+                // Variable sample sizes, so sample_size is 0 and we need the entries table.
+                cur.write_u32_be(0)?; // sample_size = 0 for variable sizes
+                cur.write_u32_be(sample_count)?; // sample_count
+                for entry in &self.entries {
+                    let bytes = entry.to_bytes();
+                    cur.write_array(&bytes)?;
+                }
             }
 
             Ok(cur.position())
@@ -328,7 +361,63 @@ mod tests {
         let view = StszBoxView::decode(&data).unwrap();
         let owned = view.to_owned();
 
-        assert_eq!(owned.sample_size, view.sample_size);
         assert_eq!(owned.entries.len(), view.sample_count as usize);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_stsz_box_to_owned_uniform() {
+        let data: [u8; 12] = [
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
+            0x00, 0x00, 0x02, 0x00, // sample_size = 512
+            0x00, 0x00, 0x00, 0x03, // sample_count = 3
+        ];
+
+        let view = StszBoxView::decode(&data).unwrap();
+        let owned = view.to_owned();
+
+        assert_eq!(owned.entries.len(), 3);
+        assert!(owned.entries.iter().all(|e| e.entry_size == 512));
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_stsz_box_round_trip_uniform() {
+        use crate::BoxEncode;
+
+        let original: [u8; 12] = [
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
+            0x00, 0x00, 0x02, 0x00, // sample_size = 512
+            0x00, 0x00, 0x00, 0x03, // sample_count = 3
+        ];
+
+        let stsz = StszBox::decode(&original).unwrap();
+
+        let mut encoded = vec![0u8; stsz.encoded_len()];
+        stsz.encode_into(&mut encoded).unwrap();
+
+        assert_eq!(&encoded[..], &original[..]);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_stsz_box_round_trip_empty() {
+        use crate::BoxEncode;
+
+        let original: [u8; 12] = [
+            0x00, // version = 0
+            0x00, 0x00, 0x00, // flags = 0
+            0x00, 0x00, 0x00, 0x00, // sample_size = 0
+            0x00, 0x00, 0x00, 0x00, // sample_count = 0
+        ];
+
+        let stsz = StszBox::decode(&original).unwrap();
+
+        let mut encoded = vec![0u8; stsz.encoded_len()];
+        stsz.encode_into(&mut encoded).unwrap();
+
+        assert_eq!(&encoded[..], &original[..]);
     }
 }

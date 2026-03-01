@@ -151,6 +151,16 @@ mod owned {
         pub entries: Vec<SttsEntry>,
     }
 
+    impl SttsBox {
+        /// Calculates the total duration of all samples described by this box.
+        pub fn duration(&self) -> u64 {
+            self.entries
+                .iter()
+                .map(|e| e.sample_count as u64 * e.sample_delta as u64)
+                .sum()
+        }
+    }
+
     impl Default for SttsBox {
         fn default() -> Self {
             SttsBox {

@@ -300,6 +300,9 @@ mod owned_exports {
     pub use stbl::StblBox;
     pub use traf::TrafBox;
     pub use trak::TrakBox;
+
+    pub use stbl::ChunkOffset;
+    pub use stbl::SampleSize;
 }
 
 #[cfg(feature = "alloc")]
