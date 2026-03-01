@@ -10,6 +10,7 @@ use crate::BoxType;
 use crate::error::*;
 use crate::iter::BoxIter;
 
+use super::Co64BoxView;
 use super::CslgBox;
 use super::CttsBoxView;
 use super::SdtpBoxView;
@@ -21,6 +22,7 @@ use super::StshBoxView;
 use super::StssBoxView;
 use super::StszBoxView;
 use super::SttsBoxView;
+use super::Stz2BoxView;
 
 /// A reference to a Sample Table Box (`stbl`).
 ///
@@ -203,26 +205,37 @@ impl<'a> StblBoxView<'a> {
     }
 
     /// Returns the Sample Size Box (`stsz`) contained in this `stbl` box.
-    /// TODO: stz2 box as alternative
     ///
     /// # Errors
     ///
     /// Returns an error if the data is malformed or too short.
-    pub fn stsz(&self) -> Result<StszBoxView<'a>> {
+    pub fn stsz(&self) -> Result<Option<StszBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;
             if b.boxtype() == BoxType::STSZ {
                 let stsz = StszBoxView::decode(b.into_payload())?;
-                return Ok(stsz);
+                return Ok(Some(stsz));
             }
         }
 
-        Err(Error::in_box(
-            ErrorKind::BoxMissing {
-                required: BoxType::STSZ,
-            },
-            BoxType::STBL,
-        ))
+        Ok(None)
+    }
+
+    /// Returns the Compact Sample Size Box (`stz2`) contained in this `stbl` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
+    pub fn stz2(&self) -> Result<Option<Stz2BoxView<'a>>> {
+        for b in self.boxes() {
+            let b = b?;
+            if b.boxtype() == BoxType::STZ2 {
+                let stz2 = Stz2BoxView::decode(b.into_payload())?;
+                return Ok(Some(stz2));
+            }
+        }
+
+        Ok(None)
     }
 
     /// Returns the Sample to Chunk Box (`stsc`) contained in this `stbl` box.
@@ -247,27 +260,40 @@ impl<'a> StblBoxView<'a> {
         ))
     }
 
-    /// TODO: co64 box as alternative
     /// Returns the Chunk Offset Box (`stco`) contained in this `stbl` box.
     ///
     /// # Errors
     ///
     /// This method will return an error if the `stco` box is missing or if there are multiple `stco` boxes, as only one is allowed by the specification.
-    pub fn stco(&self) -> Result<StcoBoxView<'a>> {
+    /// If the file uses `co64` instead of `stco`, this method will return `Ok(None)`.
+    pub fn stco(&self) -> Result<Option<StcoBoxView<'a>>> {
         for b in self.boxes() {
             let b = b?;
             if b.boxtype() == BoxType::STCO {
                 let stco = StcoBoxView::decode(b.into_payload())?;
-                return Ok(stco);
+                return Ok(Some(stco));
             }
         }
 
-        Err(Error::in_box(
-            ErrorKind::BoxMissing {
-                required: BoxType::STCO,
-            },
-            BoxType::STBL,
-        ))
+        Ok(None)
+    }
+
+    /// Returns the Chunk Large Offset Box (`co64`) contained in this `stbl` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if there are multiple `co64` boxes, as only one is allowed by the specification.
+    /// If the file uses `stco` instead of `co64`, this method will return `Ok(None)`.
+    pub fn co64(&self) -> Result<Option<Co64BoxView<'a>>> {
+        for b in self.boxes() {
+            let b = b?;
+            if b.boxtype() == BoxType::CO64 {
+                let co64 = Co64BoxView::decode(b.into_payload())?;
+                return Ok(Some(co64));
+            }
+        }
+
+        Ok(None)
     }
 }
 
@@ -292,6 +318,7 @@ mod owned {
     use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
 
+    use crate::boxes::bmff::Co64Box;
     use crate::boxes::bmff::CttsBox;
     use crate::boxes::bmff::SdtpBox;
     use crate::boxes::bmff::StcoBox;
@@ -302,6 +329,21 @@ mod owned {
     use crate::boxes::bmff::StssBox;
     use crate::boxes::bmff::StszBox;
     use crate::boxes::bmff::SttsBox;
+    use crate::boxes::bmff::Stz2Box;
+
+    /// An owned reference to a sample size box, which can be either `stsz` or `stz2`.
+    #[derive(Debug, Clone)]
+    pub enum SampleSize {
+        Stsz(StszBox),
+        Stz2(Stz2Box),
+    }
+
+    /// An owned reference to a chunk offset box, which can be either `stco` or `co64`.
+    #[derive(Debug, Clone)]
+    pub enum ChunkOffset {
+        Stco(StcoBox),
+        Co64(Co64Box),
+    }
 
     /// An owned Sample Table Box (`stbl`).
     ///
@@ -313,9 +355,9 @@ mod owned {
     /// Required child boxes:
     /// - `stsd`: Sample descriptions (formats, codecs).
     /// - `stts`: Decoding time-to-sample mapping.
-    /// - `stsz`: Sample sizes.
+    /// - `stsz` or `stz2`: Sample sizes.
     /// - `stsc`: Sample-to-chunk grouping.
-    /// - `stco`: Chunk file offsets.
+    /// - `stco` or `co64`: Chunk file offsets.
     ///
     /// Optional child boxes:
     /// - `ctts`, `cslg`, `stss`, `stsh`, `sdtp`, `stdp`.
@@ -323,10 +365,16 @@ mod owned {
     pub struct StblBox {
         /// Sample Description Box - describes formats for the samples.
         pub stsd: StsdBox,
-        /// Degradation Priority Box (optional) - sample quality priorities.
-        pub stdp: Option<StdpBox>,
         /// Decoding Time to Sample Box - maps samples to decoding time.
         pub stts: SttsBox,
+        /// Sample Size Box - size of each sample.
+        pub sample_size: SampleSize,
+        /// Sample to Chunk Box - maps samples to chunks.
+        pub stsc: StscBox,
+        /// Chunk Offset Box - file offset of each chunk.
+        pub chunk_offset: ChunkOffset,
+        /// Degradation Priority Box (optional) - sample quality priorities.
+        pub stdp: Option<StdpBox>,
         /// Composition Time to Sample Box (optional) - composition time offsets.
         pub ctts: Option<CttsBox>,
         /// Composition to Decode Box (optional) - timing relationships.
@@ -337,12 +385,6 @@ mod owned {
         pub stsh: Option<StshBox>,
         /// Sample Dependency Type Box (optional) - inter-sample dependencies.
         pub sdtp: Option<SdtpBox>,
-        /// Sample Size Box - size of each sample.
-        pub stsz: StszBox,
-        /// Sample to Chunk Box - maps samples to chunks.
-        pub stsc: StscBox,
-        /// Chunk Offset Box - file offset of each chunk.
-        pub stco: StcoBox,
     }
 
     impl TryFrom<&StblBoxView<'_>> for StblBox {
@@ -357,9 +399,9 @@ mod owned {
             let mut stss = None;
             let mut stsh = None;
             let mut sdtp = None;
-            let mut stsz = None;
+            let mut sample_size = None;
             let mut stsc = None;
-            let mut stco = None;
+            let mut chunk_offset = None;
 
             for result in view.boxes() {
                 let rawbox = result?;
@@ -462,7 +504,7 @@ mod owned {
                         sdtp = Some(sdtp_box);
                     }
                     BoxType::STSZ => {
-                        if stsz.is_some() {
+                        if sample_size.is_some() {
                             return Err(Error::in_box(
                                 ErrorKind::BoxDuplicate {
                                     duplicate: BoxType::STSZ,
@@ -471,7 +513,19 @@ mod owned {
                             ));
                         }
                         let stsz_box = StszBox::decode(rawbox.payload())?;
-                        stsz = Some(stsz_box);
+                        sample_size = Some(SampleSize::Stsz(stsz_box));
+                    }
+                    BoxType::STZ2 => {
+                        if sample_size.is_some() {
+                            return Err(Error::in_box(
+                                ErrorKind::BoxDuplicate {
+                                    duplicate: BoxType::STZ2,
+                                },
+                                BoxType::STBL,
+                            ));
+                        }
+                        let stz2_box = Stz2Box::decode(rawbox.payload())?;
+                        sample_size = Some(SampleSize::Stz2(stz2_box));
                     }
                     BoxType::STSC => {
                         if stsc.is_some() {
@@ -486,7 +540,7 @@ mod owned {
                         stsc = Some(stsc_box);
                     }
                     BoxType::STCO => {
-                        if stco.is_some() {
+                        if chunk_offset.is_some() {
                             return Err(Error::in_box(
                                 ErrorKind::BoxDuplicate {
                                     duplicate: BoxType::STCO,
@@ -495,7 +549,19 @@ mod owned {
                             ));
                         }
                         let stco_box = StcoBox::decode(rawbox.payload())?;
-                        stco = Some(stco_box);
+                        chunk_offset = Some(ChunkOffset::Stco(stco_box));
+                    }
+                    BoxType::CO64 => {
+                        if chunk_offset.is_some() {
+                            return Err(Error::in_box(
+                                ErrorKind::BoxDuplicate {
+                                    duplicate: BoxType::CO64,
+                                },
+                                BoxType::STBL,
+                            ));
+                        }
+                        let co64_box = Co64Box::decode(rawbox.payload())?;
+                        chunk_offset = Some(ChunkOffset::Co64(co64_box));
                     }
                     _ => continue,
                 }
@@ -524,7 +590,7 @@ mod owned {
                 stss,
                 stsh,
                 sdtp,
-                stsz: stsz.ok_or_else(|| {
+                sample_size: sample_size.ok_or_else(|| {
                     Error::in_box(
                         ErrorKind::BoxMissing {
                             required: BoxType::STSZ,
@@ -540,7 +606,7 @@ mod owned {
                         BoxType::STBL,
                     )
                 })?,
-                stco: stco.ok_or_else(|| {
+                chunk_offset: chunk_offset.ok_or_else(|| {
                     Error::in_box(
                         ErrorKind::BoxMissing {
                             required: BoxType::STCO,
@@ -589,9 +655,17 @@ mod owned {
             if let Some(sdtp) = &self.sdtp {
                 len += boxed_len(sdtp);
             }
-            len += boxed_len(&self.stsz);
+            match &self.sample_size {
+                SampleSize::Stsz(stsz) => len += boxed_len(stsz),
+                SampleSize::Stz2(stz2) => len += boxed_len(stz2),
+            }
+
             len += boxed_len(&self.stsc);
-            len += boxed_len(&self.stco);
+            match &self.chunk_offset {
+                ChunkOffset::Stco(stco) => len += boxed_len(stco),
+                ChunkOffset::Co64(co64) => len += boxed_len(co64),
+            }
+
             len
         }
 
@@ -626,9 +700,16 @@ mod owned {
                 write_box_in(&mut cur, sdtp)?;
             }
 
-            write_box_in(&mut cur, &self.stsz)?;
+            match &self.sample_size {
+                SampleSize::Stsz(stsz) => write_box_in(&mut cur, stsz)?,
+                SampleSize::Stz2(stz2) => write_box_in(&mut cur, stz2)?,
+            }
             write_box_in(&mut cur, &self.stsc)?;
-            write_box_in(&mut cur, &self.stco)?;
+
+            match &self.chunk_offset {
+                ChunkOffset::Stco(stco) => write_box_in(&mut cur, stco)?,
+                ChunkOffset::Co64(co64) => write_box_in(&mut cur, co64)?,
+            }
 
             Ok(cur.position())
         }
@@ -744,8 +825,14 @@ mod tests {
 
         assert_eq!(owned.stsd.entries.len(), 0);
         assert_eq!(owned.stts.entries.len(), 0);
-        assert_eq!(owned.stsz.entries.len(), 0);
+        match owned.sample_size {
+            SampleSize::Stsz(ref stsz) => assert_eq!(stsz.entries.len(), 0),
+            SampleSize::Stz2(ref stz2) => assert_eq!(stz2.entries.len(), 0),
+        }
         assert_eq!(owned.stsc.entries.len(), 0);
-        assert_eq!(owned.stco.entries.len(), 0);
+        match owned.chunk_offset {
+            ChunkOffset::Stco(ref stco) => assert_eq!(stco.entries.len(), 0),
+            ChunkOffset::Co64(ref co64) => assert_eq!(co64.entries.len(), 0),
+        }
     }
 }

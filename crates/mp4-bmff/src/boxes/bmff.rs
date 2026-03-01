@@ -43,6 +43,7 @@
 //! - `StscBox`/[`StscBoxView`]: Sample to Chunk Box.
 //! - `StszBox`/[`StszBoxView`]: Sample Size Box.
 //! - `StcoBox`/[`StcoBoxView`]: Chunk Offset Box.
+//! - `Co64Box`/[`Co64BoxView`]: Chunk Large Offset Box (for files >4GB).
 //! - `StssBox`/[`StssBoxView`]: Sync Sample Box (keyframes).
 //! - `StshBox`/[`StshBoxView`]: Shadow Sync Sample Box.
 //! - `SdtpBox`/[`SdtpBoxView`]: Sample Dependency Type Box.
@@ -100,6 +101,7 @@ mod nmhd;
 mod smhd;
 mod vmhd;
 
+mod co64;
 mod cslg;
 mod ctts;
 mod sdtp;
@@ -112,6 +114,7 @@ mod stsh;
 mod stss;
 mod stsz;
 mod stts;
+mod stz2;
 
 mod dinf;
 mod dref;
@@ -143,6 +146,7 @@ pub use common::{
 };
 
 // Variable-size boxes - View types
+pub use co64::Co64BoxView;
 pub use ctts::CttsBoxView;
 pub use dref::DrefBoxView;
 pub use dref::{DataEntryBoxView, UrlBoxView, UrnBoxView};
@@ -163,6 +167,7 @@ pub use stss::StssBoxView;
 pub use stsz::StszBoxView;
 pub use stts::SttsBoxView;
 pub use styp::StypBoxView;
+pub use stz2::Stz2BoxView;
 pub use tfra::TfraBoxView;
 pub use tref::TrefTypeBoxView;
 pub use trun::TrunBoxView;
@@ -199,6 +204,7 @@ pub use trgr::TrgrTypeBox;
 pub use vmhd::VmhdBox;
 
 // Re-export fullbox flags
+pub use co64::Co64Flags;
 pub use cslg::CslgFlags;
 pub use ctts::CttsFlags;
 pub use dref::DrefFlags;
@@ -223,6 +229,7 @@ pub use stsh::StshFlags;
 pub use stss::StssFlags;
 pub use stsz::StszFlags;
 pub use stts::SttsFlags;
+pub use stz2::Stz2Flags;
 pub use tfdt::TfdtFlags;
 pub use tfhd::TfhdFlags;
 pub use tfra::TfraFlags;
@@ -232,6 +239,7 @@ pub use trun::TrunFlags;
 pub use vmhd::VmhdFlags;
 
 // Re-export entry structs
+pub use co64::{Co64Entry, Co64EntryIter};
 pub use ctts::{CttsEntry, CttsEntryIter};
 pub use elst::ElstEntry;
 pub use pdin::{PdinEntry, PdinEntryIter};
@@ -243,6 +251,7 @@ pub use stsh::{StshEntry, StshEntryIter};
 pub use stss::{StssEntry, StssEntryIter};
 pub use stsz::{StszEntry, StszEntryIter};
 pub use stts::{SttsEntry, SttsEntryIter};
+pub use stz2::{Stz2Entry, Stz2EntryIter};
 pub use tfra::{TfraEntry, TfraEntryIter};
 pub use trun::{TrunEntry, TrunEntryIter};
 
@@ -251,6 +260,7 @@ mod owned_exports {
     use super::*;
 
     // Variable-size boxes - Owned types
+    pub use co64::Co64Box;
     pub use ctts::CttsBox;
     pub use dref::DrefBox;
     pub use dref::{DataEntryBox, UrlBox, UrnBox};
@@ -271,6 +281,7 @@ mod owned_exports {
     pub use stsz::StszBox;
     pub use stts::SttsBox;
     pub use styp::StypBox;
+    pub use stz2::Stz2Box;
     pub use tfra::TfraBox;
     pub use tref::{TrefBox, TrefTypeBox};
     pub use trgr::TrgrBox;
