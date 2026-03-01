@@ -42,6 +42,7 @@
 //! - [`CslgBox`]: Composition to Decode Box.
 //! - `StscBox`/[`StscBoxView`]: Sample to Chunk Box.
 //! - `StszBox`/[`StszBoxView`]: Sample Size Box.
+//! - `Stz2Box`/[`Stz2BoxView`]: Compact Sample Size Box.
 //! - `StcoBox`/[`StcoBoxView`]: Chunk Offset Box.
 //! - `Co64Box`/[`Co64BoxView`]: Chunk Large Offset Box (for files >4GB).
 //! - `StssBox`/[`StssBoxView`]: Sync Sample Box (keyframes).
