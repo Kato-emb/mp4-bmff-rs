@@ -13,6 +13,8 @@ use crate::BoxType;
 use crate::error::*;
 use crate::iter::BoxIter;
 
+use super::SbgpBoxView;
+use super::SgpdBoxView;
 use super::TfdtBox;
 use super::TfhdBox;
 use super::TrunBoxView;
@@ -29,6 +31,8 @@ use super::TrunBoxView;
 /// Optional child boxes:
 /// - `tfdt`: Track Fragment Decode Time Box - base decode time.
 /// - `trun`: Track Run Box - sample-level details (zero or more).
+/// - `sbgp`: Sample to Group Box - sample grouping (zero or more, one per grouping type).
+/// - `sgpd`: Sample Group Description Box - group descriptions (zero or more, one per grouping type).
 #[derive(Debug)]
 pub struct TrafBoxView<'a> {
     content: &'a [u8],
@@ -89,6 +93,32 @@ impl<'a> TrafBoxView<'a> {
 
         Ok(None)
     }
+
+    /// Returns an iterator over the Sample to Group Boxes (`sbgp`) contained in this `traf` box.
+    ///
+    /// There may be zero or more `sbgp` boxes, each with a different `grouping_type`.
+    pub fn sbgps(&self) -> impl Iterator<Item = Result<SbgpBoxView<'a>>> + 'a {
+        self.boxes().filter_map(|result| match result {
+            Ok(rawbox) if rawbox.boxtype() == BoxType::SBGP => {
+                Some(SbgpBoxView::decode(rawbox.into_payload()))
+            }
+            Ok(_) => None,
+            Err(e) => Some(Err(e)),
+        })
+    }
+
+    /// Returns an iterator over the Sample Group Description Boxes (`sgpd`) contained in this `traf` box.
+    ///
+    /// There may be zero or more `sgpd` boxes, each with a different `grouping_type`.
+    pub fn sgpds(&self) -> impl Iterator<Item = Result<SgpdBoxView<'a>>> + 'a {
+        self.boxes().filter_map(|result| match result {
+            Ok(rawbox) if rawbox.boxtype() == BoxType::SGPD => {
+                Some(SgpdBoxView::decode(rawbox.into_payload()))
+            }
+            Ok(_) => None,
+            Err(e) => Some(Err(e)),
+        })
+    }
 }
 
 impl BoxCodec for TrafBoxView<'_> {
@@ -114,6 +144,8 @@ mod owned {
     use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
 
+    use crate::boxes::bmff::SbgpBox;
+    use crate::boxes::bmff::SgpdBox;
     use crate::boxes::bmff::TrunBox;
 
     /// An owned Track Fragment Box (`traf`).
@@ -126,6 +158,8 @@ mod owned {
     /// - `tfhd`: Track Fragment Header with track ID and sample defaults.
     /// - `tfdt`: Optional base decode time for this fragment.
     /// - `truns`: Track Run boxes with per-sample information.
+    /// - `sbgps`: Sample to Group boxes (zero or more, one per grouping type).
+    /// - `sgpds`: Sample Group Description boxes (zero or more, one per grouping type).
     #[derive(Debug, Clone)]
     pub struct TrafBox {
         /// Track Fragment Header Box (`tfhd`) - track ID and defaults.
@@ -134,6 +168,10 @@ mod owned {
         pub tfdt: Option<TfdtBox>,
         /// Track Fragment Run Boxes (`trun`) - per-sample data.
         pub truns: Vec<TrunBox>,
+        /// Sample to Group Boxes (`sbgp`) - sample grouping (zero or more, one per grouping type).
+        pub sbgps: Vec<SbgpBox>,
+        /// Sample Group Description Boxes (`sgpd`) - group descriptions (zero or more, one per grouping type).
+        pub sgpds: Vec<SgpdBox>,
     }
 
     impl TryFrom<&TrafBoxView<'_>> for TrafBox {
@@ -143,6 +181,8 @@ mod owned {
             let mut tfhd = None;
             let mut truns = Vec::new();
             let mut tfdt = None;
+            let mut sbgps = Vec::new();
+            let mut sgpds = Vec::new();
 
             for result in view.boxes() {
                 let rawbox = result?;
@@ -173,6 +213,12 @@ mod owned {
                         }
                         tfdt = Some(TfdtBox::decode(rawbox.payload())?);
                     }
+                    BoxType::SBGP => {
+                        sbgps.push(SbgpBox::decode(rawbox.into_payload())?);
+                    }
+                    BoxType::SGPD => {
+                        sgpds.push(SgpdBox::decode(rawbox.into_payload())?);
+                    }
                     _ => continue,
                 }
             }
@@ -186,7 +232,13 @@ mod owned {
                 )
             })?;
 
-            Ok(TrafBox { tfhd, truns, tfdt })
+            Ok(TrafBox {
+                tfhd,
+                truns,
+                tfdt,
+                sbgps,
+                sgpds,
+            })
         }
     }
 
@@ -209,6 +261,8 @@ mod owned {
             boxed_len(&self.tfhd)
                 + self.truns.iter().map(boxed_len).sum::<usize>()
                 + self.tfdt.as_ref().map_or(0, boxed_len)
+                + self.sbgps.iter().map(boxed_len).sum::<usize>()
+                + self.sgpds.iter().map(boxed_len).sum::<usize>()
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
@@ -220,6 +274,12 @@ mod owned {
             }
             for trun in &self.truns {
                 write_box_in(&mut cur, trun)?;
+            }
+            for sbgp in &self.sbgps {
+                write_box_in(&mut cur, sbgp)?;
+            }
+            for sgpd in &self.sgpds {
+                write_box_in(&mut cur, sgpd)?;
             }
 
             Ok(cur.position())

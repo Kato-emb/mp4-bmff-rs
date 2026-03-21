@@ -49,6 +49,8 @@
 //! - `StshBox`/[`StshBoxView`]: Shadow Sync Sample Box.
 //! - `SdtpBox`/[`SdtpBoxView`]: Sample Dependency Type Box.
 //! - `StdpBox`/[`StdpBoxView`]: Degradation Priority Box.
+//! - `SbgpBox`/[`SbgpBoxView`]: Sample to Group Box.
+//! - `SgpdBox`/[`SgpdBoxView`]: Sample Group Description Box.
 //!
 //! ## Data Reference Boxes
 //! - `DinfBox`/[`DinfBoxView`]: Data Information Box.
@@ -105,7 +107,9 @@ mod vmhd;
 mod co64;
 mod cslg;
 mod ctts;
+mod sbgp;
 mod sdtp;
+mod sgpd;
 mod stbl;
 mod stco;
 mod stdp;
@@ -158,7 +162,9 @@ pub use ftyp::FtypBoxView;
 pub use hdlr::HdlrBoxView;
 pub use mdat::MdatBoxView;
 pub use pdin::PdinBoxView;
+pub use sbgp::SbgpBoxView;
 pub use sdtp::SdtpBoxView;
+pub use sgpd::SgpdBoxView;
 pub use stco::StcoBoxView;
 pub use stdp::StdpBoxView;
 pub use stsc::StscBoxView;
@@ -220,7 +226,9 @@ pub use mfhd::MfhdFlags;
 pub use mfro::MfroFlags;
 pub use mvhd::MvhdFlags;
 pub use nmhd::NmhdFlags;
+pub use sbgp::SbgpFlags;
 pub use sdtp::SdtpFlags;
+pub use sgpd::SgpdFlags;
 pub use smhd::SmhdFlags;
 pub use stco::StcoFlags;
 pub use stdp::StdpFlags;
@@ -244,7 +252,9 @@ pub use co64::{Co64Entry, Co64EntryIter};
 pub use ctts::{CttsEntry, CttsEntryIter};
 pub use elst::ElstEntry;
 pub use pdin::{PdinEntry, PdinEntryIter};
+pub use sbgp::{SbgpEntry, SbgpEntryIter};
 pub use sdtp::{SdtpEntry, SdtpEntryIter};
+pub use sgpd::SgpdEntryIter;
 pub use stco::{StcoEntry, StcoEntryIter};
 pub use stdp::{StdpEntry, StdpEntryIter};
 pub use stsc::{StscEntry, StscEntryIter};
@@ -272,7 +282,9 @@ mod owned_exports {
     pub use hdlr::HdlrBox;
     pub use mdat::MdatBox;
     pub use pdin::PdinBox;
+    pub use sbgp::SbgpBox;
     pub use sdtp::SdtpBox;
+    pub use sgpd::SgpdBox;
     pub use stco::StcoBox;
     pub use stdp::StdpBox;
     pub use stsc::StscBox;
@@ -373,11 +385,6 @@ define_box_types!(
     STSD = b"stsd",
     /// Degradation Priority Box
     STDP = b"stdp",
-
-    // =========================================================================
-    // ISO 14496-12 (BMFF) - Sample Tables
-    // =========================================================================
-
     /// Decoding Time to Sample Box
     STTS = b"stts",
     /// Composition Time to Sample Box
@@ -390,6 +397,10 @@ define_box_types!(
     STSH = b"stsh",
     /// Independent and Disposable Samples Box
     SDTP = b"sdtp",
+    /// Sample to Group Box
+    SBGP = b"sbgp",
+    /// Sample Group Description Box
+    SGPD = b"sgpd",
     /// Edit Box
     EDTS = b"edts",
     /// Edit List Box

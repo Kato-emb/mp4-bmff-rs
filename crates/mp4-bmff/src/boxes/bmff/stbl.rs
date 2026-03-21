@@ -13,7 +13,9 @@ use crate::iter::BoxIter;
 use super::Co64BoxView;
 use super::CslgBox;
 use super::CttsBoxView;
+use super::SbgpBoxView;
 use super::SdtpBoxView;
+use super::SgpdBoxView;
 use super::StcoBoxView;
 use super::StdpBoxView;
 use super::StscBoxView;
@@ -47,6 +49,8 @@ use super::Stz2BoxView;
 /// - `stsh`: Shadow Sync Box - alternative sync points.
 /// - `sdtp`: Sample Dependency Type Box - sample dependencies.
 /// - `stdp`: Degradation Priority Box - sample priorities.
+/// - `sbgp`: Sample to Group Box - sample grouping information (zero or more, one per grouping type).
+/// - `sgpd`: Sample Group Description Box - group descriptions (zero or more, one per grouping type).
 #[derive(Debug)]
 pub struct StblBoxView<'a> {
     content: &'a [u8],
@@ -295,6 +299,32 @@ impl<'a> StblBoxView<'a> {
 
         Ok(None)
     }
+
+    /// Returns an iterator over the Sample to Group Boxes (`sbgp`) contained in this `stbl` box.
+    ///
+    /// There may be zero or more `sbgp` boxes, each with a different `grouping_type`.
+    pub fn sbgps(&self) -> impl Iterator<Item = Result<SbgpBoxView<'a>>> + 'a {
+        self.boxes().filter_map(|result| match result {
+            Ok(rawbox) if rawbox.boxtype() == BoxType::SBGP => {
+                Some(SbgpBoxView::decode(rawbox.into_payload()))
+            }
+            Ok(_) => None,
+            Err(e) => Some(Err(e)),
+        })
+    }
+
+    /// Returns an iterator over the Sample Group Description Boxes (`sgpd`) contained in this `stbl` box.
+    ///
+    /// There may be zero or more `sgpd` boxes, each with a different `grouping_type`.
+    pub fn sgpds(&self) -> impl Iterator<Item = Result<SgpdBoxView<'a>>> + 'a {
+        self.boxes().filter_map(|result| match result {
+            Ok(rawbox) if rawbox.boxtype() == BoxType::SGPD => {
+                Some(SgpdBoxView::decode(rawbox.into_payload()))
+            }
+            Ok(_) => None,
+            Err(e) => Some(Err(e)),
+        })
+    }
 }
 
 impl BoxCodec for StblBoxView<'_> {
@@ -311,6 +341,8 @@ impl<'a> BoxDecode<'a> for StblBoxView<'a> {
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use alloc::vec::Vec;
+
     use super::*;
     use crate::BoxEncode;
 
@@ -320,7 +352,9 @@ mod owned {
 
     use crate::boxes::bmff::Co64Box;
     use crate::boxes::bmff::CttsBox;
+    use crate::boxes::bmff::SbgpBox;
     use crate::boxes::bmff::SdtpBox;
+    use crate::boxes::bmff::SgpdBox;
     use crate::boxes::bmff::StcoBox;
     use crate::boxes::bmff::StdpBox;
     use crate::boxes::bmff::StscBox;
@@ -384,7 +418,7 @@ mod owned {
     /// - `stco` or `co64`: Chunk file offsets.
     ///
     /// Optional child boxes:
-    /// - `ctts`, `cslg`, `stss`, `stsh`, `sdtp`, `stdp`.
+    /// - `ctts`, `cslg`, `stss`, `stsh`, `sdtp`, `stdp`, `sbgp`, `sgpd`.
     #[derive(Debug, Clone)]
     pub struct StblBox {
         /// Sample Description Box - describes formats for the samples.
@@ -409,6 +443,10 @@ mod owned {
         pub stsh: Option<StshBox>,
         /// Sample Dependency Type Box (optional) - inter-sample dependencies.
         pub sdtp: Option<SdtpBox>,
+        /// Sample to Group Boxes - sample grouping information (zero or more, one per grouping type).
+        pub sbgps: Vec<SbgpBox>,
+        /// Sample Group Description Boxes - group descriptions (zero or more, one per grouping type).
+        pub sgpds: Vec<SgpdBox>,
     }
 
     impl TryFrom<&StblBoxView<'_>> for StblBox {
@@ -423,6 +461,8 @@ mod owned {
             let mut stss = None;
             let mut stsh = None;
             let mut sdtp = None;
+            let mut sbgps = Vec::new();
+            let mut sgpds = Vec::new();
             let mut sample_size = None;
             let mut stsc = None;
             let mut chunk_offset = None;
@@ -527,6 +567,14 @@ mod owned {
                         let sdtp_box = SdtpBox::decode(rawbox.payload())?;
                         sdtp = Some(sdtp_box);
                     }
+                    BoxType::SBGP => {
+                        let sbgp_box = SbgpBox::decode(rawbox.payload())?;
+                        sbgps.push(sbgp_box);
+                    }
+                    BoxType::SGPD => {
+                        let sgpd_box = SgpdBox::decode(rawbox.payload())?;
+                        sgpds.push(sgpd_box);
+                    }
                     BoxType::STSZ => {
                         if sample_size.is_some() {
                             return Err(Error::in_box(
@@ -614,6 +662,8 @@ mod owned {
                 stss,
                 stsh,
                 sdtp,
+                sbgps,
+                sgpds,
                 sample_size: sample_size.ok_or_else(|| {
                     Error::in_box(
                         ErrorKind::BoxMissing {
@@ -679,6 +729,8 @@ mod owned {
             if let Some(sdtp) = &self.sdtp {
                 len += boxed_len(sdtp);
             }
+            len += self.sbgps.iter().map(boxed_len).sum::<usize>();
+            len += self.sgpds.iter().map(boxed_len).sum::<usize>();
             match &self.sample_size {
                 SampleSize::Stsz(stsz) => len += boxed_len(stsz),
                 SampleSize::Stz2(stz2) => len += boxed_len(stz2),
@@ -722,6 +774,13 @@ mod owned {
 
             if let Some(sdtp) = &self.sdtp {
                 write_box_in(&mut cur, sdtp)?;
+            }
+
+            for sbgp in &self.sbgps {
+                write_box_in(&mut cur, sbgp)?;
+            }
+            for sgpd in &self.sgpds {
+                write_box_in(&mut cur, sgpd)?;
             }
 
             match &self.sample_size {
