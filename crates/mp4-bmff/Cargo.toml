@@ -15,8 +15,9 @@ categories = ["data-structures", "no-std"]
 all-features = true
 
 [features]
-default = ["alloc", "avc", "mp4"]
+default = ["std", "avc", "mp4"]
 
+std = ["alloc"]
 alloc = []
 
 # ISO/IEC 14496-1

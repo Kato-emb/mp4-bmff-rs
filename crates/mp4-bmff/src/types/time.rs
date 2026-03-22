@@ -39,7 +39,7 @@ const QUICKTIME_UNIX_OFFSET: i64 = 2_082_844_800;
 ///
 /// - `from_quicktime_seconds()` / `to_quicktime_seconds()`: Raw epoch value.
 /// - `from_unix_seconds()` / `to_unix_seconds()`: Unix epoch conversion.
-/// - `SystemTime` conversions are available in the `mp4-bmff-util` crate.
+/// - `From<SystemTime>` / `Into<SystemTime>`: Available with the `std` feature.
 ///
 /// # Example
 ///
@@ -90,6 +90,16 @@ impl QuickTimeDateTime {
         }
     }
 
+    /// Returns the current system time as a [`QuickTimeDateTime`].
+    ///
+    /// # Feature Flag
+    ///
+    /// This method requires the `std` feature.
+    #[cfg(feature = "std")]
+    #[inline]
+    pub fn now() -> Self {
+        Self::from(std::time::SystemTime::now())
+    }
 }
 
 impl fmt::Debug for QuickTimeDateTime {
@@ -119,6 +129,33 @@ impl From<u64> for QuickTimeDateTime {
     }
 }
 
+// =============================================================================
+// std::time::SystemTime conversions
+// =============================================================================
+
+#[cfg(feature = "std")]
+impl From<std::time::SystemTime> for QuickTimeDateTime {
+    fn from(value: std::time::SystemTime) -> Self {
+        let duration_since_epoch = value
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let unix_seconds = duration_since_epoch.as_secs().cast_signed();
+        Self::from_unix_seconds(unix_seconds).unwrap_or_default()
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<QuickTimeDateTime> for std::time::SystemTime {
+    fn from(value: QuickTimeDateTime) -> Self {
+        match value.to_unix_seconds() {
+            Some(unix) if unix >= 0 => {
+                std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix.cast_unsigned())
+            }
+            _ => std::time::UNIX_EPOCH,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,5 +172,24 @@ mod tests {
         let quicktime =
             QuickTimeDateTime::from_quicktime_seconds((QUICKTIME_UNIX_OFFSET - 1).cast_unsigned());
         assert_eq!(quicktime.to_unix_seconds(), None);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn system_time_round_trip() {
+        let system_time = std::time::SystemTime::now();
+        let quicktime = QuickTimeDateTime::from(system_time);
+        let converted_back = std::time::SystemTime::from(quicktime);
+        let duration = converted_back
+            .duration_since(system_time)
+            .unwrap_or_default();
+        assert!(duration.as_secs() < 2);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn now_returns_recent_time() {
+        let qt = QuickTimeDateTime::now();
+        assert!(qt.to_unix_seconds().is_some());
     }
 }
