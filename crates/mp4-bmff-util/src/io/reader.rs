@@ -86,18 +86,12 @@ impl<R: Read> BoxReader<R> {
     ///
     /// Returns an error if the stream doesn't contain enough data for the header
     /// or an I/O error occurs.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the pending header is `None` after a successful read. This
-    /// should never happen in practice.
     pub fn peek_header(&mut self) -> io::Result<&BoxHeader> {
         if self.pending.is_none() {
             self.pending = Some(self.read_header_in()?);
         }
 
-        // SAFETY: We just ensured pending is Some
-        Ok(self.pending.as_ref().unwrap())
+        Ok(self.pending.as_ref().expect("pending is Some"))
     }
 
     /// Reads the next box from the stream.
@@ -125,7 +119,13 @@ impl<R: Read> BoxReader<R> {
             payload
         } else {
             let payload_len = header.total_size() - header.header_len() as u64;
-            let mut payload = vec![0u8; payload_len as usize];
+            let payload_len = usize::try_from(payload_len).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "box payload length exceeds platform address space",
+                )
+            })?;
+            let mut payload = vec![0u8; payload_len];
             self.inner.read_exact(&mut payload)?;
             payload
         };
@@ -220,18 +220,17 @@ impl<R: Read + Seek> BoxReader<R> {
     ///
     /// Returns an error if an I/O error occurs.
     pub fn stream_position(&mut self) -> io::Result<u64> {
-        let pos = self.inner.stream_position()?;
-        Ok(pos)
+        self.inner.stream_position()
     }
 
-    /// Rewinds the stream to the beginning.
+    /// Rewinds the stream to the beginning and clears any pending header.
     ///
     /// # Errors
     ///
     /// Returns an error if an I/O error occurs.
     pub fn rewind(&mut self) -> io::Result<()> {
-        self.inner.rewind()?;
-        Ok(())
+        self.pending = None;
+        self.inner.rewind()
     }
 }
 
@@ -469,6 +468,30 @@ mod tests {
         // Next box should be 'free'
         let raw = reader.read_box().unwrap();
         assert_eq!(raw.boxtype().type_field(), FourCC::from(*b"free"));
+    }
+
+    #[test]
+    fn rewind_clears_pending() {
+        let data = vec![
+            0x00, 0x00, 0x00, 0x0C, // size = 12
+            b'f', b't', b'y', b'p', // type = 'ftyp'
+            0x01, 0x02, 0x03, 0x04, // payload
+        ];
+
+        let mut reader = BoxReader::new(Cursor::new(data));
+
+        // Peek to populate pending
+        let header = reader.peek_header().unwrap();
+        assert_eq!(header.boxtype().type_field(), FourCC::from(*b"ftyp"));
+
+        // Rewind should clear pending
+        reader.rewind().unwrap();
+        assert_eq!(reader.stream_position().unwrap(), 0);
+
+        // Should re-read the header from the stream, not use stale pending
+        let raw = reader.read_box().unwrap();
+        assert_eq!(raw.boxtype().type_field(), FourCC::from(*b"ftyp"));
+        assert_eq!(raw.payload(), &[0x01, 0x02, 0x03, 0x04]);
     }
 
     #[test]

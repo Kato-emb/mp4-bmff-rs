@@ -12,13 +12,12 @@ use mp4_bmff::BoxCodec;
 use mp4_bmff::BoxEncode;
 use mp4_bmff::BoxHeader;
 use mp4_bmff::base::rawbox::RawBox;
-use mp4_bmff::write_box;
 
 /// A writer for BMFF boxes to a stream.
 ///
 /// `BoxWriter` wraps any [`Write`] implementor and provides
-/// methods to write encoded boxes. It maintains an internal buffer to
-/// minimize allocations when writing multiple boxes.
+/// methods to write encoded boxes. For typed boxes, it maintains an internal
+/// payload buffer that is reused across writes to minimize allocations.
 ///
 /// # Writing Methods
 ///
@@ -100,23 +99,24 @@ impl<W: Write> BoxWriter<W> {
     where
         B: BoxCodec + BoxEncode,
     {
-        self.buf.clear();
         let payload_len = boxed.encoded_len();
         let header = BoxHeader::new(boxed.boxtype(), payload_len as u64);
+        let header_len = header.header_len();
 
-        let total_size = header.total_size() as usize;
-        if total_size > self.buf.len() {
-            self.buf.resize(total_size, 0);
-        }
-
-        let written = write_box(&mut self.buf, boxed)
+        // Write header from a stack-allocated buffer
+        let mut header_buf = [0u8; BoxHeader::MAX_HEADER_SIZE];
+        header
+            .write(&mut header_buf[..header_len])
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        debug_assert!(
-            written == total_size,
-            "[BUG] Written size does not match expected total size"
-        );
+        self.inner.write_all(&header_buf[..header_len])?;
 
-        self.inner.write_all(&self.buf[..written])?;
+        // Encode payload into the reusable buffer
+        self.buf.resize(payload_len, 0);
+        boxed
+            .encode(&mut self.buf)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        self.inner.write_all(&self.buf[..payload_len])?;
+
         Ok(())
     }
 
@@ -134,14 +134,19 @@ impl<W: Write> BoxWriter<W> {
     ///
     /// Returns an error if an I/O error occurs while writing.
     pub fn write_raw_box<T: AsRef<[u8]>>(&mut self, raw: &RawBox<T>) -> io::Result<()> {
-        let total_size = raw.len();
-        if total_size > self.buf.len() {
-            self.buf.resize(total_size, 0);
-        }
+        let header = raw.header();
+        let header_len = header.header_len();
 
-        raw.write(&mut self.buf[..total_size])
+        // Write header from a stack-allocated buffer
+        let mut header_buf = [0u8; BoxHeader::MAX_HEADER_SIZE];
+        header
+            .write(&mut header_buf[..header_len])
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        self.inner.write_all(&self.buf[..total_size])?;
+        self.inner.write_all(&header_buf[..header_len])?;
+
+        // Write payload directly — no intermediate buffer needed
+        self.inner.write_all(raw.payload())?;
+
         Ok(())
     }
 }
