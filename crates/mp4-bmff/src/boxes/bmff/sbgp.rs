@@ -3,6 +3,7 @@ use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
 use crate::iter::FixedEntry;
+use crate::types::FourCC;
 
 define_box_flags!(
     /// Flags for the Sample To Group Box (`sbgp`).
@@ -67,9 +68,9 @@ pub struct SbgpBoxView<'a> {
     /// Reserved flags (should be 0).
     pub flags: SbgpFlags,
     /// A 4-character code that identifies the type of grouping.
-    pub grouping_type: [u8; 4],
-    /// An optional 4-byte field that provides additional information about the grouping type (used in version 1).
-    pub grouping_type_parameter: Option<[u8; 4]>,
+    pub grouping_type: FourCC,
+    /// An optional parameter that provides additional information about the grouping type (used in version 1).
+    pub grouping_type_parameter: Option<u32>,
     /// The number of entries in the box, indicating how many sample groups are defined.
     pub entry_count: u32,
     entries: &'a [u8],
@@ -99,11 +100,11 @@ impl<'de> BoxDecode<'de> for SbgpBoxView<'de> {
         let flags = SbgpFlags::from_be_bytes(cur.read_array::<3>()?);
 
         // Read grouping type (4 bytes)
-        let grouping_type = cur.read_array::<4>()?;
+        let grouping_type = FourCC::from(cur.read_array::<4>()?);
 
         // Read optional grouping type parameter (4 bytes, only if version == 1)
         let grouping_type_parameter = if version == 1 {
-            Some(cur.read_array::<4>()?)
+            Some(cur.read_u32_be()?)
         } else {
             None
         };
@@ -164,9 +165,9 @@ mod owned {
         /// Reserved flags (should be 0).
         pub flags: SbgpFlags,
         /// A 4-character code that identifies the type of grouping.
-        pub grouping_type: [u8; 4],
-        /// An optional 4-byte field that provides additional information about the grouping type (used in version 1).
-        pub grouping_type_parameter: Option<[u8; 4]>,
+        pub grouping_type: FourCC,
+        /// An optional parameter that provides additional information about the grouping type (used in version 1).
+        pub grouping_type_parameter: Option<u32>,
         /// A list of entries, each containing a sample count and a group description index, indicating how many consecutive samples belong to which group.
         pub entries: Vec<SbgpEntry>,
     }
@@ -176,7 +177,7 @@ mod owned {
             SbgpBox {
                 version: 0,
                 flags: SbgpFlags::default(),
-                grouping_type: [0; 4],
+                grouping_type: FourCC::from([0; 4]),
                 grouping_type_parameter: None,
                 entries: Vec::new(),
             }
@@ -232,11 +233,11 @@ mod owned {
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_be_bytes())?;
 
-            cur.write_array(&self.grouping_type)?;
+            cur.write_array(self.grouping_type.as_bytes())?;
 
             if self.version == 1 {
                 if let Some(param) = self.grouping_type_parameter {
-                    cur.write_array(&param)?;
+                    cur.write_u32_be(param)?;
                 } else {
                     // If version is 1, grouping_type_parameter must be present
                     return Err(Error::in_box(
@@ -275,11 +276,9 @@ mod tests {
             b'r', b'o', b'l', b'l', // grouping_type = "roll"
             0x00, 0x00, 0x00, 0x02, // entry_count = 2
             // Entry 1: sample_count = 5, group_description_index = 1
-            0x00, 0x00, 0x00, 0x05,
-            0x00, 0x00, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01,
             // Entry 2: sample_count = 10, group_description_index = 2
-            0x00, 0x00, 0x00, 0x0A,
-            0x00, 0x00, 0x00, 0x02,
+            0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x02,
         ]
     }
 
@@ -302,7 +301,7 @@ mod tests {
 
         assert_eq!(sbgp.version, 0);
         assert_eq!(sbgp.flags.bits(), 0);
-        assert_eq!(&sbgp.grouping_type, b"roll");
+        assert_eq!(sbgp.grouping_type, FourCC::from(*b"roll"));
         assert!(sbgp.grouping_type_parameter.is_none());
         assert_eq!(sbgp.entry_count, 2);
 
@@ -322,8 +321,11 @@ mod tests {
         let sbgp = SbgpBoxView::decode(&data).unwrap();
 
         assert_eq!(sbgp.version, 1);
-        assert_eq!(&sbgp.grouping_type, b"tele");
-        assert_eq!(sbgp.grouping_type_parameter.unwrap(), *b"parm");
+        assert_eq!(sbgp.grouping_type, FourCC::from(*b"tele"));
+        assert_eq!(
+            sbgp.grouping_type_parameter.unwrap(),
+            u32::from_be_bytes(*b"parm")
+        );
         assert_eq!(sbgp.entry_count, 1);
 
         let mut entries = sbgp.entries();
@@ -354,8 +356,7 @@ mod tests {
             0x00, 0x00, 0x00, // flags = 0
             b'r', b'o', b'l', b'l', // grouping_type = "roll"
             0x00, 0x00, 0x00, 0x02, // entry_count = 2
-            0x00, 0x00, 0x00, 0x05,
-            0x00, 0x00, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01,
         ];
 
         assert!(SbgpBoxView::decode(&data).is_err());
@@ -419,7 +420,7 @@ mod tests {
 
         assert_eq!(owned.version, view.version);
         assert_eq!(owned.flags.bits(), view.flags.bits());
-        assert_eq!(&owned.grouping_type, &view.grouping_type);
+        assert_eq!(owned.grouping_type, view.grouping_type);
         assert_eq!(owned.grouping_type_parameter, view.grouping_type_parameter);
         assert_eq!(owned.entries.len() as u32, view.entry_count);
 

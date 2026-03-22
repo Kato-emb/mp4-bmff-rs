@@ -2,6 +2,7 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
+use crate::types::FourCC;
 
 use crate::cursor::ReadCursor;
 
@@ -117,8 +118,8 @@ pub struct SgpdBoxView<'a> {
     pub version: u8,
     /// Reserved flags (should be 0).
     pub flags: SgpdFlags,
-    /// A 4-character code identifying the grouping type (e.g., `b"roll"`, `b"rap "`).
-    pub grouping_type: [u8; 4],
+    /// A 4-character code identifying the grouping type (e.g., `"roll"`, `"rap "`).
+    pub grouping_type: FourCC,
     /// Default entry length in bytes (version >= 1 only).
     /// `Some(0)` means each entry carries its own `description_length` prefix.
     pub default_length: Option<u32>,
@@ -163,7 +164,7 @@ impl<'de> BoxDecode<'de> for SgpdBoxView<'de> {
 
         let version = cur.read_u8()?;
         let flags = SgpdFlags::from_be_bytes(cur.read_array::<3>()?);
-        let grouping_type = cur.read_array::<4>()?;
+        let grouping_type = FourCC::from(cur.read_array::<4>()?);
 
         let default_length = if version >= 1 {
             Some(cur.read_u32_be()?)
@@ -231,7 +232,7 @@ mod owned {
         /// Reserved flags (should be 0).
         pub flags: SgpdFlags,
         /// A 4-character code identifying the grouping type.
-        pub grouping_type: [u8; 4],
+        pub grouping_type: FourCC,
         /// Default entry length in bytes (version >= 1 only).
         pub default_length: Option<u32>,
         /// Default sample description index (version >= 2 only).
@@ -319,7 +320,7 @@ mod owned {
             cur.write_u8(self.version)?;
             cur.write_array(&self.flags.to_be_bytes())?;
 
-            cur.write_array(&self.grouping_type)?;
+            cur.write_array(self.grouping_type.as_bytes())?;
 
             if self.version >= 1 {
                 let default_length = self.default_length.ok_or_else(|| {
@@ -431,7 +432,7 @@ mod tests {
 
         assert_eq!(sgpd.version, 1);
         assert_eq!(sgpd.flags.bits(), 0);
-        assert_eq!(&sgpd.grouping_type, b"roll");
+        assert_eq!(sgpd.grouping_type, FourCC::from(*b"roll"));
         assert_eq!(sgpd.default_length, Some(2));
         assert!(sgpd.default_sample_description_index.is_none());
         assert_eq!(sgpd.entry_count, 2);
@@ -463,7 +464,7 @@ mod tests {
         let sgpd = SgpdBoxView::decode(&data).unwrap();
 
         assert_eq!(sgpd.version, 2);
-        assert_eq!(&sgpd.grouping_type, b"rap ");
+        assert_eq!(sgpd.grouping_type, FourCC::from(*b"rap "));
         assert_eq!(sgpd.default_length, Some(1));
         assert_eq!(sgpd.default_sample_description_index, Some(1));
         assert_eq!(sgpd.entry_count, 2);
