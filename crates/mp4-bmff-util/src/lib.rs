@@ -5,3 +5,5 @@ extern crate alloc;
 
 #[cfg(feature = "io")]
 pub mod io;
+
+pub mod model;
