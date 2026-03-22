@@ -17,17 +17,27 @@ all-features = true
 [features]
 default = ["std", "avc", "mp4"]
 
+# Enables standard library support (implies `alloc`).
+# Adds `From<SystemTime>` / `Into<SystemTime>` conversions for `QuickTimeDateTime`.
 std = ["alloc"]
+
+# Enables heap allocation for owned box types (`*Box`) and `encode_to_vec`.
+# Without this feature, only zero-copy view types (`*BoxView`) are available.
 alloc = []
 
-# ISO/IEC 14496-1
+# ISO/IEC 14496-1: MPEG-4 Systems (Elementary Stream Descriptors).
 systems = []
 
-# ISO/IEC 14496-14
+# ISO/IEC 14496-14: MP4 file format (MP4 audio/video/systems sample entries).
+# Implies `systems`.
 mp4 = ["systems"]
 
-# ISO/IEC 14496-15
+# ISO/IEC 14496-15: AVC (H.264) configuration box support.
+# Implies `systems`.
 avc = ["systems"]
+
+# ISO/IEC 14496-15: HEVC (H.265) configuration box support.
+# Implies `systems`.
 hevc = ["systems"]
 
 [dependencies]

@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "crates/mp4-bmff",
     "crates/mp4-bmff-util",
-    "crates/mp4-inspect",
     "examples",
     "benches",
 ]
@@ -19,8 +18,6 @@ exclude = ["examples/", "benches/", ".github/"]
 [workspace.dependencies]
 mp4-bmff = { version = "0.1.0", path = "crates/mp4-bmff", default-features = false }
 mp4-bmff-util = { version = "0.1.0", path = "crates/mp4-bmff-util", default-features = false }
-
-mp4-inspect = { version = "0.1.0", path = "crates/mp4-inspect", default-features = false }
 
 clap = { version = "4", default-features = false, features = ["std", "derive"] }
 
