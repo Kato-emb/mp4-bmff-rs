@@ -11,17 +11,25 @@ use mp4_bmff::types::{
 };
 
 #[derive(Debug)]
-pub enum VideoCodec {
+pub enum VisualSampleDescription {
     #[cfg(feature = "avc")]
     Avc1(mp4_bmff::boxes::avc::Avc1SampleEntry),
+    #[cfg(feature = "avc")]
+    Avc3(mp4_bmff::boxes::avc::Avc3SampleEntry),
     #[cfg(feature = "mp4")]
     Mp4v(mp4_bmff::boxes::mp4::Mp4vSampleEntry),
 }
 
 #[derive(Debug)]
-pub enum MediaDescription {
-    Video(VideoCodec),
-    Audio,
+pub enum AudioSampleDescription {
+    #[cfg(feature = "mp4")]
+    Mp4a(mp4_bmff::boxes::mp4::Mp4aSampleEntry),
+}
+
+#[derive(Debug)]
+pub enum MediaDefinition {
+    Video(VisualSampleDescription),
+    Audio(AudioSampleDescription),
     Metadata,
     Hint,
     Text,
@@ -40,5 +48,5 @@ pub struct Track {
     matrix: Matrix,
     alternate_group: i16,
     edit_list: Option<Vec<ElstEntry>>,
-    media: MediaDescription,
+    media: MediaDefinition,
 }
