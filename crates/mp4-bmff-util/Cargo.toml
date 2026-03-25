@@ -8,12 +8,15 @@ repository.workspace = true
 license.workspace = true
 
 [features]
-default = ["std", "io"]
+default = ["std", "io", "mp4", "avc"]
 
 std = ["alloc", "mp4-bmff/std"]
 alloc = ["mp4-bmff/alloc"]
 
 io = ["std"]
+
+mp4 = ["mp4-bmff/mp4"]
+avc = ["mp4-bmff/avc"]
 
 [dependencies]
 mp4-bmff = { workspace = true, default-features = false }
