@@ -3,12 +3,6 @@
 //! This module provides the base structure for visual (video) sample entries
 //! as defined in ISO/IEC 14496-12 Section 12.1. All video codec sample entries
 //! (e.g. `avc1`, `hvc1`, `mp4v`) extend this base with codec-specific boxes.
-//!
-//! # Types
-//!
-//! - [`VisualSampleEntryView`]: Zero-copy reference to a visual sample entry.
-//! - [`VisualSampleEntry`]: Owned visual sample entry (requires `alloc`).
-//! - [`CompressorName`]: 32-byte compressor name field.
 
 use crate::BoxDecode;
 use crate::BoxType;

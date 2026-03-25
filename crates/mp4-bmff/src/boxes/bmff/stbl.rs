@@ -300,7 +300,7 @@ impl<'a> StblBoxView<'a> {
         Ok(None)
     }
 
-    /// Returns an iterator over the Sample to Group Boxes (`sbgp`) contained in this `stbl` box.
+    /// Returns an iterator over the Sample to Group Boxes (`sbgp`) contained in this sample table.
     ///
     /// There may be zero or more `sbgp` boxes, each with a different `grouping_type`.
     pub fn sbgps(&self) -> impl Iterator<Item = Result<SbgpBoxView<'a>>> + 'a {
@@ -313,7 +313,7 @@ impl<'a> StblBoxView<'a> {
         })
     }
 
-    /// Returns an iterator over the Sample Group Description Boxes (`sgpd`) contained in this `stbl` box.
+    /// Returns an iterator over the Sample Group Description Boxes (`sgpd`) contained in this sample table.
     ///
     /// There may be zero or more `sgpd` boxes, each with a different `grouping_type`.
     pub fn sgpds(&self) -> impl Iterator<Item = Result<SgpdBoxView<'a>>> + 'a {

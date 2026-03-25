@@ -33,9 +33,9 @@ pub struct ElstEntry {
     pub segment_duration: u64,
     /// Starting media time in media timescale units (-1 = empty edit/dwell).
     pub media_time: i64,
-    /// Playback rate integer part (1 = normal forward, 0 = dwell, -1 = reverse).
+    /// Playback rate, upper 16 bits of 16.16 fixed-point (1 = normal, 0 = dwell).
     pub media_rate_integer: i16,
-    /// Playback rate fractional part (usually 0).
+    /// Playback rate, lower 16 bits of 16.16 fixed-point (typically 0).
     pub media_rate_fraction: i16,
 }
 

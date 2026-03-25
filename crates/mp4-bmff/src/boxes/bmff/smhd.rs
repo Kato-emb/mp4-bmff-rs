@@ -29,14 +29,14 @@ define_box_flags!(
 ///
 /// - `version`: Box version (should be 0).
 /// - `flags`: Reserved (should be 0).
-/// - `balance`: Stereo balance as 8.8 fixed-point (-1.0 = left, 0 = center, 1.0 = right).
+/// - `balance`: Stereo balance as signed 8.8 fixed-point (0 = center, negative = left, positive = right).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SmhdBox {
     /// Box version.
     pub version: u8,
     /// Box flags.
     pub flags: SmhdFlags,
-    /// Balance
+    /// Stereo balance as signed 8.8 fixed-point (0 = center, negative = left, positive = right).
     pub balance: i16,
 }
 

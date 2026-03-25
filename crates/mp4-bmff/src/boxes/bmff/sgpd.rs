@@ -1,3 +1,8 @@
+//! Sample Group Description Box (`sgpd`) implementation.
+//!
+//! The Sample Group Description Box contains descriptions for sample
+//! groups referenced by the Sample to Group Box (`sbgp`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;

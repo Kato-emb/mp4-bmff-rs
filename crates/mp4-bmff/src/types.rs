@@ -25,7 +25,7 @@
 //! # Fraction Types
 //!
 //! - [`Fraction`]: Generic fraction (numerator/denominator pair).
-//! - [`Fraction32`]: Unsigned 32-bit fraction alias.
+//! - [`FractionU32`]: Unsigned 32-bit fraction alias.
 //!
 //! # Composite Types
 //!

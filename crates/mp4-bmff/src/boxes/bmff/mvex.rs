@@ -56,7 +56,7 @@ impl<'a> MvexBoxView<'a> {
         Ok(None)
     }
 
-    /// Returns an iterator over the Track Extends Defaults Boxes (`trex`) contained in this `mvex` box.
+    /// Returns an iterator over the Track Extends Defaults Boxes (`trex`) contained in this movie extends.
     ///
     /// # Errors
     ///

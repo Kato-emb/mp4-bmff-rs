@@ -1,3 +1,8 @@
+//! Pixel Aspect Ratio Box (`pasp`) implementation.
+//!
+//! The Pixel Aspect Ratio Box defines the horizontal and vertical
+//! spacing of pixels in a visual sample, allowing for non-square pixels.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;

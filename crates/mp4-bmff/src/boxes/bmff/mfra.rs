@@ -40,7 +40,7 @@ impl<'a> MfraBoxView<'a> {
         BoxIter::new(self.content)
     }
 
-    /// Returns an iterator over the Track Fragment Random Access Boxes (`tfra`) contained in this `mfra` box.
+    /// Returns an iterator over the Track Fragment Random Access Boxes (`tfra`) contained in this movie fragment random access.
     pub fn tfras(&self) -> impl Iterator<Item = Result<TfraBoxView<'a>>> + 'a {
         self.boxes().filter_map(|result| match result {
             Ok(rawbox) if rawbox.boxtype() == BoxType::TFRA => {

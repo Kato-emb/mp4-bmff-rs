@@ -10,7 +10,6 @@
 //! - `mp4`: ISO/IEC 14496-14 boxes (MPEG-4 storage, requires `mp4` feature).
 //! - `nal`: ISO/IEC 14496-15 boxes (NAL video like AVC/HEVC, requires `avc`/`hevc` feature).
 //! - `avc`: Convenience re-exports of AVC types from `nal::avc`.
-//! - [`sample_entry`]: Base types for sample entries used by codec-specific modules.
 //!
 //! # View vs Owned Types
 //!

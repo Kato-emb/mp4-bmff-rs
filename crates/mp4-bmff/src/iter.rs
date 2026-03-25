@@ -26,7 +26,7 @@
 //! # Fixed-Size Entry Iteration
 //!
 //! For boxes containing arrays of fixed-size entries (like sample tables),
-//! [`FixedSizeEntryIter`] provides efficient iteration over entries
+//! `FixedEntryIter` provides efficient iteration over entries
 //! without individual allocations.
 
 use core::fmt;

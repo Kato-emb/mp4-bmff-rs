@@ -63,7 +63,7 @@ impl<'a> MoofBoxView<'a> {
         ))
     }
 
-    /// Returns an iterator over the Track Fragment Boxes (`traf`) contained in this `moof` box.
+    /// Returns an iterator over the Track Fragment Boxes (`traf`) contained in this movie fragment.
     pub fn trafs(&self) -> impl Iterator<Item = Result<TrafBoxView<'a>>> + 'a {
         self.boxes().filter_map(|result| match result {
             Ok(rawbox) if rawbox.boxtype() == BoxType::TRAF => {

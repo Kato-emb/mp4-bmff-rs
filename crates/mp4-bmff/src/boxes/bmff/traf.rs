@@ -66,7 +66,7 @@ impl<'a> TrafBoxView<'a> {
         ))
     }
 
-    /// Returns an iterator over the Track Fragment Run Boxes (`trun`) contained in this `traf` box.
+    /// Returns an iterator over the Track Run Boxes (`trun`) contained in this track fragment.
     pub fn truns(&self) -> impl Iterator<Item = Result<TrunBoxView<'a>>> + 'a {
         self.boxes().filter_map(|result| match result {
             Ok(rawbox) if rawbox.boxtype() == BoxType::TRUN => {
@@ -94,7 +94,7 @@ impl<'a> TrafBoxView<'a> {
         Ok(None)
     }
 
-    /// Returns an iterator over the Sample to Group Boxes (`sbgp`) contained in this `traf` box.
+    /// Returns an iterator over the Sample to Group Boxes (`sbgp`) contained in this track fragment.
     ///
     /// There may be zero or more `sbgp` boxes, each with a different `grouping_type`.
     pub fn sbgps(&self) -> impl Iterator<Item = Result<SbgpBoxView<'a>>> + 'a {
@@ -107,7 +107,7 @@ impl<'a> TrafBoxView<'a> {
         })
     }
 
-    /// Returns an iterator over the Sample Group Description Boxes (`sgpd`) contained in this `traf` box.
+    /// Returns an iterator over the Sample Group Description Boxes (`sgpd`) contained in this track fragment.
     ///
     /// There may be zero or more `sgpd` boxes, each with a different `grouping_type`.
     pub fn sgpds(&self) -> impl Iterator<Item = Result<SgpdBoxView<'a>>> + 'a {

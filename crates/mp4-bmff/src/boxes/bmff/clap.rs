@@ -1,3 +1,8 @@
+//! Clean Aperture Box (`clap`) implementation.
+//!
+//! The Clean Aperture Box defines the region of a video frame that
+//! contains valid image data, specified as fractional pixel values.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -15,10 +20,10 @@ use crate::cursor::WriteCursor;
 /// video sample entries to indicate the intended display area of the video content.
 ///
 /// # Structure
-/// - `clean_aperture_width`: Clean aperture width in counted pixels (16.16 fixed-point).
-/// - `clean_aperture_height`: Clean aperture height in counted pixels (16.16 fixed-point).
-/// - `horiz_offset`: Horizontal offset of clean aperture center minus `(width-1)/2` (16.16 fixed-point). Typically 0.
-/// - `vert_offset`: Vertical offset of clean aperture center minus `(height-1)/2` (16.16
+/// - `clean_aperture_width`: Clean aperture width as a fraction (numerator/denominator pair).
+/// - `clean_aperture_height`: Clean aperture height as a fraction (numerator/denominator pair).
+/// - `horiz_offset`: Horizontal offset of clean aperture center minus `(width-1)/2` as a fraction. Typically 0.
+/// - `vert_offset`: Vertical offset of clean aperture center minus `(height-1)/2` as a fraction. Typically 0.
 #[derive(Debug, Clone, Copy)]
 pub struct ClapBox {
     /// Clean aperture width, in counted pixels, of the video image.

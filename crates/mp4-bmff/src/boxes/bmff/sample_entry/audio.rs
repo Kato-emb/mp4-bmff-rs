@@ -3,11 +3,6 @@
 //! This module provides the base structure for audio sample entries
 //! as defined in ISO/IEC 14496-12 Section 12.2. All audio codec sample entries
 //! (e.g. `mp4a`) extend this base with codec-specific boxes.
-//!
-//! # Types
-//!
-//! - [`AudioSampleEntryView`]: Zero-copy reference to an audio sample entry.
-//! - [`AudioSampleEntry`]: Owned audio sample entry (requires `alloc`).
 
 use crate::BoxDecode;
 use crate::BoxType;

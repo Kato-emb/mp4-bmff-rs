@@ -1,3 +1,9 @@
+//! Channel Layout Box (`chnl`) implementation.
+//!
+//! The Channel Layout Box provides information about the channel layout
+//! of an audio stream, supporting both channel-structured and
+//! object-structured configurations as defined in ISO/IEC 14496-12.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;

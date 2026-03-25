@@ -1,3 +1,8 @@
+//! Sample to Group Box (`sbgp`) implementation.
+//!
+//! The Sample to Group Box assigns consecutive samples to group
+//! descriptions defined in the Sample Group Description Box (`sgpd`).
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
@@ -147,7 +152,7 @@ mod owned {
 
     use crate::cursor::WriteCursor;
 
-    /// An owned version of the Sample To Group Box (`sbgp`), containing owned data instead of references.
+    /// An owned Sample To Group Box (`sbgp`).
     ///
     /// This is the owned variant of [`SbgpBoxView`] that stores entries
     /// in a heap-allocated vector.

@@ -60,7 +60,7 @@ impl<'a> MoovBoxView<'a> {
         ))
     }
 
-    /// Returns an iterator over the Track Boxes (`trak`) contained in this `moov` box.
+    /// Returns an iterator over the Track Boxes (`trak`) contained in this movie.
     pub fn traks(&self) -> impl Iterator<Item = Result<TrakBoxView<'a>>> + 'a {
         self.boxes().filter_map(|result| match result {
             Ok(rawbox) if rawbox.boxtype() == BoxType::TRAK => {

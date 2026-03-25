@@ -1,3 +1,8 @@
+//! Colour Information Box (`colr`) implementation.
+//!
+//! The Colour Information Box provides colour characteristics of visual
+//! samples, supporting NCLX colour parameters and ICC profiles.
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;

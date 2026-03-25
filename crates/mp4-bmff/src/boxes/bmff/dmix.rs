@@ -3,11 +3,6 @@
 //! The Down Mix Instructions Box provides instructions for down-mixing
 //! audio channels from a source layout to a target layout, as defined
 //! in ISO/IEC 14496-12 Section 12.2.
-//!
-//! # Types
-//!
-//! - [`DmixBoxView`]: Zero-copy reference to a down mix instructions box.
-//! - [`DmixBox`]: Owned down mix instructions box (requires `alloc`).
 
 use crate::BoxCodec;
 use crate::BoxDecode;
