@@ -79,6 +79,10 @@
 
 mod common;
 
+mod clap;
+mod colr;
+mod pasp;
+
 mod free;
 mod ftyp;
 mod mdat;
@@ -152,6 +156,7 @@ pub use common::{
 
 // Variable-size boxes - View types
 pub use co64::Co64BoxView;
+pub use colr::{ColourType, ColrBoxView};
 pub use ctts::CttsBoxView;
 pub use dref::DrefBoxView;
 pub use dref::{DataEntryBoxView, UrlBoxView, UrnBoxView};
@@ -195,6 +200,7 @@ pub use tref::TrefBoxView;
 pub use trgr::TrgrBoxView;
 
 // Fixed-size boxes (Copy types, no View/Owned distinction)
+pub use clap::ClapBox;
 pub use cslg::CslgBox;
 pub use mdhd::MdhdBox;
 pub use mehd::MehdBox;
@@ -202,6 +208,7 @@ pub use mfhd::MfhdBox;
 pub use mfro::MfroBox;
 pub use mvhd::MvhdBox;
 pub use nmhd::NmhdBox;
+pub use pasp::PaspBox;
 pub use smhd::SmhdBox;
 pub use tfdt::TfdtBox;
 pub use tfhd::TfhdBox;
@@ -272,6 +279,7 @@ mod owned_exports {
 
     // Variable-size boxes - Owned types
     pub use co64::Co64Box;
+    pub use colr::ColrBox;
     pub use ctts::CttsBox;
     pub use dref::DrefBox;
     pub use dref::{DataEntryBox, UrlBox, UrnBox};
@@ -321,6 +329,13 @@ mod owned_exports {
 pub use owned_exports::*;
 
 define_box_types!(
+    /// Pixel Aspect Ratio Box
+    PASP = b"pasp",
+    /// Clean Aperture Box
+    CLAP = b"clap",
+    /// Colour Information Box
+    COLR = b"colr",
+
     // =========================================================================
     // ISO 14496-12 (BMFF) - File Structure and general boxes
     // =========================================================================

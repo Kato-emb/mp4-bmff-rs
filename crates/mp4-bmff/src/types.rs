@@ -22,6 +22,11 @@
 //! - [`Uuid`]: 16-byte UUID for extended box types.
 //! - [`LanguageCode`]: ISO-639-2/T 3-letter language code.
 //!
+//! # Fraction Types
+//!
+//! - [`Fraction`]: Generic fraction (numerator/denominator pair).
+//! - [`Fraction32`]: Unsigned 32-bit fraction alias.
+//!
 //! # Composite Types
 //!
 //! - [`Matrix`]: 3×3 affine transformation matrix for video tracks.
@@ -45,6 +50,7 @@
 
 mod fixed;
 mod fourcc;
+mod fraction;
 mod language;
 mod matrix;
 mod time;
@@ -59,6 +65,7 @@ pub use fixed::{
     U16F16,
 };
 pub use fourcc::FourCC;
+pub use fraction::{Fraction, FractionU32};
 pub use language::LanguageCode;
 pub use matrix::Matrix;
 pub use time::QuickTimeDateTime;
