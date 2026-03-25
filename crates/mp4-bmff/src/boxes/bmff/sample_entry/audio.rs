@@ -121,8 +121,11 @@ impl<'a> AudioSampleEntryView<'a> {
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use alloc::vec::Vec;
+
     use super::*;
 
+    use crate::RawBoxRef;
     use crate::codec::boxed_len;
     use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
@@ -162,12 +165,13 @@ mod owned {
         }
     }
 
-    impl TryFrom<&AudioSampleEntryView<'_>> for AudioSampleEntry {
-        type Error = Error;
-
-        fn try_from(view: &AudioSampleEntryView<'_>) -> Result<Self> {
+    impl AudioSampleEntry {
+        pub(crate) fn from_view<'a>(
+            view: &AudioSampleEntryView<'a>,
+        ) -> Result<(Self, Vec<RawBoxRef<'a>>)> {
             let mut chnl = None;
             let mut dmix = Vec::new();
+            let mut rest = Vec::new();
 
             for b in view.boxes_in() {
                 let b = b?;
@@ -183,22 +187,23 @@ mod owned {
                     BoxType::DMIX => {
                         dmix.push(DmixBox::decode(b.into_payload())?);
                     }
-                    _ => continue,
+                    _ => rest.push(b),
                 }
             }
 
-            Ok(AudioSampleEntry {
-                base: view.base,
-                channelcount: view.channelcount,
-                samplesize: view.samplesize,
-                samplerate: view.samplerate,
-                chnl,
-                dmix,
-            })
+            Ok((
+                AudioSampleEntry {
+                    base: view.base,
+                    channelcount: view.channelcount,
+                    samplesize: view.samplesize,
+                    samplerate: view.samplerate,
+                    chnl,
+                    dmix,
+                },
+                rest,
+            ))
         }
-    }
 
-    impl AudioSampleEntry {
         pub(crate) fn encode_len(&self) -> usize {
             let mut len = layout::FIXED_FIELDS_SIZE;
 
@@ -371,7 +376,7 @@ mod tests {
         let data = raw_data();
         let mut cur = ReadCursor::new(&data);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let owned = AudioSampleEntry::try_from(&view).unwrap();
+        let (owned, _) = AudioSampleEntry::from_view(&view).unwrap();
 
         assert_eq!(owned.base.data_reference_index, 1);
         assert_eq!(owned.channelcount, 2);
@@ -388,7 +393,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&data);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let owned = AudioSampleEntry::try_from(&view).unwrap();
+        let (owned, _) = AudioSampleEntry::from_view(&view).unwrap();
 
         assert!(owned.chnl.is_some());
     }
@@ -402,7 +407,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&original);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let owned = AudioSampleEntry::try_from(&view).unwrap();
+        let (owned, _) = AudioSampleEntry::from_view(&view).unwrap();
 
         let mut encoded = vec![0u8; owned.encode_len()];
         let mut write_cur = crate::cursor::WriteCursor::new(&mut encoded);
@@ -421,7 +426,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&data);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let owned = AudioSampleEntry::try_from(&view).unwrap();
+        let (owned, _) = AudioSampleEntry::from_view(&view).unwrap();
 
         assert_eq!(owned.dmix.len(), 2);
     }
@@ -436,7 +441,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&original);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let owned = AudioSampleEntry::try_from(&view).unwrap();
+        let (owned, _) = AudioSampleEntry::from_view(&view).unwrap();
 
         let mut encoded = vec![0u8; owned.encode_len()];
         let mut write_cur = crate::cursor::WriteCursor::new(&mut encoded);
@@ -455,7 +460,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&data);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let err = AudioSampleEntry::try_from(&view).unwrap_err();
+        let err = AudioSampleEntry::from_view(&view).unwrap_err();
 
         match err.kind() {
             ErrorKind::BoxDuplicate { duplicate } => {

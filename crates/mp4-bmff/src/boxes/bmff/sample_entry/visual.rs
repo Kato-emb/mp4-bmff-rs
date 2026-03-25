@@ -229,8 +229,11 @@ impl<'a> VisualSampleEntryView<'a> {
 
 #[cfg(feature = "alloc")]
 mod owned {
+    use alloc::vec::Vec;
+
     use super::*;
 
+    use crate::RawBoxRef;
     use crate::codec::boxed_len;
     use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
@@ -284,13 +287,14 @@ mod owned {
         }
     }
 
-    impl TryFrom<&VisualSampleEntryView<'_>> for VisualSampleEntry {
-        type Error = Error;
-
-        fn try_from(view: &VisualSampleEntryView<'_>) -> Result<Self> {
+    impl VisualSampleEntry {
+        pub(crate) fn from_view<'a>(
+            view: &VisualSampleEntryView<'a>,
+        ) -> Result<(Self, Vec<RawBoxRef<'a>>)> {
             let mut colr = None;
             let mut clap = None;
             let mut pasp = None;
+            let mut rest = Vec::new();
 
             for b in view.boxes_in() {
                 let b = b?;
@@ -319,27 +323,28 @@ mod owned {
                         }
                         pasp = Some(PaspBox::decode(b.into_payload())?);
                     }
-                    _ => {}
+                    _ => rest.push(b),
                 }
             }
 
-            Ok(VisualSampleEntry {
-                base: view.base,
-                width: view.width,
-                height: view.height,
-                horizresolution: view.horizresolution,
-                vertresolution: view.vertresolution,
-                frame_count: view.frame_count,
-                compressorname: view.compressorname,
-                depth: view.depth,
-                colr,
-                clap,
-                pasp,
-            })
+            Ok((
+                VisualSampleEntry {
+                    base: view.base,
+                    width: view.width,
+                    height: view.height,
+                    horizresolution: view.horizresolution,
+                    vertresolution: view.vertresolution,
+                    frame_count: view.frame_count,
+                    compressorname: view.compressorname,
+                    depth: view.depth,
+                    colr,
+                    clap,
+                    pasp,
+                },
+                rest,
+            ))
         }
-    }
 
-    impl VisualSampleEntry {
         pub(crate) fn encode_len(&self) -> usize {
             let mut len = layout::FIXED_FIELDS_SIZE;
 
@@ -529,7 +534,7 @@ mod tests {
         let data = raw_data();
         let mut cur = ReadCursor::new(&data);
         let view = VisualSampleEntryView::parse_in(&mut cur).unwrap();
-        let owned = VisualSampleEntry::try_from(&view).unwrap();
+        let (owned, _) = VisualSampleEntry::from_view(&view).unwrap();
 
         assert_eq!(owned.base.data_reference_index, 1);
         assert_eq!(owned.width, 1280);
@@ -553,7 +558,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&original);
         let view = VisualSampleEntryView::parse_in(&mut cur).unwrap();
-        let owned = VisualSampleEntry::try_from(&view).unwrap();
+        let (owned, _) = VisualSampleEntry::from_view(&view).unwrap();
 
         let mut encoded = vec![0u8; owned.encode_len()];
         let mut write_cur = crate::cursor::WriteCursor::new(&mut encoded);

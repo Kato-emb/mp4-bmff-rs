@@ -145,13 +145,11 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &Mp4aSampleEntryView<'_>) -> Result<Self> {
-            let base = AudioSampleEntry::try_from(view.base())?;
+            let (base, rest) = AudioSampleEntry::from_view(view.base())?;
 
             let mut esds = None;
 
-            for result in view.boxes() {
-                let rawbox = result?;
-
+            for rawbox in rest {
                 match rawbox.boxtype() {
                     BoxType::ESDS => {
                         if esds.is_some() {

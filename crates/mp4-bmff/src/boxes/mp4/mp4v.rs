@@ -115,13 +115,11 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &Mp4vSampleEntryView<'_>) -> Result<Self> {
-            let base = VisualSampleEntry::try_from(view.base())?;
+            let (base, rest) = VisualSampleEntry::from_view(view.base())?;
 
             let mut esds = None;
 
-            for result in view.boxes() {
-                let rawbox = result?;
-
+            for rawbox in rest {
                 match rawbox.boxtype() {
                     BoxType::ESDS => {
                         if esds.is_some() {

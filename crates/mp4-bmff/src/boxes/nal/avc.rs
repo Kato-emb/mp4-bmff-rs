@@ -486,21 +486,20 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &AVCSampleEntryView<'_, S>) -> Result<Self> {
-            let base = VisualSampleEntry::try_from(view.base())?;
+            let (base, rest) = VisualSampleEntry::from_view(view.base())?;
 
             let mut avcc = None;
             let mut m4ds = None;
 
-            for result in view.boxes() {
-                let b = result?;
-                match b.boxtype() {
+            for rawbox in rest {
+                match rawbox.boxtype() {
                     BoxType::AVCC => {
                         if avcc.is_some() {
                             return Err(Error::new(ErrorKind::BoxDuplicate {
                                 duplicate: BoxType::AVCC,
                             }));
                         }
-                        avcc = Some(AvcCBox::decode(b.into_payload())?);
+                        avcc = Some(AvcCBox::decode(rawbox.into_payload())?);
                     }
                     BoxType::M4DS => {
                         if m4ds.is_some() {
@@ -508,7 +507,7 @@ mod owned {
                                 duplicate: BoxType::M4DS,
                             }));
                         }
-                        m4ds = Some(M4dsBox::decode(b.into_payload())?);
+                        m4ds = Some(M4dsBox::decode(rawbox.into_payload())?);
                     }
                     _ => {}
                 }
@@ -655,21 +654,20 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &AVC2SampleEntryView<'_, S>) -> Result<Self> {
-            let base = VisualSampleEntry::try_from(view.base())?;
+            let (base, rest) = VisualSampleEntry::from_view(view.base())?;
 
             let mut avcc = None;
             let mut m4ds = None;
 
-            for result in view.boxes() {
-                let b = result?;
-                match b.boxtype() {
+            for rawbox in rest {
+                match rawbox.boxtype() {
                     BoxType::AVCC => {
                         if avcc.is_some() {
                             return Err(Error::new(ErrorKind::BoxDuplicate {
                                 duplicate: BoxType::AVCC,
                             }));
                         }
-                        avcc = Some(AvcCBox::decode(b.into_payload())?);
+                        avcc = Some(AvcCBox::decode(rawbox.into_payload())?);
                     }
                     BoxType::M4DS => {
                         if m4ds.is_some() {
@@ -677,7 +675,7 @@ mod owned {
                                 duplicate: BoxType::M4DS,
                             }));
                         }
-                        m4ds = Some(M4dsBox::decode(b.into_payload())?);
+                        m4ds = Some(M4dsBox::decode(rawbox.into_payload())?);
                     }
                     _ => {}
                 }
