@@ -16,7 +16,7 @@ use crate::iter::BoxIter;
 use crate::cursor::ReadCursor;
 
 use super::esds::EsdsBoxView;
-use crate::boxes::sample_entry::SampleEntry;
+use crate::boxes::bmff::SampleEntry;
 
 /// A reference to an MPEG-4 Systems Sample Entry (`mp4s`).
 ///

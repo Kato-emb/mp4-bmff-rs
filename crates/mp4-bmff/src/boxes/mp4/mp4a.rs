@@ -16,7 +16,7 @@ use crate::iter::BoxIter;
 use crate::cursor::ReadCursor;
 
 use super::EsdsBoxView;
-use crate::boxes::sample_entry::AudioSampleEntry;
+use crate::boxes::bmff::AudioSampleEntryView;
 
 /// A reference to an MPEG-4 Audio Sample Entry (`mp4a`).
 ///
@@ -30,19 +30,18 @@ use crate::boxes::sample_entry::AudioSampleEntry;
 ///   - `esds` (required): Elementary Stream Descriptor with codec config.
 #[derive(Debug)]
 pub struct Mp4aSampleEntryView<'a> {
-    base: AudioSampleEntry,
-    content: &'a [u8],
+    base: AudioSampleEntryView<'a>,
 }
 
 impl<'a> Mp4aSampleEntryView<'a> {
     /// Returns the base Audio Sample Entry.
-    pub fn base(&self) -> &AudioSampleEntry {
+    pub fn base(&self) -> &AudioSampleEntryView<'a> {
         &self.base
     }
 
     /// Returns an iterator over the child boxes of this Mp4a Sample Entry.
     pub fn boxes(&self) -> BoxIter<'a> {
-        BoxIter::new(self.content)
+        self.base.boxes_in()
     }
 
     /// Returns the ESDS box contained in this Mp4a Sample Entry.
@@ -77,10 +76,9 @@ impl<'de> BoxDecode<'de> for Mp4aSampleEntryView<'de> {
     fn decode(bytes: &'de [u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(bytes);
 
-        let base = AudioSampleEntry::parse_in(&mut cur)?;
-        let content = cur.take(cur.remaining())?;
+        let base = AudioSampleEntryView::parse_in(&mut cur)?;
 
-        Ok(Mp4aSampleEntryView { base, content })
+        Ok(Mp4aSampleEntryView { base })
     }
 }
 
@@ -95,6 +93,7 @@ mod owned {
     use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
 
+    use crate::boxes::bmff::AudioSampleEntry;
     use crate::boxes::mp4::EsdsBox;
 
     /// An owned MPEG-4 Audio Sample Entry (`mp4a`).
@@ -146,6 +145,8 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &Mp4aSampleEntryView<'_>) -> Result<Self> {
+            let base = AudioSampleEntry::try_from(view.base())?;
+
             let mut esds = None;
 
             for result in view.boxes() {
@@ -176,10 +177,7 @@ mod owned {
                 )
             })?;
 
-            Ok(Mp4aSampleEntry {
-                base: view.base,
-                esds,
-            })
+            Ok(Mp4aSampleEntry { base, esds })
         }
     }
 
@@ -198,7 +196,7 @@ mod owned {
 
     impl BoxEncode for Mp4aSampleEntry {
         fn encoded_len(&self) -> usize {
-            AudioSampleEntry::size() + boxed_len(&self.esds)
+            self.base.encode_len() + boxed_len(&self.esds)
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
@@ -336,7 +334,7 @@ mod tests {
         let view = Mp4aSampleEntryView::decode(&payload).unwrap();
 
         let owned = Mp4aSampleEntry::try_from(&view).unwrap();
-        assert_eq!(owned.base.sample_entry().data_reference_index, 1);
+        assert_eq!(owned.base.base.data_reference_index, 1);
         assert_eq!(owned.base.channelcount, 2);
         assert_eq!(owned.esds.version, 0);
     }

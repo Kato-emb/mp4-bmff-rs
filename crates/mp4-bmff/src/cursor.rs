@@ -200,6 +200,13 @@ impl<'a> ReadCursor<'a> {
         Ok(bytes[0])
     }
 
+    #[inline]
+    #[track_caller]
+    pub(crate) fn read_i8(&mut self) -> Result<i8> {
+        let bytes = self.read_array::<1>()?;
+        Ok(i8::from_be_bytes(bytes))
+    }
+
     /// Reads a big-endian 16-bit unsigned integer from the cursor.
     #[inline]
     #[track_caller]

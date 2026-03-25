@@ -79,10 +79,6 @@
 
 mod common;
 
-mod clap;
-mod colr;
-mod pasp;
-
 mod free;
 mod ftyp;
 mod mdat;
@@ -146,6 +142,15 @@ mod tfra;
 
 mod styp;
 
+mod sample_entry;
+
+mod clap;
+mod colr;
+mod pasp;
+
+mod chnl;
+mod dmix;
+
 pub use common::{
     IsLeading, //
     SampleDependsOn,
@@ -155,9 +160,11 @@ pub use common::{
 };
 
 // Variable-size boxes - View types
+pub use chnl::{ChannelLayout, ChnlBoxView, SpeakerPosition};
 pub use co64::Co64BoxView;
 pub use colr::{ColourType, ColrBoxView};
 pub use ctts::CttsBoxView;
+pub use dmix::{DmixBoxView, DownmixCoefficient, DownmixMatrix};
 pub use dref::DrefBoxView;
 pub use dref::{DataEntryBoxView, UrlBoxView, UrnBoxView};
 pub use elng::ElngBoxView;
@@ -218,9 +225,11 @@ pub use trgr::TrgrTypeBox;
 pub use vmhd::VmhdBox;
 
 // Re-export fullbox flags
+pub use chnl::ChnlFlags;
 pub use co64::Co64Flags;
 pub use cslg::CslgFlags;
 pub use ctts::CttsFlags;
+pub use dmix::DmixFlags;
 pub use dref::DrefFlags;
 pub use dref::UrlFlags;
 pub use dref::UrnFlags;
@@ -255,6 +264,7 @@ pub use trun::TrunFlags;
 pub use vmhd::VmhdFlags;
 
 // Re-export entry structs
+// TODO: イテレータ実装は削除できる？
 pub use co64::{Co64Entry, Co64EntryIter};
 pub use ctts::{CttsEntry, CttsEntryIter};
 pub use elst::ElstEntry;
@@ -273,14 +283,22 @@ pub use stz2::{Stz2Entry, Stz2EntryIter};
 pub use tfra::{TfraEntry, TfraEntryIter};
 pub use trun::{TrunEntry, TrunEntryIter};
 
+pub use sample_entry::SampleEntry;
+#[cfg(feature = "mp4")]
+pub use sample_entry::audio::AudioSampleEntryView;
+#[cfg(any(feature = "mp4", feature = "avc", feature = "hevc"))]
+pub use sample_entry::visual::{CompressorName, VisualSampleEntryView};
+
 #[cfg(feature = "alloc")]
 mod owned_exports {
     use super::*;
 
     // Variable-size boxes - Owned types
+    pub use chnl::ChnlBox;
     pub use co64::Co64Box;
     pub use colr::ColrBox;
     pub use ctts::CttsBox;
+    pub use dmix::DmixBox;
     pub use dref::DrefBox;
     pub use dref::{DataEntryBox, UrlBox, UrnBox};
     pub use elng::ElngBox;
@@ -323,6 +341,11 @@ mod owned_exports {
 
     pub use stbl::ChunkOffset;
     pub use stbl::SampleSize;
+
+    #[cfg(feature = "mp4")]
+    pub use sample_entry::audio::AudioSampleEntry;
+    #[cfg(any(feature = "mp4", feature = "avc", feature = "hevc"))]
+    pub use sample_entry::visual::VisualSampleEntry;
 }
 
 #[cfg(feature = "alloc")]
@@ -335,6 +358,11 @@ define_box_types!(
     CLAP = b"clap",
     /// Colour Information Box
     COLR = b"colr",
+
+    /// Channel Layout Box
+    CHNL = b"chnl",
+    /// Down Mix Instructions Box
+    DMIX = b"dmix",
 
     // =========================================================================
     // ISO 14496-12 (BMFF) - File Structure and general boxes

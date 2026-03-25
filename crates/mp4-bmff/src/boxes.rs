@@ -70,5 +70,3 @@ pub mod avc {
     #[cfg(feature = "alloc")]
     pub use owned_exports::*;
 }
-
-pub mod sample_entry;

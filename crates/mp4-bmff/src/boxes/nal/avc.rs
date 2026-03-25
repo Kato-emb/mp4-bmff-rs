@@ -21,7 +21,7 @@ use crate::BoxType;
 use crate::error::*;
 use crate::iter::BoxIter;
 
-use crate::boxes::sample_entry::VisualSampleEntry;
+use crate::boxes::bmff::VisualSampleEntryView;
 use crate::formats::mpeg4::codecs::avc::AVCDecoderConfigurationRecordView;
 use crate::formats::mpeg4::systems::descriptor::iter::DescriptorIter;
 
@@ -102,20 +102,19 @@ impl<'de> BoxDecode<'de> for M4dsBoxView<'de> {
 ///   - `m4ds` (optional): MPEG-4 Extension Descriptors Box.
 #[derive(Debug)]
 pub struct AVCSampleEntryView<'a, S> {
-    base: VisualSampleEntry,
-    content: &'a [u8],
+    base: VisualSampleEntryView<'a>,
     _marker: PhantomData<S>,
 }
 
 impl<'a, S> AVCSampleEntryView<'a, S> {
     /// Returns the base Visual Sample Entry
-    pub fn base(&self) -> &VisualSampleEntry {
+    pub fn base(&self) -> &VisualSampleEntryView<'a> {
         &self.base
     }
 
     /// Returns an iterator over the child boxes of this sample entry.
     pub fn boxes(&self) -> BoxIter<'a> {
-        BoxIter::new(self.content)
+        self.base.boxes_in()
     }
 
     /// Returns the AVC Configuration Box (`avcC`) contained in this sample entry.
@@ -158,12 +157,10 @@ impl<'a, S> AVCSampleEntryView<'a, S> {
 impl<'de, S> BoxDecode<'de> for AVCSampleEntryView<'de, S> {
     fn decode(bytes: &'de [u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(bytes);
-        let base = VisualSampleEntry::parse_in(&mut cur)?;
-        let content = cur.take(cur.remaining())?;
+        let base = VisualSampleEntryView::parse_in(&mut cur)?;
 
         Ok(AVCSampleEntryView {
             base,
-            content,
             _marker: PhantomData,
         })
     }
@@ -216,20 +213,19 @@ impl BoxCodec for Avc3SampleEntryView<'_> {
 ///   - `m4ds` (optional): MPEG-4 Extension Descriptors Box.
 #[derive(Debug)]
 pub struct AVC2SampleEntryView<'a, S> {
-    base: VisualSampleEntry,
-    content: &'a [u8],
+    base: VisualSampleEntryView<'a>,
     _marker: PhantomData<S>,
 }
 
 impl<'a, S> AVC2SampleEntryView<'a, S> {
     /// Returns the base Visual Sample Entry
-    pub fn base(&self) -> &VisualSampleEntry {
+    pub fn base(&self) -> &VisualSampleEntryView<'a> {
         &self.base
     }
 
     /// Returns an iterator over the child boxes of this sample entry.
     pub fn boxes(&self) -> BoxIter<'a> {
-        BoxIter::new(self.content)
+        self.base.boxes_in()
     }
 
     /// Returns the AVC Configuration Box (`avcC`) contained in this sample entry.
@@ -272,12 +268,10 @@ impl<'a, S> AVC2SampleEntryView<'a, S> {
 impl<'de, S> BoxDecode<'de> for AVC2SampleEntryView<'de, S> {
     fn decode(bytes: &'de [u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(bytes);
-        let base = VisualSampleEntry::parse_in(&mut cur)?;
-        let content = cur.take(cur.remaining())?;
+        let base = VisualSampleEntryView::parse_in(&mut cur)?;
 
         Ok(AVC2SampleEntryView {
             base,
-            content,
             _marker: PhantomData,
         })
     }
@@ -327,6 +321,7 @@ mod owned {
     use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
 
+    use crate::boxes::bmff::VisualSampleEntry;
     use crate::formats::mpeg4::codecs::avc::AVCDecoderConfigurationRecord;
     use crate::formats::mpeg4::systems::descriptor::*;
 
@@ -491,6 +486,8 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &AVCSampleEntryView<'_, S>) -> Result<Self> {
+            let base = VisualSampleEntry::try_from(view.base())?;
+
             let mut avcc = None;
             let mut m4ds = None;
 
@@ -518,7 +515,7 @@ mod owned {
             }
 
             Ok(AVCSampleEntry {
-                base: view.base,
+                base,
                 avcc: avcc.ok_or(Error::new(ErrorKind::BoxMissing {
                     required: BoxType::AVCC,
                 }))?,
@@ -537,7 +534,7 @@ mod owned {
 
     impl<S> BoxEncode for AVCSampleEntry<S> {
         fn encoded_len(&self) -> usize {
-            let mut len = VisualSampleEntry::size() + boxed_len(&self.avcc);
+            let mut len = self.base.encode_len() + boxed_len(&self.avcc);
             if let Some(m4ds) = &self.m4ds {
                 len += boxed_len(m4ds);
             }
@@ -658,6 +655,8 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &AVC2SampleEntryView<'_, S>) -> Result<Self> {
+            let base = VisualSampleEntry::try_from(view.base())?;
+
             let mut avcc = None;
             let mut m4ds = None;
 
@@ -685,7 +684,7 @@ mod owned {
             }
 
             Ok(AVC2SampleEntry {
-                base: view.base,
+                base,
                 avcc: avcc.ok_or(Error::new(ErrorKind::BoxMissing {
                     required: BoxType::AVCC,
                 }))?,
@@ -704,7 +703,7 @@ mod owned {
 
     impl<S> BoxEncode for AVC2SampleEntry<S> {
         fn encoded_len(&self) -> usize {
-            let mut len = VisualSampleEntry::size() + boxed_len(&self.avcc);
+            let mut len = self.base.encode_len() + boxed_len(&self.avcc);
             if let Some(m4ds) = &self.m4ds {
                 len += boxed_len(m4ds);
             }
@@ -783,6 +782,7 @@ pub use owned::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::boxes::bmff::VisualSampleEntry;
 
     // Sample AVC Configuration Record (Baseline profile)
     fn sample_avcc_payload() -> [u8; 23] {

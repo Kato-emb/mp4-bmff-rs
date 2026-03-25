@@ -16,7 +16,7 @@ use crate::iter::BoxIter;
 use crate::cursor::ReadCursor;
 
 use super::esds::EsdsBoxView;
-use crate::boxes::sample_entry::VisualSampleEntry;
+use crate::boxes::bmff::VisualSampleEntryView;
 
 /// A reference to an MPEG-4 Visual Sample Entry (`mp4v`).
 ///
@@ -30,19 +30,18 @@ use crate::boxes::sample_entry::VisualSampleEntry;
 ///   - `esds` (required): Elementary Stream Descriptor with codec config.
 #[derive(Debug)]
 pub struct Mp4vSampleEntryView<'a> {
-    base: VisualSampleEntry,
-    content: &'a [u8],
+    base: VisualSampleEntryView<'a>,
 }
 
 impl<'a> Mp4vSampleEntryView<'a> {
     /// Returns the base Visual Sample Entry.
-    pub fn base(&self) -> &VisualSampleEntry {
+    pub fn base(&self) -> &VisualSampleEntryView<'a> {
         &self.base
     }
 
     /// Returns an iterator over the child boxes of this Mp4v Sample Entry.
     pub fn boxes(&self) -> BoxIter<'a> {
-        BoxIter::new(self.content)
+        self.base.boxes_in()
     }
 
     /// Returns the ESDS box contained in this Mp4v Sample Entry.
@@ -77,10 +76,9 @@ impl<'de> BoxDecode<'de> for Mp4vSampleEntryView<'de> {
     fn decode(bytes: &'de [u8]) -> Result<Self> {
         let mut cur = ReadCursor::new(bytes);
 
-        let base = VisualSampleEntry::parse_in(&mut cur)?;
-        let content = cur.take(cur.remaining())?;
+        let base = VisualSampleEntryView::parse_in(&mut cur)?;
 
-        Ok(Mp4vSampleEntryView { base, content })
+        Ok(Mp4vSampleEntryView { base })
     }
 }
 
@@ -93,6 +91,7 @@ mod owned {
     use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
 
+    use crate::boxes::bmff::VisualSampleEntry;
     use crate::boxes::mp4::EsdsBox;
 
     /// An owned MPEG-4 Visual Sample Entry (`mp4v`).
@@ -116,6 +115,8 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &Mp4vSampleEntryView<'_>) -> Result<Self> {
+            let base = VisualSampleEntry::try_from(view.base())?;
+
             let mut esds = None;
 
             for result in view.boxes() {
@@ -146,10 +147,7 @@ mod owned {
                 )
             })?;
 
-            Ok(Mp4vSampleEntry {
-                base: view.base,
-                esds,
-            })
+            Ok(Mp4vSampleEntry { base, esds })
         }
     }
 
@@ -168,7 +166,7 @@ mod owned {
 
     impl BoxEncode for Mp4vSampleEntry {
         fn encoded_len(&self) -> usize {
-            VisualSampleEntry::size() + boxed_len(&self.esds)
+            self.base.encode_len() + boxed_len(&self.esds)
         }
 
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
@@ -317,7 +315,7 @@ mod tests {
         let view = Mp4vSampleEntryView::decode(&payload).unwrap();
 
         let owned = Mp4vSampleEntry::try_from(&view).unwrap();
-        assert_eq!(owned.base.sample_entry().data_reference_index, 1);
+        assert_eq!(owned.base.base.data_reference_index, 1);
         assert_eq!(owned.base.width, 640);
         assert_eq!(owned.base.height, 480);
         assert_eq!(owned.esds.version, 0);
