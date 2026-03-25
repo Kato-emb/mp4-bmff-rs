@@ -9,6 +9,7 @@ use crate::BoxDecode;
 use crate::BoxEncode;
 use crate::BoxType;
 use crate::error::*;
+use crate::types::I8F8;
 
 use crate::cursor::ReadCursor;
 use crate::cursor::WriteCursor;
@@ -36,8 +37,8 @@ pub struct SmhdBox {
     pub version: u8,
     /// Box flags.
     pub flags: SmhdFlags,
-    /// Stereo balance as signed 8.8 fixed-point (0 = center, negative = left, positive = right).
-    pub balance: i16,
+    /// Stereo balance as signed 8.8 fixed-point (0.0 = center, negative = left, positive = right).
+    pub balance: I8F8,
 }
 
 const RESERVED: usize = 2;
@@ -55,7 +56,7 @@ impl BoxDecode<'_> for SmhdBox {
         let version = cursor.read_u8()?;
         let flags = SmhdFlags::from_be_bytes(cursor.read_array::<3>()?);
 
-        let balance = cursor.read_i16_be()?;
+        let balance = I8F8::from_raw(cursor.read_i16_be()?);
         cursor.advance(RESERVED)?;
 
         Ok(SmhdBox {
@@ -80,7 +81,7 @@ impl BoxEncode for SmhdBox {
         cursor.write_u8(self.version)?;
         cursor.write_array(&self.flags.to_be_bytes())?;
 
-        cursor.write_i16_be(self.balance)?;
+        cursor.write_i16_be(self.balance.to_raw())?;
 
         cursor.reserve_zeros(RESERVED)?;
 
@@ -108,7 +109,7 @@ mod tests {
 
         assert_eq!(smhd.version, 0);
         assert_eq!(smhd.flags.bits(), 0);
-        assert_eq!(smhd.balance, -256);
+        assert_eq!(smhd.balance, I8F8::from_raw(-256)); // -1.0 (left pan)
     }
 
     #[test]

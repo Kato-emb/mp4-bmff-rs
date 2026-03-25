@@ -9,6 +9,7 @@ use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxType;
 use crate::error::*;
+use crate::types::I16F16;
 
 use crate::cursor::ReadCursor;
 
@@ -25,18 +26,15 @@ define_box_flags!(
 ///
 /// - `segment_duration`: Duration of this edit segment in movie timescale units.
 /// - `media_time`: Starting time in media timescale (-1 indicates an empty edit).
-/// - `media_rate_integer`: Playback rate numerator (typically 1 for normal playback).
-/// - `media_rate_fraction`: Playback rate denominator (typically 0).
+/// - `media_rate`: Playback rate as signed 16.16 fixed-point (1.0 = normal forward, 0 = dwell).
 #[derive(Debug, Clone, Copy)]
 pub struct ElstEntry {
     /// Duration of this edit segment in movie timescale units.
     pub segment_duration: u64,
     /// Starting media time in media timescale units (-1 = empty edit/dwell).
     pub media_time: i64,
-    /// Playback rate, upper 16 bits of 16.16 fixed-point (1 = normal, 0 = dwell).
-    pub media_rate_integer: i16,
-    /// Playback rate, lower 16 bits of 16.16 fixed-point (typically 0).
-    pub media_rate_fraction: i16,
+    /// Playback rate as signed 16.16 fixed-point (1.0 = normal forward, 0 = dwell).
+    pub media_rate: I16F16,
 }
 
 /// A reference to an Edit List Box (`elst`).
@@ -92,8 +90,9 @@ impl<'a> ElstBoxView<'a> {
                     media_time: i64::from(i32::from_be_bytes([
                         bytes[4], bytes[5], bytes[6], bytes[7],
                     ])),
-                    media_rate_integer: i16::from_be_bytes([bytes[8], bytes[9]]),
-                    media_rate_fraction: i16::from_be_bytes([bytes[10], bytes[11]]),
+                    media_rate: I16F16::from_raw(i32::from_be_bytes([
+                        bytes[8], bytes[9], bytes[10], bytes[11],
+                    ])),
                 }
             } else {
                 ElstEntry {
@@ -105,8 +104,9 @@ impl<'a> ElstBoxView<'a> {
                         bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14],
                         bytes[15],
                     ]),
-                    media_rate_integer: i16::from_be_bytes([bytes[16], bytes[17]]),
-                    media_rate_fraction: i16::from_be_bytes([bytes[18], bytes[19]]),
+                    media_rate: I16F16::from_raw(i32::from_be_bytes([
+                        bytes[16], bytes[17], bytes[18], bytes[19],
+                    ])),
                 }
             }
         }))
@@ -241,8 +241,7 @@ mod owned {
                     cur.write_i64_be(entry.media_time)?;
                 }
 
-                cur.write_i16_be(entry.media_rate_integer)?;
-                cur.write_i16_be(entry.media_rate_fraction)?;
+                cur.write_i32_be(entry.media_rate.to_raw())?;
             }
 
             Ok(cur.position())
@@ -296,8 +295,7 @@ mod tests {
         let entry = entries.next().unwrap();
         assert_eq!(entry.segment_duration, 1000);
         assert_eq!(entry.media_time, -1);
-        assert_eq!(entry.media_rate_integer, 1);
-        assert_eq!(entry.media_rate_fraction, 0);
+        assert_eq!(entry.media_rate, I16F16::from_raw(0x00010000)); // 1.0
         assert!(entries.next().is_none());
     }
 
@@ -314,8 +312,7 @@ mod tests {
         let entry = entries.next().unwrap();
         assert_eq!(entry.segment_duration, 1000);
         assert_eq!(entry.media_time, -1);
-        assert_eq!(entry.media_rate_integer, 1);
-        assert_eq!(entry.media_rate_fraction, 0);
+        assert_eq!(entry.media_rate, I16F16::from_raw(0x00010000)); // 1.0
         assert!(entries.next().is_none());
     }
 

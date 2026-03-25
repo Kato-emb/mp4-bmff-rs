@@ -389,6 +389,15 @@ where
     }
 }
 
+impl<Storage, const FRACTIONAL: u32> Default for Fixed<Storage, FRACTIONAL>
+where
+    Storage: FixedStorage + Default,
+{
+    fn default() -> Self {
+        Fixed::from_raw(Storage::default())
+    }
+}
+
 impl<Storage, const FRACTIONAL: u32> From<Storage> for Fixed<Storage, FRACTIONAL>
 where
     Storage: FixedStorage,
