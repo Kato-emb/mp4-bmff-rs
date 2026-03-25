@@ -303,7 +303,11 @@ where
     #[allow(clippy::cast_possible_truncation)]
     pub fn from_f64(value: f64) -> Self {
         let scaled = value * pow2_f64(FRACTIONAL);
-        let rounded = if scaled >= 0.0 { scaled + 0.5 } else { scaled - 0.5 };
+        let rounded = if scaled >= 0.0 {
+            scaled + 0.5
+        } else {
+            scaled - 0.5
+        };
         Fixed::from_raw_value(rounded as i128)
     }
 

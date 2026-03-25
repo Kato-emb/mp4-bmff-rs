@@ -206,7 +206,7 @@ mod tests {
             0x00, 0x01, // colour_primaries = 1 (BT.709)
             0x00, 0x0D, // transfer_characteristics = 13 (sRGB)
             0x00, 0x01, // matrix_coefficients = 1 (BT.709)
-            0x80,       // full_range_flag = true
+            0x80, // full_range_flag = true
         ]
     }
 
@@ -255,7 +255,7 @@ mod tests {
     fn test_colr_box_view_decode_prof() {
         let data = [
             b'p', b'r', b'o', b'f', // colour_type = "prof"
-            0x01, 0x02,             // icc_profile (2 bytes)
+            0x01, 0x02, // icc_profile (2 bytes)
         ];
         let colr = ColrBoxView::decode(&data).unwrap();
 
