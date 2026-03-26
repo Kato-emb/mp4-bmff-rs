@@ -21,6 +21,7 @@ use crate::BoxType;
 use crate::error::*;
 use crate::iter::BoxIter;
 
+use crate::boxes::bmff::BtrtBox;
 use crate::boxes::bmff::VisualSampleEntryView;
 use crate::formats::mpeg4::codecs::avc::AVCDecoderConfigurationRecordView;
 use crate::formats::mpeg4::systems::descriptor::iter::DescriptorIter;
@@ -100,6 +101,7 @@ impl<'de> BoxDecode<'de> for M4dsBoxView<'de> {
 /// - Child boxes:
 ///   - `avcC` (required): AVC Configuration Box with decoder parameters.
 ///   - `m4ds` (optional): MPEG-4 Extension Descriptors Box.
+///   - `btrt` (optional): Bit Rate Box with bitrate information.
 #[derive(Debug)]
 pub struct AVCSampleEntryView<'a, S> {
     base: VisualSampleEntryView<'a>,
@@ -147,6 +149,23 @@ impl<'a, S> AVCSampleEntryView<'a, S> {
             if b.boxtype() == BoxType::M4DS {
                 let m4ds = M4dsBoxView::decode(b.into_payload())?;
                 return Ok(Some(m4ds));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Returns the Bit Rate Box (`btrt`) contained in this sample entry, if present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are multiple `btrt` boxes. The `btrt` box is optional, but if present there must be only one.
+    pub fn btrt(&self) -> Result<Option<BtrtBox>> {
+        for result in self.boxes() {
+            let b = result?;
+            if b.boxtype() == BoxType::BTRT {
+                let btrt = BtrtBox::decode(b.into_payload())?;
+                return Ok(Some(btrt));
             }
         }
 
@@ -211,6 +230,7 @@ impl BoxCodec for Avc3SampleEntryView<'_> {
 /// - Child boxes:
 ///   - `avcC` (required): AVC Configuration Box with decoder parameters.
 ///   - `m4ds` (optional): MPEG-4 Extension Descriptors Box.
+///   - `btrt` (optional): Bit Rate Box with bitrate information.
 #[derive(Debug)]
 pub struct AVC2SampleEntryView<'a, S> {
     base: VisualSampleEntryView<'a>,
@@ -258,6 +278,23 @@ impl<'a, S> AVC2SampleEntryView<'a, S> {
             if b.boxtype() == BoxType::M4DS {
                 let m4ds = M4dsBoxView::decode(b.into_payload())?;
                 return Ok(Some(m4ds));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Returns the Bit Rate Box (`btrt`) contained in this sample entry, if present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are multiple `btrt` boxes. The `btrt` box is optional, but if present there must be only one.
+    pub fn btrt(&self) -> Result<Option<BtrtBox>> {
+        for result in self.boxes() {
+            let b = result?;
+            if b.boxtype() == BoxType::BTRT {
+                let btrt = BtrtBox::decode(b.into_payload())?;
+                return Ok(Some(btrt));
             }
         }
 
@@ -448,6 +485,7 @@ mod owned {
     /// - `base`: Base Visual Sample Entry with video format properties.
     /// - `avcc`: AVC Configuration Box with decoder parameters.
     /// - `m4ds`: Optional MPEG-4 Extension Descriptors.
+    /// - `btrt`: Optional Bit Rate Box with bitrate information.
     #[derive(Debug, Clone)]
     pub struct AVCSampleEntry<S> {
         /// Base Visual Sample Entry with width, height, resolution, etc.
@@ -456,16 +494,24 @@ mod owned {
         pub avcc: AvcCBox,
         /// Optional MPEG-4 Extension Descriptors Box.
         pub m4ds: Option<M4dsBox>,
+        /// Optional Bit Rate Box with bitrate information.
+        pub btrt: Option<BtrtBox>,
         _marker: PhantomData<S>,
     }
 
     impl<S> AVCSampleEntry<S> {
         /// Creates a new AVC Sample Entry
-        pub fn new(base: VisualSampleEntry, avcc: AvcCBox, m4ds: Option<M4dsBox>) -> Self {
+        pub fn new(
+            base: VisualSampleEntry,
+            avcc: AvcCBox,
+            m4ds: Option<M4dsBox>,
+            btrt: Option<BtrtBox>,
+        ) -> Self {
             AVCSampleEntry {
                 base,
                 avcc,
                 m4ds,
+                btrt,
                 _marker: PhantomData,
             }
         }
@@ -490,6 +536,7 @@ mod owned {
 
             let mut avcc = None;
             let mut m4ds = None;
+            let mut btrt = None;
 
             for rawbox in rest {
                 match rawbox.boxtype() {
@@ -509,7 +556,15 @@ mod owned {
                         }
                         m4ds = Some(M4dsBox::decode(rawbox.into_payload())?);
                     }
-                    _ => {}
+                    BoxType::BTRT => {
+                        if btrt.is_some() {
+                            return Err(Error::new(ErrorKind::BoxDuplicate {
+                                duplicate: BoxType::BTRT,
+                            }));
+                        }
+                        btrt = Some(BtrtBox::decode(rawbox.into_payload())?);
+                    }
+                    _ => continue,
                 }
             }
 
@@ -519,6 +574,7 @@ mod owned {
                     required: BoxType::AVCC,
                 }))?,
                 m4ds,
+                btrt,
                 _marker: PhantomData,
             })
         }
@@ -538,6 +594,10 @@ mod owned {
                 len += boxed_len(m4ds);
             }
 
+            if let Some(btrt) = &self.btrt {
+                len += boxed_len(btrt);
+            }
+
             len
         }
 
@@ -548,6 +608,10 @@ mod owned {
 
             if let Some(m4ds) = &self.m4ds {
                 write_box_in(&mut cur, m4ds)?;
+            }
+
+            if let Some(btrt) = &self.btrt {
+                write_box_in(&mut cur, btrt)?;
             }
 
             Ok(cur.position())
@@ -616,6 +680,7 @@ mod owned {
     /// - `base`: Base Visual Sample Entry with video format properties.
     /// - `avcc`: AVC Configuration Box with decoder parameters.
     /// - `m4ds`: Optional MPEG-4 Extension Descriptors.
+    /// - `btrt`: Optional Bit Rate Box with bitrate information.
     #[derive(Debug, Clone)]
     pub struct AVC2SampleEntry<S> {
         /// Base Visual Sample Entry with width, height, resolution, etc.
@@ -624,16 +689,24 @@ mod owned {
         pub avcc: AvcCBox,
         /// Optional MPEG-4 Extension Descriptors Box.
         pub m4ds: Option<M4dsBox>,
+        /// Optional Bit Rate Box with bitrate information.
+        pub btrt: Option<BtrtBox>,
         _marker: PhantomData<S>,
     }
 
     impl<S> AVC2SampleEntry<S> {
         /// Creates a new AVC2 Sample Entry
-        pub fn new(base: VisualSampleEntry, avcc: AvcCBox, m4ds: Option<M4dsBox>) -> Self {
+        pub fn new(
+            base: VisualSampleEntry,
+            avcc: AvcCBox,
+            m4ds: Option<M4dsBox>,
+            btrt: Option<BtrtBox>,
+        ) -> Self {
             AVC2SampleEntry {
                 base,
                 avcc,
                 m4ds,
+                btrt,
                 _marker: PhantomData,
             }
         }
@@ -658,6 +731,7 @@ mod owned {
 
             let mut avcc = None;
             let mut m4ds = None;
+            let mut btrt = None;
 
             for rawbox in rest {
                 match rawbox.boxtype() {
@@ -677,7 +751,15 @@ mod owned {
                         }
                         m4ds = Some(M4dsBox::decode(rawbox.into_payload())?);
                     }
-                    _ => {}
+                    BoxType::BTRT => {
+                        if btrt.is_some() {
+                            return Err(Error::new(ErrorKind::BoxDuplicate {
+                                duplicate: BoxType::BTRT,
+                            }));
+                        }
+                        btrt = Some(BtrtBox::decode(rawbox.into_payload())?);
+                    }
+                    _ => continue,
                 }
             }
 
@@ -687,6 +769,7 @@ mod owned {
                     required: BoxType::AVCC,
                 }))?,
                 m4ds,
+                btrt,
                 _marker: PhantomData,
             })
         }
@@ -706,6 +789,10 @@ mod owned {
                 len += boxed_len(m4ds);
             }
 
+            if let Some(btrt) = &self.btrt {
+                len += boxed_len(btrt);
+            }
+
             len
         }
 
@@ -716,6 +803,10 @@ mod owned {
 
             if let Some(m4ds) = &self.m4ds {
                 write_box_in(&mut cur, m4ds)?;
+            }
+
+            if let Some(btrt) = &self.btrt {
+                write_box_in(&mut cur, btrt)?;
             }
 
             Ok(cur.position())
@@ -1152,10 +1243,128 @@ mod tests {
         let avcc_payload = sample_avcc_payload();
         let avcc = AvcCBox::decode(&avcc_payload).unwrap();
 
-        let entry = Avc1SampleEntry::new(base, avcc, None);
+        let entry = Avc1SampleEntry::new(base, avcc, None, None);
 
         assert_eq!(entry.base.width, 1920);
         assert_eq!(entry.base.height, 1080);
         assert!(entry.m4ds.is_none());
+        assert!(entry.btrt.is_none());
+    }
+
+    // Build btrt box with header
+    fn build_btrt_box() -> Vec<u8> {
+        vec![
+            0x00, 0x00, 0x00, 0x14, // size = 20
+            b'b', b't', b'r', b't', // type
+            0x00, 0x01, 0x00, 0x00, // buffer_size_db = 65536
+            0x00, 0x1E, 0x84, 0x80, // max_bitrate = 2000000
+            0x00, 0x0F, 0x42, 0x40, // avg_bitrate = 1000000
+        ]
+    }
+
+    #[test]
+    fn test_avc_sample_entry_view_btrt_none() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&sample_visual_sample_entry_base());
+        data.extend_from_slice(&build_avcc_box());
+
+        let view = Avc1SampleEntryView::decode(&data).unwrap();
+        assert!(view.btrt().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_avc_sample_entry_view_btrt_present() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&sample_visual_sample_entry_base());
+        data.extend_from_slice(&build_avcc_box());
+        data.extend_from_slice(&build_btrt_box());
+
+        let view = Avc1SampleEntryView::decode(&data).unwrap();
+        let btrt = view.btrt().unwrap().unwrap();
+
+        assert_eq!(btrt.buffer_size_db, 65536);
+        assert_eq!(btrt.max_bitrate, 2_000_000);
+        assert_eq!(btrt.avg_bitrate, 1_000_000);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_avc_sample_entry_with_btrt() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&sample_visual_sample_entry_base());
+        data.extend_from_slice(&build_avcc_box());
+        data.extend_from_slice(&build_btrt_box());
+
+        let entry = Avc1SampleEntry::decode(&data).unwrap();
+
+        assert!(entry.btrt.is_some());
+        let btrt = entry.btrt.unwrap();
+        assert_eq!(btrt.buffer_size_db, 65536);
+        assert_eq!(btrt.max_bitrate, 2_000_000);
+        assert_eq!(btrt.avg_bitrate, 1_000_000);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_avc_sample_entry_with_btrt_roundtrip() {
+        use crate::BoxEncode;
+
+        let mut original = Vec::new();
+        original.extend_from_slice(&sample_visual_sample_entry_base());
+        original.extend_from_slice(&build_avcc_box());
+        original.extend_from_slice(&build_btrt_box());
+
+        let entry = Avc1SampleEntry::decode(&original).unwrap();
+
+        let mut buffer = vec![0u8; entry.encoded_len()];
+        let written = entry.encode_into(&mut buffer).unwrap();
+        assert_eq!(written, original.len());
+
+        let reparsed = Avc1SampleEntry::decode(&buffer).unwrap();
+        assert!(reparsed.btrt.is_some());
+        let btrt = reparsed.btrt.unwrap();
+        assert_eq!(btrt.buffer_size_db, 65536);
+        assert_eq!(btrt.max_bitrate, 2_000_000);
+        assert_eq!(btrt.avg_bitrate, 1_000_000);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_avc_sample_entry_duplicate_btrt_error() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&sample_visual_sample_entry_base());
+        data.extend_from_slice(&build_avcc_box());
+        data.extend_from_slice(&build_btrt_box());
+        data.extend_from_slice(&build_btrt_box()); // duplicate
+
+        let err = Avc1SampleEntry::decode(&data).unwrap_err();
+        match err.kind() {
+            ErrorKind::BoxDuplicate { duplicate } => {
+                assert_eq!(duplicate, BoxType::BTRT);
+            }
+            _ => panic!("Expected BoxDuplicate error"),
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn test_avc_sample_entry_new_with_btrt() {
+        let mut base = VisualSampleEntry::default();
+        base.width = 1920;
+        base.height = 1080;
+
+        let avcc_payload = sample_avcc_payload();
+        let avcc = AvcCBox::decode(&avcc_payload).unwrap();
+
+        let btrt = BtrtBox {
+            buffer_size_db: 65536,
+            max_bitrate: 2_000_000,
+            avg_bitrate: 1_000_000,
+        };
+
+        let entry = Avc1SampleEntry::new(base, avcc, None, Some(btrt));
+
+        assert!(entry.btrt.is_some());
+        assert_eq!(entry.btrt.unwrap().max_bitrate, 2_000_000);
     }
 }

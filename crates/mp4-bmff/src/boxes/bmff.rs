@@ -157,12 +157,12 @@ mod styp;
 
 mod sample_entry;
 
+mod btrt;
+mod chnl;
 mod clap;
 mod colr;
-mod pasp;
-
-mod chnl;
 mod dmix;
+mod pasp;
 
 pub use common::{
     IsLeading, //
@@ -220,6 +220,7 @@ pub use tref::TrefBoxView;
 pub use trgr::TrgrBoxView;
 
 // Fixed-size boxes (Copy types, no View/Owned distinction)
+pub use btrt::BtrtBox;
 pub use clap::ClapBox;
 pub use cslg::CslgBox;
 pub use hmhd::HmhdBox;
@@ -373,11 +374,12 @@ define_box_types!(
     CLAP = b"clap",
     /// Colour Information Box
     COLR = b"colr",
-
     /// Channel Layout Box
     CHNL = b"chnl",
     /// Down Mix Instructions Box
     DMIX = b"dmix",
+    /// Bit Rate Box
+    BTRT = b"btrt",
 
     // =========================================================================
     // ISO 14496-12 (BMFF) - File Structure and general boxes
