@@ -30,7 +30,7 @@ define_box_flags!(
 ///
 /// - `version`: Box version (should be 0).
 /// - `flags`: Reserved (should be 0).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct NmhdBox {
     /// Box version (should be 0).
     pub version: u8,

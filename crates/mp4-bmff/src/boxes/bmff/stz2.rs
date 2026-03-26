@@ -186,7 +186,7 @@ mod owned {
     /// - `version`: Box version (should be 0).
     /// - `flags`: Reserved (should be 0).
     /// - `entries`: Vector of sample size entries. The field size is determined by the maximum sample size in the entries.
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct Stz2Box {
         /// Box version (should be 0).
         pub version: u8,
@@ -194,16 +194,6 @@ mod owned {
         pub flags: Stz2Flags,
         /// Array of sample size entries.
         pub entries: Vec<Stz2Entry>,
-    }
-
-    impl Default for Stz2Box {
-        fn default() -> Self {
-            Stz2Box {
-                version: 0,
-                flags: Stz2Flags::empty(),
-                entries: Vec::new(),
-            }
-        }
     }
 
     impl Stz2Box {

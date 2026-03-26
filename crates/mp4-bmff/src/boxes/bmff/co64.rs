@@ -123,7 +123,7 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     /// An owned Chunk Large Offset Box (`co64`).
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct Co64Box {
         /// Box version (should be 0).
         pub version: u8,
@@ -131,16 +131,6 @@ mod owned {
         pub flags: Co64Flags,
         /// Array of 64-bit chunk offsets.
         pub entries: Vec<Co64Entry>,
-    }
-
-    impl Default for Co64Box {
-        fn default() -> Self {
-            Co64Box {
-                version: 0,
-                flags: Co64Flags::empty(),
-                entries: Vec::new(),
-            }
-        }
     }
 
     impl From<&Co64BoxView<'_>> for Co64Box {

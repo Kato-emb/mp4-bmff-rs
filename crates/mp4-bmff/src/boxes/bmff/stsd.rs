@@ -107,7 +107,7 @@ mod owned {
     /// Note: Sample entries are stored as [`RawBoxOwned`] because the specific
     /// entry format varies by codec. Use codec-specific parsers to decode
     /// individual entries (e.g., `Mp4aBox` for MPEG-4 audio, `Avc1Box` for H.264).
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct StsdBox {
         /// Box version (should be 0).
         pub version: u8,
@@ -115,16 +115,6 @@ mod owned {
         pub flags: StsdFlags,
         /// Sample entries describing the formats used in this track.
         pub entries: Vec<RawBoxOwned>,
-    }
-
-    impl Default for StsdBox {
-        fn default() -> Self {
-            StsdBox {
-                version: 0,
-                flags: StsdFlags::empty(),
-                entries: Vec::new(),
-            }
-        }
     }
 
     impl TryFrom<&StsdBoxView<'_>> for StsdBox {

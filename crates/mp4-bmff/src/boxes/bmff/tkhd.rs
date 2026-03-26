@@ -4,6 +4,8 @@
 //! including its unique identifier, duration, and visual presentation
 //! properties (width, height, transformation matrix).
 
+use core::num::NonZeroU32;
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -84,17 +86,19 @@ impl Default for TkhdBox {
     fn default() -> Self {
         TkhdBox {
             version: 0,
-            flags: TkhdFlags::empty(),
+            flags: TkhdFlags::TRACK_ENABLED
+                | TkhdFlags::TRACK_IN_MOVIE
+                | TkhdFlags::TRACK_IN_PREVIEW,
             creation_time: QuickTimeDateTime::default(),
             modification_time: QuickTimeDateTime::default(),
             track_id: 1, // non-zero
             duration: 0,
             layer: 0,
             alternate_group: 0,
-            volume: U8F8::from_raw(0x0000),
+            volume: U8F8::default(), // 0.0 (muted)
             matrix: Matrix::identity(),
-            width: U16F16::from_raw(0x00000000),
-            height: U16F16::from_raw(0x00000000),
+            width: U16F16::default(),  // 0x00000000
+            height: U16F16::default(), // 0x00000000
         }
     }
 }
@@ -106,6 +110,20 @@ impl TkhdBox {
     const RESERVED_1: usize = 8;
     /// `unsigned int(16) reserved = 0`
     const RESERVED_2: usize = 2;
+
+    /// Creates a new `TkhdBox` with the specified track ID and duration.
+    ///
+    /// The `version` field is automatically set to 1 if the duration exceeds 32 bits.
+    pub fn new(track_id: NonZeroU32, duration: u64) -> Self {
+        let version = if duration > u64::from(u32::MAX) { 1 } else { 0 };
+
+        TkhdBox {
+            version,
+            track_id: track_id.get(),
+            duration,
+            ..Default::default()
+        }
+    }
 }
 
 impl BoxCodec for TkhdBox {

@@ -131,7 +131,7 @@ mod owned {
     /// - `version`: Box version (should be 0).
     /// - `flags`: Reserved (should be 0).
     /// - `entries`: File offsets for each chunk.
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct StcoBox {
         /// Box version (should be 0).
         pub version: u8,
@@ -139,16 +139,6 @@ mod owned {
         pub flags: StcoFlags,
         /// File offsets of each chunk (32-bit).
         pub entries: Vec<StcoEntry>,
-    }
-
-    impl Default for StcoBox {
-        fn default() -> Self {
-            StcoBox {
-                version: 0,
-                flags: StcoFlags::empty(),
-                entries: Vec::new(),
-            }
-        }
     }
 
     impl From<&StcoBoxView<'_>> for StcoBox {

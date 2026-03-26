@@ -186,6 +186,28 @@ mod owned {
         pub entries: Vec<ElstEntry>,
     }
 
+    impl ElstBox {
+        /// Creates a new `ElstBox` with the given entries.
+        ///
+        /// Automatically determines the appropriate version based on the entry values.
+        pub fn new(entries: Vec<ElstEntry>) -> Self {
+            let version = if entries.iter().any(|e| {
+                e.segment_duration > u64::from(u32::MAX)
+                    || e.media_time > i64::from(i32::MAX)
+                    || e.media_time < i64::from(i32::MIN)
+            }) {
+                1
+            } else {
+                0
+            };
+            ElstBox {
+                version,
+                flags: ElstFlags::empty(),
+                entries,
+            }
+        }
+    }
+
     impl TryFrom<&ElstBoxView<'_>> for ElstBox {
         type Error = Error;
 

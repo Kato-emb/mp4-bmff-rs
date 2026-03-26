@@ -81,7 +81,7 @@ mod owned {
     /// # Structure
     ///
     /// - `elst`: Edit List Box containing the timeline mapping entries.
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct EdtsBox {
         /// Edit List Box defining how track time maps to media time.
         pub elst: Option<ElstBox>,

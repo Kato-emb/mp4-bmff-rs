@@ -79,7 +79,9 @@ mod owned {
     use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
 
+    use crate::boxes::bmff::DataEntryBox;
     use crate::boxes::bmff::DrefBox;
+    use crate::boxes::bmff::UrlBox;
 
     /// An owned Data Information Box (`dinf`).
     ///
@@ -93,6 +95,18 @@ mod owned {
     pub struct DinfBox {
         /// The Data Reference Box contained in this `dinf` box.
         pub dref: DrefBox,
+    }
+
+    impl DinfBox {
+        /// Creates a new `DinfBox` with a self-contained URL entry.
+        pub fn self_contained() -> Self {
+            DinfBox {
+                dref: DrefBox {
+                    entries: alloc::vec![DataEntryBox::Url(UrlBox::new_self_contained())],
+                    ..Default::default()
+                },
+            }
+        }
     }
 
     impl TryFrom<&DinfBoxView<'_>> for DinfBox {

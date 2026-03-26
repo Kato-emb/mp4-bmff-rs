@@ -529,7 +529,7 @@ mod owned {
     /// - `version`: Box version (should be 0).
     /// - `flags`: Reserved (should be 0).
     /// - `entries`: URL and/or URN boxes describing data locations.
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct DrefBox {
         /// Box version (should be 0).
         pub version: u8,

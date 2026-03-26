@@ -106,6 +106,12 @@ impl LanguageCode {
     }
 }
 
+impl Default for LanguageCode {
+    fn default() -> Self {
+        Self::UNDETERMINED
+    }
+}
+
 impl fmt::Debug for LanguageCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("LanguageCode(\"")?;

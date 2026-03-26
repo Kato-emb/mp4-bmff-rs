@@ -158,6 +158,20 @@ mod owned {
         pub name: String,
     }
 
+    impl HdlrBox {
+        /// Creates a new `HdlrBox` with the specified handler type and name.
+        ///
+        /// The `version` is set to 0 and `flags` are set to 0 by default.
+        pub fn new(handler_type: FourCC) -> Self {
+            HdlrBox {
+                version: 0,
+                flags: HdlrFlags::default(),
+                handler_type,
+                name: String::new(),
+            }
+        }
+    }
+
     impl From<&HdlrBoxView<'_>> for HdlrBox {
         fn from(view: &HdlrBoxView<'_>) -> Self {
             HdlrBox {

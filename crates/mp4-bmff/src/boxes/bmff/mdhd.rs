@@ -5,6 +5,8 @@
 //! the entire presentation, each `mdhd` describes a single media track's
 //! timescale, duration, and language.
 
+use core::num::NonZeroU32;
+
 use crate::BoxCodec;
 use crate::BoxDecode;
 use crate::BoxEncode;
@@ -36,7 +38,7 @@ define_box_flags!(
 /// - `timescale`: Number of time units per second for this media.
 /// - `duration`: Duration of the media in timescale units.
 /// - `language`: ISO-639-2/T three-character language code.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct MdhdBox {
     /// Box version (0 or 1).
     pub version: u8,
@@ -54,22 +56,26 @@ pub struct MdhdBox {
     pub language: LanguageCode,
 }
 
-impl Default for MdhdBox {
-    fn default() -> Self {
+impl MdhdBox {
+    /// `unsigned int(16) pre_defined = 0`
+    const PRE_DEFINED: usize = 2;
+
+    /// Creates a new `MdhdBox` with the specified timescale, duration, and language.
+    ///
+    /// The `version` field is automatically set based on the duration:
+    /// if the duration exceeds the maximum value for 32 bits, version 1 is used to allow 64-bit duration.
+    pub fn new(timescale: NonZeroU32, duration: u64, language: LanguageCode) -> Self {
+        let version = if duration > u64::from(u32::MAX) { 1 } else { 0 };
+
         MdhdBox {
-            version: 0,
-            flags: MdhdFlags::empty(),
-            creation_time: QuickTimeDateTime::default(),
-            modification_time: QuickTimeDateTime::default(),
-            timescale: 0,
-            duration: 0,
-            language: LanguageCode::UNDETERMINED,
+            version,
+            timescale: timescale.get(),
+            duration,
+            language,
+            ..Default::default()
         }
     }
 }
-
-/// `unsigned int(16) pre_defined = 0`
-const PRE_DEFINED: usize = 2;
 
 impl BoxCodec for MdhdBox {
     fn boxtype(&self) -> BoxType {
@@ -135,7 +141,7 @@ impl BoxDecode<'_> for MdhdBox {
         })?;
 
         // Skip pre_defined
-        cur.advance(PRE_DEFINED)?;
+        cur.advance(Self::PRE_DEFINED)?;
 
         Ok(MdhdBox {
             version,
@@ -159,7 +165,7 @@ impl BoxEncode for MdhdBox {
         };
 
         len += 2; // language (2 bytes)
-        len += PRE_DEFINED; // pre_defined (2 bytes)
+        len += Self::PRE_DEFINED; // pre_defined (2 bytes)
         len
     }
 
@@ -208,7 +214,7 @@ impl BoxEncode for MdhdBox {
         cur.write_u16_be(self.language.to_packed())?;
 
         // Write pre_defined (2 bytes)
-        cur.reserve_zeros(PRE_DEFINED)?;
+        cur.reserve_zeros(Self::PRE_DEFINED)?;
 
         Ok(cur.position())
     }

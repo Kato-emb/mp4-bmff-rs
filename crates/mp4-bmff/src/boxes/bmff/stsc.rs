@@ -149,7 +149,7 @@ mod owned {
     /// - `version`: Box version (should be 0).
     /// - `flags`: Reserved (should be 0).
     /// - `entries`: Sample-to-chunk mapping entries.
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct StscBox {
         /// Box version (should be 0).
         pub version: u8,
@@ -157,16 +157,6 @@ mod owned {
         pub flags: StscFlags,
         /// Entries mapping chunk ranges to their sample configurations.
         pub entries: Vec<StscEntry>,
-    }
-
-    impl Default for StscBox {
-        fn default() -> Self {
-            Self {
-                version: 0,
-                flags: StscFlags::empty(),
-                entries: Vec::new(),
-            }
-        }
     }
 
     impl From<&StscBoxView<'_>> for StscBox {

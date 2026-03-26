@@ -142,7 +142,7 @@ mod owned {
     /// - `flags`: Reserved (should be 0).
     /// - `sample_size`: Default size if uniform, 0 for variable sizes.
     /// - `entries`: Individual sample sizes (when `sample_size` is 0).
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct StszBox {
         /// Box version (should be 0).
         pub version: u8,
@@ -160,16 +160,6 @@ mod owned {
                     .iter()
                     .all(|e| e.entry_size == first.entry_size),
                 None => false,
-            }
-        }
-    }
-
-    impl Default for StszBox {
-        fn default() -> Self {
-            StszBox {
-                version: 0,
-                flags: StszFlags::empty(),
-                entries: Vec::new(),
             }
         }
     }

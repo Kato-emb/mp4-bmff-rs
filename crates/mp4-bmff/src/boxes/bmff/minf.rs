@@ -12,6 +12,7 @@ use crate::error::*;
 use crate::iter::BoxIter;
 
 use super::DinfBoxView;
+use super::HmhdBox;
 use super::NmhdBox;
 use super::SmhdBox;
 use super::StblBoxView;
@@ -136,6 +137,23 @@ impl<'a> MinfBoxView<'a> {
 
         Ok(None)
     }
+
+    /// Returns the Hint Media Header Box (`hmhd`) contained in this `minf` box, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data is malformed or too short.
+    pub fn hmhd(&self) -> Result<Option<HmhdBox>> {
+        for b in self.boxes() {
+            let b = b?;
+            if b.boxtype() == BoxType::HMHD {
+                let hmhd = HmhdBox::decode(b.payload())?;
+                return Ok(Some(hmhd));
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 impl BoxCodec for MinfBoxView<'_> {
@@ -174,7 +192,8 @@ mod owned {
         Vmhd(VmhdBox),
         /// Sound Media Header Box (`smhd`) - for audio tracks.
         Smhd(SmhdBox),
-        // Hmhd - Hint Media Header Box (not yet implemented)
+        /// Hint Media Header Box (`hmhd`) - for hint tracks.
+        Hmhd(HmhdBox),
     }
 
     /// An owned Media Information Box (`minf`).
@@ -244,6 +263,18 @@ mod owned {
                         }
                         let smhd_box = SmhdBox::decode(rawbox.payload())?;
                         media_header = Some(MediaHeaderBox::Smhd(smhd_box));
+                    }
+                    BoxType::HMHD => {
+                        if media_header.is_some() {
+                            return Err(Error::in_box(
+                                ErrorKind::BoxDuplicate {
+                                    duplicate: BoxType::HMHD,
+                                },
+                                BoxType::MINF,
+                            ));
+                        }
+                        let hmhd_box = HmhdBox::decode(rawbox.payload())?;
+                        media_header = Some(MediaHeaderBox::Hmhd(hmhd_box));
                     }
                     BoxType::STBL => {
                         if stbl.is_some() {
@@ -328,6 +359,7 @@ mod owned {
                 MediaHeaderBox::Nmhd(nmhd) => boxed_len(nmhd),
                 MediaHeaderBox::Vmhd(vmhd) => boxed_len(vmhd),
                 MediaHeaderBox::Smhd(smhd) => boxed_len(smhd),
+                MediaHeaderBox::Hmhd(hmhd) => boxed_len(hmhd),
             }) + boxed_len(&self.stbl)
                 + boxed_len(&self.dinf)
         }
@@ -344,6 +376,9 @@ mod owned {
                 }
                 MediaHeaderBox::Smhd(smhd) => {
                     write_box_in(&mut cur, smhd)?;
+                }
+                MediaHeaderBox::Hmhd(hmhd) => {
+                    write_box_in(&mut cur, hmhd)?;
                 }
             }
 
