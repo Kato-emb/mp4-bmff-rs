@@ -111,6 +111,7 @@ mod mdhd;
 mod mdia;
 
 mod elng;
+mod hmhd;
 mod minf;
 mod nmhd;
 mod smhd;
@@ -221,6 +222,7 @@ pub use trgr::TrgrBoxView;
 // Fixed-size boxes (Copy types, no View/Owned distinction)
 pub use clap::ClapBox;
 pub use cslg::CslgBox;
+pub use hmhd::HmhdBox;
 pub use mdhd::MdhdBox;
 pub use mehd::MehdBox;
 pub use mfhd::MfhdBox;
@@ -248,6 +250,7 @@ pub use dref::UrnFlags;
 pub use elng::ElngFlags;
 pub use elst::ElstFlags;
 pub use hdlr::HdlrFlags;
+pub use hmhd::HmhdFlags;
 pub use mdhd::MdhdFlags;
 pub use mehd::MehdFlags;
 pub use mfhd::MfhdFlags;
