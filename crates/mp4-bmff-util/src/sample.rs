@@ -98,3 +98,29 @@ impl<T: AsRef<[u8]>> Sample<T> {
         }
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct SampleEntry {
+    pub(crate) duration: Duration,
+    pub(crate) composition_time_offset: Option<i32>,
+    pub(crate) is_sync: bool,
+    pub(crate) size: u32,
+}
+
+#[derive(Debug)]
+pub(crate) struct Chunk {
+    pub(crate) offset: u64,
+    pub(crate) entries: Vec<SampleEntry>,
+}
+
+#[derive(Debug)]
+pub(crate) struct Fragment {
+    pub(crate) dts_ns: u64,
+    pub(crate) data_offset: u64,
+    pub(crate) entries: Vec<SampleEntry>,
+}
+
+#[derive(Debug)]
+pub struct SampleTable {
+    pub(crate) chunks: Vec<Chunk>,
+}
