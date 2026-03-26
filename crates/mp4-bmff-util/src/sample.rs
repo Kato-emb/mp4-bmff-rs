@@ -4,6 +4,9 @@ use core::num::NonZeroU32;
 use core::time::Duration;
 
 use alloc::vec::Vec;
+use mp4_bmff::boxes::bmff::{StblBox, StsdBox};
+
+use crate::mux::MuxError;
 
 /// Represents a media sample in an MP4 file, containing metadata and sample data.
 #[derive(Debug)]
@@ -123,4 +126,21 @@ pub(crate) struct Fragment {
 #[derive(Debug)]
 pub struct SampleTable {
     pub(crate) chunks: Vec<Chunk>,
+}
+
+impl SampleTable {
+    pub(crate) fn media_duration(&self) -> Duration {
+        self.chunks
+            .iter()
+            .flat_map(|chunk| chunk.entries.iter())
+            .fold(Duration::ZERO, |acc, entry| acc + entry.duration)
+    }
+
+    pub(crate) fn build_stbl(
+        &self,
+        stsd: StsdBox,
+        media_timescale: NonZeroU32,
+    ) -> Result<StblBox, MuxError> {
+        todo!()
+    }
 }

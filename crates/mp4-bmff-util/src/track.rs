@@ -15,6 +15,7 @@ use mp4_bmff::types::{
 };
 
 use crate::mux::MuxError;
+use crate::sample::SampleTable;
 
 fn duration_to_ticks(duration: Duration, timescale: u32) -> Option<u64> {
     let timescale = u64::from(timescale);
@@ -335,22 +336,13 @@ impl Track {
         Ok(mdhd)
     }
 
-    fn build_stsd(&self) -> Result<StsdBox, MuxError> {
-        Ok(StsdBox {
+    fn build_minf(&self, sample_table: &SampleTable) -> Result<MinfBox, MuxError> {
+        let media_header = self.media.media_header();
+        let stsd = StsdBox {
             entries: alloc::vec![self.media.to_raw_box()?],
             ..Default::default()
-        })
-    }
-
-    fn build_stbl(&self) -> Result<StblBox, MuxError> {
-        let stsd = self.build_stsd()?;
-
-        todo!()
-    }
-
-    fn build_minf(&self) -> Result<MinfBox, MuxError> {
-        let media_header = self.media.media_header();
-        let stbl = self.build_stbl()?;
+        };
+        let stbl = sample_table.build_stbl(stsd, self.timescale)?;
         let dinf = DinfBox::self_contained();
 
         Ok(MinfBox {
@@ -360,10 +352,14 @@ impl Track {
         })
     }
 
-    fn build_mdia(&self, media_duration: Duration) -> Result<MdiaBox, MuxError> {
+    fn build_mdia(
+        &self,
+        media_duration: Duration,
+        sample_table: &SampleTable,
+    ) -> Result<MdiaBox, MuxError> {
         let mdhd = self.build_mdhd(media_duration)?;
         let hdlr = HdlrBox::new(self.media.handler_type());
-        let minf = self.build_minf()?;
+        let minf = self.build_minf(sample_table)?;
 
         Ok(MdiaBox {
             mdhd,
@@ -403,10 +399,11 @@ impl Track {
     pub(crate) fn build_trak(
         &self,
         movie_timescale: NonZeroU32,
-        media_duration: Duration,
+        sample_table: &SampleTable,
     ) -> Result<TrakBox, MuxError> {
+        let media_duration = sample_table.media_duration();
         let tkhd = self.build_tkhd(movie_timescale, media_duration)?;
-        let mdia = self.build_mdia(media_duration)?;
+        let mdia = self.build_mdia(media_duration, sample_table)?;
         let edts = self.build_edts(movie_timescale)?;
 
         Ok(TrakBox {
@@ -419,8 +416,9 @@ impl Track {
     }
 
     pub(crate) fn build_init_trak(&self, movie_timescale: NonZeroU32) -> Result<TrakBox, MuxError> {
+        let sample_table = SampleTable { chunks: Vec::new() };
         let tkhd = self.build_tkhd(movie_timescale, Duration::from_secs(0))?;
-        let mdia = self.build_mdia(Duration::from_secs(0))?;
+        let mdia = self.build_mdia(sample_table.media_duration(), &sample_table)?;
         let edts = None; // Init tracks typically do not have edit lists
 
         Ok(TrakBox {
