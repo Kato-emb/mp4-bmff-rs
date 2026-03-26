@@ -288,7 +288,7 @@ mod owned {
     }
 
     impl VisualSampleEntry {
-        pub(crate) fn from_view<'a>(
+        pub(crate) fn try_parse_view<'a>(
             view: &VisualSampleEntryView<'a>,
         ) -> Result<(Self, Vec<RawBoxRef<'a>>)> {
             let mut colr = None;
@@ -534,7 +534,7 @@ mod tests {
         let data = raw_data();
         let mut cur = ReadCursor::new(&data);
         let view = VisualSampleEntryView::parse_in(&mut cur).unwrap();
-        let (owned, _) = VisualSampleEntry::from_view(&view).unwrap();
+        let (owned, _) = VisualSampleEntry::try_parse_view(&view).unwrap();
 
         assert_eq!(owned.base.data_reference_index, 1);
         assert_eq!(owned.width, 1280);
@@ -558,7 +558,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&original);
         let view = VisualSampleEntryView::parse_in(&mut cur).unwrap();
-        let (owned, _) = VisualSampleEntry::from_view(&view).unwrap();
+        let (owned, _) = VisualSampleEntry::try_parse_view(&view).unwrap();
 
         let mut encoded = vec![0u8; owned.encode_len()];
         let mut write_cur = crate::cursor::WriteCursor::new(&mut encoded);

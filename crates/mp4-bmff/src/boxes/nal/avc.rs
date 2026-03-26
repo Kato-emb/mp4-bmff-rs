@@ -486,7 +486,7 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &AVCSampleEntryView<'_, S>) -> Result<Self> {
-            let (base, rest) = VisualSampleEntry::from_view(view.base())?;
+            let (base, rest) = VisualSampleEntry::try_parse_view(view.base())?;
 
             let mut avcc = None;
             let mut m4ds = None;
@@ -654,7 +654,7 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &AVC2SampleEntryView<'_, S>) -> Result<Self> {
-            let (base, rest) = VisualSampleEntry::from_view(view.base())?;
+            let (base, rest) = VisualSampleEntry::try_parse_view(view.base())?;
 
             let mut avcc = None;
             let mut m4ds = None;

@@ -115,7 +115,7 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &Mp4vSampleEntryView<'_>) -> Result<Self> {
-            let (base, rest) = VisualSampleEntry::from_view(view.base())?;
+            let (base, rest) = VisualSampleEntry::try_parse_view(view.base())?;
 
             let mut esds = None;
 

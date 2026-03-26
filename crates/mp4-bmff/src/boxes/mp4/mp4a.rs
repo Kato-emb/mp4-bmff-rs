@@ -145,7 +145,7 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &Mp4aSampleEntryView<'_>) -> Result<Self> {
-            let (base, rest) = AudioSampleEntry::from_view(view.base())?;
+            let (base, rest) = AudioSampleEntry::try_parse_view(view.base())?;
 
             let mut esds = None;
 

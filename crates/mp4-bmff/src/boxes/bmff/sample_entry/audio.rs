@@ -166,7 +166,7 @@ mod owned {
     }
 
     impl AudioSampleEntry {
-        pub(crate) fn from_view<'a>(
+        pub(crate) fn try_parse_view<'a>(
             view: &AudioSampleEntryView<'a>,
         ) -> Result<(Self, Vec<RawBoxRef<'a>>)> {
             let mut chnl = None;
@@ -376,7 +376,7 @@ mod tests {
         let data = raw_data();
         let mut cur = ReadCursor::new(&data);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let (owned, _) = AudioSampleEntry::from_view(&view).unwrap();
+        let (owned, _) = AudioSampleEntry::try_parse_view(&view).unwrap();
 
         assert_eq!(owned.base.data_reference_index, 1);
         assert_eq!(owned.channelcount, 2);
@@ -393,7 +393,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&data);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let (owned, _) = AudioSampleEntry::from_view(&view).unwrap();
+        let (owned, _) = AudioSampleEntry::try_parse_view(&view).unwrap();
 
         assert!(owned.chnl.is_some());
     }
@@ -407,7 +407,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&original);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let (owned, _) = AudioSampleEntry::from_view(&view).unwrap();
+        let (owned, _) = AudioSampleEntry::try_parse_view(&view).unwrap();
 
         let mut encoded = vec![0u8; owned.encode_len()];
         let mut write_cur = crate::cursor::WriteCursor::new(&mut encoded);
@@ -426,7 +426,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&data);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let (owned, _) = AudioSampleEntry::from_view(&view).unwrap();
+        let (owned, _) = AudioSampleEntry::try_parse_view(&view).unwrap();
 
         assert_eq!(owned.dmix.len(), 2);
     }
@@ -441,7 +441,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&original);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let (owned, _) = AudioSampleEntry::from_view(&view).unwrap();
+        let (owned, _) = AudioSampleEntry::try_parse_view(&view).unwrap();
 
         let mut encoded = vec![0u8; owned.encode_len()];
         let mut write_cur = crate::cursor::WriteCursor::new(&mut encoded);
@@ -460,7 +460,7 @@ mod tests {
 
         let mut cur = ReadCursor::new(&data);
         let view = AudioSampleEntryView::parse_in(&mut cur).unwrap();
-        let err = AudioSampleEntry::from_view(&view).unwrap_err();
+        let err = AudioSampleEntry::try_parse_view(&view).unwrap_err();
 
         match err.kind() {
             ErrorKind::BoxDuplicate { duplicate } => {
