@@ -351,11 +351,13 @@ mod owned {
     use crate::cursor::WriteCursor;
 
     use crate::boxes::bmff::Co64Box;
+    use crate::boxes::bmff::Co64Entry;
     use crate::boxes::bmff::CttsBox;
     use crate::boxes::bmff::SbgpBox;
     use crate::boxes::bmff::SdtpBox;
     use crate::boxes::bmff::SgpdBox;
     use crate::boxes::bmff::StcoBox;
+    use crate::boxes::bmff::StcoEntry;
     use crate::boxes::bmff::StdpBox;
     use crate::boxes::bmff::StscBox;
     use crate::boxes::bmff::StsdBox;
@@ -375,12 +377,24 @@ mod owned {
     }
 
     impl SampleSize {
-        /// Returns the number of sample size entries stored in this `SampleSize`, which is the number of entries in the underlying `stsz` or `stz2` box.
-        pub fn entries_count(&self) -> usize {
+        /// Returns the total number of samples described by this `SampleSize`.
+        pub fn sample_count(&self) -> u32 {
             match self {
-                SampleSize::Stsz(stsz) => stsz.entries.len(),
-                SampleSize::Stz2(stz2) => stz2.entries.len(),
+                SampleSize::Stsz(stsz) => stsz.sample_count,
+                SampleSize::Stz2(stz2) => stz2.entries.len() as u32,
             }
+        }
+    }
+
+    impl From<StszBox> for SampleSize {
+        fn from(stsz: StszBox) -> Self {
+            SampleSize::Stsz(stsz)
+        }
+    }
+
+    impl From<Stz2Box> for SampleSize {
+        fn from(stz2: Stz2Box) -> Self {
+            SampleSize::Stz2(stz2)
         }
     }
 
@@ -400,6 +414,51 @@ mod owned {
                 ChunkOffset::Stco(stco) => stco.entries.len(),
                 ChunkOffset::Co64(co64) => co64.entries.len(),
             }
+        }
+
+        /// Creates a `ChunkOffset` from a slice of chunk offsets. If any offset exceeds the maximum value for a 32-bit unsigned integer, a `co64` box will be created; otherwise, an `stco` box will be used.
+        pub fn from_offsets(offsets: &[u64]) -> Self {
+            if offsets.iter().any(|&offset| offset > u32::MAX as u64) {
+                let co64_entries = offsets
+                    .iter()
+                    .map(|&offset| Co64Entry {
+                        chunk_offset: offset,
+                    })
+                    .collect();
+                ChunkOffset::Co64(Co64Box {
+                    entries: co64_entries,
+                    ..Default::default()
+                })
+            } else {
+                let stco_entries = offsets
+                    .iter()
+                    .map(|&offset| StcoEntry {
+                        chunk_offset: offset as u32,
+                    })
+                    .collect();
+                ChunkOffset::Stco(StcoBox {
+                    entries: stco_entries,
+                    ..Default::default()
+                })
+            }
+        }
+    }
+
+    impl From<StcoBox> for ChunkOffset {
+        fn from(stco: StcoBox) -> Self {
+            ChunkOffset::Stco(stco)
+        }
+    }
+
+    impl From<Co64Box> for ChunkOffset {
+        fn from(co64: Co64Box) -> Self {
+            ChunkOffset::Co64(co64)
+        }
+    }
+
+    impl From<&[u64]> for ChunkOffset {
+        fn from(offsets: &[u64]) -> Self {
+            ChunkOffset::from_offsets(offsets)
         }
     }
 

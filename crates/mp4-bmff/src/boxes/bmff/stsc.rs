@@ -159,6 +159,30 @@ mod owned {
         pub entries: Vec<StscEntry>,
     }
 
+    impl StscBox {
+        /// Adds a new entry to the Sample to Chunk Box (`stsc`).
+        pub fn push(
+            &mut self,
+            first_chunk: u32,
+            samples_per_chunk: u32,
+            sample_description_index: u32,
+        ) {
+            if let Some(last) = self.entries.last() {
+                if last.samples_per_chunk == samples_per_chunk
+                    && last.sample_description_index == sample_description_index
+                {
+                    return;
+                }
+            }
+
+            self.entries.push(StscEntry {
+                first_chunk,
+                samples_per_chunk,
+                sample_description_index,
+            });
+        }
+    }
+
     impl From<&StscBoxView<'_>> for StscBox {
         fn from(view: &StscBoxView<'_>) -> Self {
             let entries = view.entries().collect();

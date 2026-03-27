@@ -134,7 +134,7 @@ mod owned {
     /// - `version`: Box version (should be 0).
     /// - `flags`: Reserved (should be 0).
     /// - `entries`: Sync sample numbers (1-based).
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct StssBox {
         /// Box version (should be 0).
         pub version: u8,
@@ -144,13 +144,10 @@ mod owned {
         pub entries: Vec<StssEntry>,
     }
 
-    impl Default for StssBox {
-        fn default() -> Self {
-            StssBox {
-                version: 0,
-                flags: StssFlags::empty(),
-                entries: Vec::new(),
-            }
+    impl StssBox {
+        /// Adds a new sync sample entry to the Sync Sample Box (`stss`).
+        pub fn push(&mut self, sample_number: u32) {
+            self.entries.push(StssEntry { sample_number });
         }
     }
 

@@ -159,6 +159,35 @@ mod owned {
                 .map(|e| e.sample_count as u64 * e.sample_delta as u64)
                 .sum()
         }
+
+        /// Adds a sample with the given duration to the box, using run-length encoding.
+        pub fn push(&mut self, sample_delta: u32) {
+            if let Some(last) = self.entries.last_mut() {
+                if last.sample_delta == sample_delta {
+                    // Extend the current run of samples with the same duration.
+                    last.sample_count += 1;
+                    return;
+                }
+            }
+
+            // Start a new run of samples with the given duration.
+            self.entries.push(SttsEntry {
+                sample_count: 1,
+                sample_delta,
+            });
+        }
+
+        /// Adds a run of samples with the same duration to the box, using run-length encoding.
+        pub fn push_entry(&mut self, entry: SttsEntry) {
+            if let Some(last) = self.entries.last_mut() {
+                if last.sample_delta == entry.sample_delta {
+                    last.sample_count += entry.sample_count;
+                    return;
+                }
+            }
+
+            self.entries.push(entry);
+        }
     }
 
     impl Default for SttsBox {

@@ -162,6 +162,33 @@ mod owned {
         fn has_negative_offsets(&self) -> bool {
             self.entries.iter().any(|e| e.sample_offset.is_negative())
         }
+
+        /// Adds a new entry to the `ctts` box. If the last entry has the same offset, it increments the sample count instead.
+        pub fn push(&mut self, sample_offset: i32) {
+            if let Some(last) = self.entries.last_mut() {
+                if last.sample_offset == sample_offset {
+                    last.sample_count += 1;
+                    return;
+                }
+            }
+
+            self.entries.push(CttsEntry {
+                sample_count: 1,
+                sample_offset,
+            });
+        }
+
+        /// Adds a new entry with a specified sample count. If the last entry has the same offset, it increments the sample count instead.
+        pub fn push_entry(&mut self, entry: CttsEntry) {
+            if let Some(last) = self.entries.last_mut() {
+                if last.sample_offset == entry.sample_offset {
+                    last.sample_count += entry.sample_count;
+                    return;
+                }
+            }
+
+            self.entries.push(entry);
+        }
     }
 
     impl Default for CttsBox {
