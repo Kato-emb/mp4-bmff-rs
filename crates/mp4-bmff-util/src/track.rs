@@ -14,18 +14,9 @@ use mp4_bmff::types::{
     U16F16,
 };
 
+use super::mux::duration_to_ticks;
 use crate::mux::MuxError;
 use crate::sample::SampleTable;
-
-fn duration_to_ticks(duration: Duration, timescale: u32) -> Option<u64> {
-    let timescale = u64::from(timescale);
-    let secs = duration.as_secs();
-    let nanos = u64::from(duration.subsec_nanos());
-
-    // nanos * ts は最大 ≈ 4.3 × 10¹⁸ で、u64::MAX より小さいためオーバーフローしない。
-    secs.checked_mul(timescale)?
-        .checked_add(nanos * timescale / 1_000_000_000)
-}
 
 #[derive(Debug)]
 pub enum VisualSampleDescription {
@@ -166,7 +157,7 @@ impl MediaDefinition {
         }
     }
 
-    fn to_raw_box(&self) -> Result<RawBoxOwned, MuxError> {
+    pub(super) fn to_raw_box(&self) -> Result<RawBoxOwned, MuxError> {
         match self {
             MediaDefinition::Video(desc) => desc.to_raw_box(),
             MediaDefinition::Audio(desc) => desc.to_raw_box(),
@@ -338,11 +329,7 @@ impl Track {
 
     fn build_minf(&self, sample_table: &SampleTable) -> Result<MinfBox, MuxError> {
         let media_header = self.media.media_header();
-        let stsd = StsdBox {
-            entries: alloc::vec![self.media.to_raw_box()?],
-            ..Default::default()
-        };
-        let stbl = sample_table.build_stbl(stsd, self.timescale)?;
+        let stbl = sample_table.build_stbl(&self.media, self.timescale)?;
         let dinf = DinfBox::self_contained();
 
         Ok(MinfBox {

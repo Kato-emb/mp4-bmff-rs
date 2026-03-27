@@ -4,9 +4,13 @@ use core::num::NonZeroU32;
 use core::time::Duration;
 
 use alloc::vec::Vec;
-use mp4_bmff::boxes::bmff::{StblBox, StsdBox};
+use mp4_bmff::boxes::bmff::{
+    ChunkOffset, CttsBox, CttsEntry, SampleSize, StblBox, StscBox, StsdBox, StssBox, StszBox,
+    SttsBox,
+};
 
-use crate::mux::MuxError;
+use super::mux::duration_to_ticks;
+use crate::{mux::MuxError, track::MediaDefinition};
 
 /// Represents a media sample in an MP4 file, containing metadata and sample data.
 #[derive(Debug)]
@@ -110,11 +114,21 @@ pub(crate) struct SampleEntry {
     pub(crate) size: u32,
 }
 
+impl SampleEntry {
+    fn sample_delta(&self, timescale: NonZeroU32) -> Result<u32, MuxError> {
+        duration_to_ticks(self.duration, timescale.get())
+            .and_then(|ticks| u32::try_from(ticks).ok())
+            .ok_or(MuxError::Overflow)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Chunk {
     pub(crate) offset: u64,
     pub(crate) entries: Vec<SampleEntry>,
 }
+
+impl Chunk {}
 
 #[derive(Debug)]
 pub(crate) struct Fragment {
@@ -138,9 +152,92 @@ impl SampleTable {
 
     pub(crate) fn build_stbl(
         &self,
-        stsd: StsdBox,
+        media: &MediaDefinition,
         media_timescale: NonZeroU32,
     ) -> Result<StblBox, MuxError> {
-        todo!()
+        let stsd = StsdBox {
+            entries: alloc::vec![media.to_raw_box()?],
+            ..Default::default()
+        };
+
+        let mut stts = SttsBox::default();
+        let mut stsz = StszBox::default();
+        let mut stsc = StscBox::default();
+        let mut ctts = CttsBox::default();
+        let mut stss = StssBox::default();
+
+        let mut chunk_number: u32 = 0;
+        let mut sample_number: u32 = 0;
+        let mut offsets: Vec<u64> = Vec::new();
+
+        for chunk in self.chunks.iter() {
+            if chunk.entries.is_empty() {
+                continue;
+            }
+
+            chunk_number += 1;
+            stsc.push(chunk_number, chunk.entries.len() as u32, 1);
+            offsets.push(chunk.offset);
+
+            for sample in chunk.entries.iter() {
+                sample_number += 1;
+
+                // delta
+                let sample_delta = sample.sample_delta(media_timescale)?;
+                stts.push(sample_delta);
+
+                // size
+                stsz.push(sample.size);
+
+                // sync sample
+                if sample.is_sync {
+                    stss.push(sample_number);
+                }
+
+                // composition time offset
+                if let Some(offset) = sample.composition_time_offset {
+                    if ctts.entries.is_empty() && sample_number > 1 {
+                        ctts.push_entry(CttsEntry {
+                            sample_count: sample_number - 1,
+                            sample_offset: 0,
+                        });
+                    }
+
+                    ctts.push(offset);
+                } else if !ctts.entries.is_empty() {
+                    ctts.push(0);
+                }
+            }
+        }
+
+        let sample_size = SampleSize::Stsz(stsz);
+        let chunk_offset = ChunkOffset::from(offsets.as_slice());
+        let ctts = if ctts.entries.is_empty() {
+            None
+        } else {
+            Some(ctts)
+        };
+
+        let stss = if stss.entries.len() == sample_number as usize {
+            None
+        } else {
+            Some(stss)
+        };
+
+        Ok(StblBox {
+            stsd,
+            stts,
+            sample_size,
+            stsc,
+            chunk_offset,
+            stdp: None,
+            ctts,
+            cslg: None,
+            stss,
+            stsh: None,
+            sdtp: None,
+            sbgps: Vec::new(),
+            sgpds: Vec::new(),
+        })
     }
 }
