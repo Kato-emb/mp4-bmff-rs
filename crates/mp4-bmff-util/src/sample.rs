@@ -155,6 +155,16 @@ pub(crate) struct SampleChunk {
     pub(crate) entries: Vec<SampleMetadata>,
 }
 
+/// Strategy for emitting sample flags in a `trun` box.
+enum FlagsStrategy {
+    /// All samples match the default flags — omit flags entirely.
+    AllDefault,
+    /// Only the first sample differs from the default — use `first_sample_flags`.
+    FirstSampleOnly(SampleFlags),
+    /// Multiple samples differ — write per-sample flags.
+    PerSample,
+}
+
 #[derive(Debug)]
 pub(super) struct SampleTable {
     pub(super) chunks: Vec<SampleChunk>,
@@ -287,18 +297,26 @@ impl SampleTable {
         let has_cto = computed.iter().any(|&(.., cto)| cto != 0);
         let signed_cto = computed.iter().any(|&(.., cto)| cto < 0);
 
-        let first_sample_flags = match default_flags {
-            Some(df)
-                if computed.len() > 1
-                    && computed[0].2 != df
-                    && computed[1..].iter().all(|c| c.2 == df) =>
+        // Determine how to emit sample flags:
+        //  - AllDefault:       all samples match default → omit flags entirely
+        //  - FirstSampleOnly:  only sample[0] differs   → use first_sample_flags field
+        //  - PerSample:        multiple differ           → write flags per sample
+        let all_match_default =
+            default_flags.is_some_and(|df| computed.iter().all(|c| c.2 == df));
+        let flags_strategy = if all_match_default {
+            FlagsStrategy::AllDefault
+        } else if let Some(df) = default_flags {
+            if computed.len() > 1
+                && computed[0].2 != df
+                && computed[1..].iter().all(|c| c.2 == df)
             {
-                Some(computed[0].2)
+                FlagsStrategy::FirstSampleOnly(computed[0].2)
+            } else {
+                FlagsStrategy::PerSample
             }
-            _ => None,
+        } else {
+            FlagsStrategy::PerSample
         };
-        let emit_flags = first_sample_flags.is_none()
-            && !default_flags.is_some_and(|df| computed.iter().all(|c| c.2 == df));
 
         // 3. Build flags
         let mut trun_flags = TrunFlags::DATA_OFFSET_PRESENT;
@@ -308,10 +326,14 @@ impl SampleTable {
         if emit_size {
             trun_flags |= TrunFlags::SAMPLE_SIZE_PRESENT;
         }
-        if first_sample_flags.is_some() {
-            trun_flags |= TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT;
-        } else if emit_flags {
-            trun_flags |= TrunFlags::SAMPLE_FLAGS_PRESENT;
+        match flags_strategy {
+            FlagsStrategy::AllDefault => {}
+            FlagsStrategy::FirstSampleOnly(_) => {
+                trun_flags |= TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT;
+            }
+            FlagsStrategy::PerSample => {
+                trun_flags |= TrunFlags::SAMPLE_FLAGS_PRESENT;
+            }
         }
         if has_cto {
             trun_flags |= TrunFlags::SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT;
@@ -326,10 +348,11 @@ impl SampleTable {
             .ok_or(MuxError::Overflow)?;
         trun.set_data_offset(i32::try_from(relative_offset).map_err(|_| MuxError::Overflow)?);
 
-        if let Some(fsf) = first_sample_flags {
+        if let FlagsStrategy::FirstSampleOnly(fsf) = flags_strategy {
             trun.set_first_sample_flags(fsf);
         }
 
+        let emit_flags = matches!(flags_strategy, FlagsStrategy::PerSample);
         for &(duration, size, flags, cto) in &computed {
             trun.push_entry(TrunEntry {
                 duration: emit_duration.then_some(duration),
