@@ -416,6 +416,41 @@ mod owned {
             }
         }
 
+        /// Adds a chunk offset. Starts as `stco` (32-bit) and automatically
+        /// promotes to `co64` (64-bit) when an offset exceeds `u32::MAX`.
+        pub fn push(&mut self, offset: u64) {
+            match self {
+                ChunkOffset::Stco(stco) => {
+                    if offset > u32::MAX as u64 {
+                        // Promote stco → co64
+                        let mut co64_entries: Vec<Co64Entry> = stco
+                            .entries
+                            .iter()
+                            .map(|e| Co64Entry {
+                                chunk_offset: u64::from(e.chunk_offset),
+                            })
+                            .collect();
+                        co64_entries.push(Co64Entry {
+                            chunk_offset: offset,
+                        });
+                        *self = ChunkOffset::Co64(Co64Box {
+                            entries: co64_entries,
+                            ..Default::default()
+                        });
+                    } else {
+                        stco.entries.push(StcoEntry {
+                            chunk_offset: offset as u32,
+                        });
+                    }
+                }
+                ChunkOffset::Co64(co64) => {
+                    co64.entries.push(Co64Entry {
+                        chunk_offset: offset,
+                    });
+                }
+            }
+        }
+
         /// Creates a `ChunkOffset` from a slice of chunk offsets. If any offset exceeds the maximum value for a 32-bit unsigned integer, a `co64` box will be created; otherwise, an `stco` box will be used.
         pub fn from_offsets(offsets: &[u64]) -> Self {
             if offsets.iter().any(|&offset| offset > u32::MAX as u64) {

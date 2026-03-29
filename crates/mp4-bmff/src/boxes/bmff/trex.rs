@@ -62,7 +62,7 @@ define_box_flags!(
 /// assert_eq!(trex.track_id, 1);
 /// assert_eq!(trex.default_sample_duration, 1000);
 /// ```
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TrexBox {
     /// Box version (should be 0).
     pub version: u8,

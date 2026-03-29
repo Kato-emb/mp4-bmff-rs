@@ -59,6 +59,24 @@ pub struct TfdtBox {
     pub base_media_decode_time: u64,
 }
 
+impl TfdtBox {
+    /// Creates a new `TfdtBox` with the specified base media decode time.
+    /// The version is automatically set based on the value of `base_media_decode_time`.
+    pub fn new(base_media_decode_time: u64) -> Self {
+        let version = if base_media_decode_time > u32::MAX as u64 {
+            1
+        } else {
+            0
+        };
+
+        Self {
+            version,
+            flags: TfdtFlags::empty(),
+            base_media_decode_time,
+        }
+    }
+}
+
 impl BoxCodec for TfdtBox {
     fn boxtype(&self) -> BoxType {
         BoxType::TFDT

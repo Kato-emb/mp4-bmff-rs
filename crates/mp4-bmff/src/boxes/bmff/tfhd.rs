@@ -54,7 +54,7 @@ define_box_flags!(
 /// - `default_sample_duration`: Default duration for samples in this fragment.
 /// - `default_sample_size`: Default size for samples in this fragment.
 /// - `default_sample_flags`: Default flags for samples in this fragment.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TfhdBox {
     /// Box version (should be 0).
     pub version: u8,

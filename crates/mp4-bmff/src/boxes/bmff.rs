@@ -297,7 +297,7 @@ pub use stsz::{StszEntry, StszEntryIter};
 pub use stts::{SttsEntry, SttsEntryIter};
 pub use stz2::{Stz2Entry, Stz2EntryIter};
 pub use tfra::{TfraEntry, TfraEntryIter};
-pub use trun::{TrunEntry, TrunEntryIter};
+pub use trun::TrunEntry;
 
 pub use sample_entry::SampleEntry;
 #[cfg(feature = "mp4")]
