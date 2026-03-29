@@ -247,6 +247,101 @@ impl SampleTable {
             .ok_or(MuxError::Overflow)
     }
 
+    fn build_trun(
+        chunk: &SampleChunk,
+        media_timescale: NonZeroU32,
+        moof_offset: u64,
+        default_duration: Option<u32>,
+        default_size: Option<u32>,
+        default_flags: Option<SampleFlags>,
+    ) -> Result<TrunBox, MuxError> {
+        // 1. Convert all samples to timescale units
+        let computed: Vec<_> = chunk
+            .entries
+            .iter()
+            .map(|s| {
+                Ok((
+                    s.sample_delta(media_timescale)?,
+                    s.size,
+                    if s.is_sync {
+                        SampleFlags::sync()
+                    } else {
+                        SampleFlags::non_sync()
+                    },
+                    s.composition_time_offset(media_timescale)?,
+                ))
+            })
+            .collect::<Result<_, MuxError>>()?;
+
+        // 2. Decide which per-sample fields to emit
+        let emit_duration = match default_duration {
+            Some(d) if computed.iter().all(|&(dur, ..)| dur == d) => false,
+            _ => true,
+        };
+
+        let emit_size = match default_size {
+            Some(s) if computed.iter().all(|&(_, size, ..)| size == s) => false,
+            _ => true,
+        };
+
+        let has_cto = computed.iter().any(|&(.., cto)| cto != 0);
+        let signed_cto = computed.iter().any(|&(.., cto)| cto < 0);
+
+        let first_sample_flags = match default_flags {
+            Some(df)
+                if computed.len() > 1
+                    && computed[0].2 != df
+                    && computed[1..].iter().all(|c| c.2 == df) =>
+            {
+                Some(computed[0].2)
+            }
+            _ => None,
+        };
+        let emit_flags = first_sample_flags.is_none()
+            && !default_flags.is_some_and(|df| computed.iter().all(|c| c.2 == df));
+
+        // 3. Build flags
+        let mut trun_flags = TrunFlags::DATA_OFFSET_PRESENT;
+        if emit_duration {
+            trun_flags |= TrunFlags::SAMPLE_DURATION_PRESENT;
+        }
+        if emit_size {
+            trun_flags |= TrunFlags::SAMPLE_SIZE_PRESENT;
+        }
+        if first_sample_flags.is_some() {
+            trun_flags |= TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT;
+        } else if emit_flags {
+            trun_flags |= TrunFlags::SAMPLE_FLAGS_PRESENT;
+        }
+        if has_cto {
+            trun_flags |= TrunFlags::SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT;
+        }
+
+        // 4. Populate TrunBox
+        let mut trun = TrunBox::new(trun_flags, signed_cto);
+
+        let relative_offset = chunk
+            .data_offset
+            .checked_sub(moof_offset)
+            .ok_or(MuxError::Overflow)?;
+        trun.set_data_offset(i32::try_from(relative_offset).map_err(|_| MuxError::Overflow)?);
+
+        if let Some(fsf) = first_sample_flags {
+            trun.set_first_sample_flags(fsf);
+        }
+
+        for &(duration, size, flags, cto) in &computed {
+            trun.push_entry(TrunEntry {
+                duration: emit_duration.then_some(duration),
+                size: emit_size.then_some(size),
+                flags: emit_flags.then_some(flags),
+                composition_time_offset: has_cto.then(|| i64::from(cto)),
+            });
+        }
+
+        Ok(trun)
+    }
+
     pub(super) fn build_truns(
         &self,
         media_timescale: NonZeroU32,
@@ -259,126 +354,14 @@ impl SampleTable {
 
         for chunk in self.chunks.iter() {
             debug_assert!(!chunk.entries.is_empty());
-
-            let mut all_durations_match = default_sample_duration.is_some();
-            let mut all_sizes_match = default_sample_size.is_some();
-            let mut all_flags_match = default_sample_flags.is_some();
-            let mut only_first_flag_differs = false;
-            let mut rest_flags_match = default_sample_flags.is_some();
-            let mut has_cto = false;
-            let mut signed_cto = false;
-
-            let mut computed = Vec::with_capacity(chunk.entries.len());
-
-            for (i, sample) in chunk.entries.iter().enumerate() {
-                let duration = sample.sample_delta(media_timescale)?;
-                let size = sample.size;
-                let flags = if sample.is_sync {
-                    SampleFlags::sync()
-                } else {
-                    SampleFlags::non_sync()
-                };
-                let cto = sample.composition_time_offset(media_timescale)?;
-
-                if default_sample_duration.is_some_and(|d| d != duration) {
-                    all_durations_match = false;
-                }
-                if default_sample_size.is_some_and(|s| s != size) {
-                    all_sizes_match = false;
-                }
-                if let Some(d) = default_sample_flags {
-                    if flags != d {
-                        all_flags_match = false;
-                        if i == 0 {
-                            only_first_flag_differs = true;
-                        } else {
-                            rest_flags_match = false;
-                        }
-                    }
-                }
-                if cto != 0 {
-                    has_cto = true;
-                    if cto < 0 {
-                        signed_cto = true;
-                    }
-                }
-
-                computed.push((duration, size, flags, cto));
-            }
-
-            let use_per_sample_duration = !all_durations_match;
-            let use_per_sample_size = !all_sizes_match;
-            let use_first_sample_flags =
-                !all_flags_match && only_first_flag_differs && rest_flags_match;
-            let use_per_sample_flags = !all_flags_match && !use_first_sample_flags;
-
-            // TrunBox derives sample_count from per-sample vectors. When all fields
-            // match defaults, no per-sample vector would be allocated and sample_count
-            // would incorrectly be 0. Fall back to emitting per-sample size to ensure
-            // sample_count is always correct.
-            let needs_any_per_sample = !use_per_sample_duration
-                && !use_per_sample_size
-                && !use_per_sample_flags
-                && !has_cto;
-            let use_per_sample_size = use_per_sample_size || needs_any_per_sample;
-
-            let trun_flags = TrunFlags::DATA_OFFSET_PRESENT
-                | if use_per_sample_duration {
-                    TrunFlags::SAMPLE_DURATION_PRESENT
-                } else {
-                    TrunFlags::empty()
-                }
-                | if use_per_sample_size {
-                    TrunFlags::SAMPLE_SIZE_PRESENT
-                } else {
-                    TrunFlags::empty()
-                }
-                | if use_first_sample_flags {
-                    TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT
-                } else if use_per_sample_flags {
-                    TrunFlags::SAMPLE_FLAGS_PRESENT
-                } else {
-                    TrunFlags::empty()
-                }
-                | if has_cto {
-                    TrunFlags::SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT
-                } else {
-                    TrunFlags::empty()
-                };
-
-            let mut trun = TrunBox::new(trun_flags, signed_cto);
-            let data_offset = chunk
-                .data_offset
-                .checked_sub(moof_offset)
-                .ok_or(MuxError::Overflow)?;
-            let data_offset = i32::try_from(data_offset).map_err(|_| MuxError::Overflow)?;
-            trun.set_data_offset(data_offset);
-
-            if use_first_sample_flags {
-                trun.set_first_sample_flags(computed[0].2);
-            }
-
-            for (duration, size, flags, cto) in computed {
-                trun.push_entry(TrunEntry {
-                    duration: if use_per_sample_duration {
-                        Some(duration)
-                    } else {
-                        None
-                    },
-                    size: if use_per_sample_size {
-                        Some(size)
-                    } else {
-                        None
-                    },
-                    flags: if use_per_sample_flags {
-                        Some(flags)
-                    } else {
-                        None
-                    },
-                    composition_time_offset: if has_cto { Some(i64::from(cto)) } else { None },
-                });
-            }
-
+            let trun = Self::build_trun(
+                chunk,
+                media_timescale,
+                moof_offset,
+                default_sample_duration,
+                default_sample_size,
+                default_sample_flags,
+            )?;
             truns.push(trun);
         }
 
@@ -616,7 +599,7 @@ mod tests {
 
     #[test]
     fn build_truns_all_defaults_match() {
-        // All samples match defaults → no per-sample fields except data_offset
+        // All samples match defaults → no per-sample fields, only data_offset
         let t = table(vec![chunk(
             1000,
             vec![
@@ -626,13 +609,7 @@ mod tests {
         )]);
 
         let truns = t
-            .build_truns(
-                TS_90K,
-                0,
-                Some(2970),
-                Some(500),
-                Some(SampleFlags::non_sync()),
-            )
+            .build_truns(TS_90K, 0, Some(2970), Some(500), Some(SampleFlags::non_sync()))
             .unwrap();
 
         assert_eq!(truns.len(), 1);
@@ -641,8 +618,7 @@ mod tests {
         let flags = trun.flags();
         assert!(flags.contains(TrunFlags::DATA_OFFSET_PRESENT));
         assert!(!flags.contains(TrunFlags::SAMPLE_DURATION_PRESENT));
-        // size is emitted as fallback to ensure sample_count is correct
-        assert!(flags.contains(TrunFlags::SAMPLE_SIZE_PRESENT));
+        assert!(!flags.contains(TrunFlags::SAMPLE_SIZE_PRESENT));
         assert!(!flags.contains(TrunFlags::SAMPLE_FLAGS_PRESENT));
         assert!(!flags.contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT));
         assert!(!flags.contains(TrunFlags::SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT));
@@ -694,13 +670,7 @@ mod tests {
         )]);
 
         let truns = t
-            .build_truns(
-                TS_90K,
-                0,
-                Some(2970),
-                Some(500),
-                Some(SampleFlags::non_sync()),
-            )
+            .build_truns(TS_90K, 0, Some(2970), Some(500), Some(SampleFlags::non_sync()))
             .unwrap();
 
         let flags = truns[0].flags();
@@ -722,13 +692,7 @@ mod tests {
         )]);
 
         let truns = t
-            .build_truns(
-                TS_90K,
-                0,
-                Some(2970),
-                Some(500),
-                Some(SampleFlags::non_sync()),
-            )
+            .build_truns(TS_90K, 0, Some(2970), Some(500), Some(SampleFlags::non_sync()))
             .unwrap();
 
         let flags = truns[0].flags();

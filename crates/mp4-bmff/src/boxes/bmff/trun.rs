@@ -290,6 +290,9 @@ mod owned {
         version: u8,
         /// Flags indicating which fields are present.
         flags: TrunFlags,
+        /// Number of samples in this run (tracked independently of per-sample fields
+        /// so that sample_count remains correct even when all fields use defaults).
+        sample_count: u32,
         /// Signed offset from base to first sample's data.
         data_offset: Option<i32>,
         /// Flags for first sample (overrides sample\[0\].flags if present).
@@ -333,6 +336,7 @@ mod owned {
             TrunBox {
                 version: if signed_cto { 1 } else { 0 },
                 flags,
+                sample_count: 0,
                 data_offset: None,
                 first_sample_flags: None,
                 sample_durations,
@@ -376,17 +380,7 @@ mod owned {
 
         /// Returns the number of samples described in this `trun` box.
         pub fn sample_count(&self) -> usize {
-            self.sample_durations
-                .as_ref()
-                .map(|v| v.len())
-                .or_else(|| self.sample_sizes.as_ref().map(|v| v.len()))
-                .or_else(|| self.sample_flags.as_ref().map(|v| v.len()))
-                .or_else(|| {
-                    self.sample_composition_time_offsets
-                        .as_ref()
-                        .map(|v| v.len())
-                })
-                .unwrap_or(0)
+            self.sample_count as usize
         }
 
         /// Returns a reference to the sample durations vector, or `None` if the sample duration field is not present.
@@ -453,6 +447,7 @@ mod owned {
 
         /// Adds a sample entry to this `trun` box. The fields of the entry must be `Some` if the corresponding flags are set in this box.
         pub fn push_entry(&mut self, entry: TrunEntry) {
+            self.sample_count += 1;
             if let Some(ref mut durations) = self.sample_durations {
                 durations.push(entry.duration.expect("missing duration for sample"));
             }
@@ -564,6 +559,7 @@ mod owned {
             Ok(TrunBox {
                 version: view.version,
                 flags: view.flags,
+                sample_count: view.sample_count,
                 data_offset: view.data_offset,
                 first_sample_flags: view.first_sample_flags,
                 sample_durations,
