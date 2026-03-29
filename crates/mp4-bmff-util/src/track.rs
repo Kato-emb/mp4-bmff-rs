@@ -327,9 +327,17 @@ impl Track {
         Ok(mdhd)
     }
 
+    fn build_stsd(&self) -> Result<StsdBox, MuxError> {
+        Ok(StsdBox {
+            entries: alloc::vec![self.media.to_raw_box()?],
+            ..Default::default()
+        })
+    }
+
     fn build_minf(&self, sample_table: &SampleTable) -> Result<MinfBox, MuxError> {
         let media_header = self.media.media_header();
-        let stbl = sample_table.build_stbl(&self.media, self.timescale)?;
+        let stsd = self.build_stsd()?;
+        let stbl = sample_table.build_stbl(stsd, self.timescale)?;
         let dinf = DinfBox::self_contained();
 
         Ok(MinfBox {
@@ -383,7 +391,7 @@ impl Track {
         }))
     }
 
-    pub(crate) fn build_trak(
+    pub(super) fn build_trak(
         &self,
         movie_timescale: NonZeroU32,
         sample_table: &SampleTable,
@@ -401,12 +409,27 @@ impl Track {
             edts,
         })
     }
+}
 
-    pub(crate) fn build_init_trak(&self, movie_timescale: NonZeroU32) -> Result<TrakBox, MuxError> {
-        let sample_table = SampleTable { chunks: Vec::new() };
-        let tkhd = self.build_tkhd(movie_timescale, Duration::from_secs(0))?;
-        let mdia = self.build_mdia(sample_table.media_duration(), &sample_table)?;
-        let edts = None; // Init tracks typically do not have edit lists
+pub(super) struct SampleDefaults {
+    sample_duration: Option<u32>,
+    sample_size: Option<u32>,
+    sample_flags: Option<SampleFlags>,
+}
+
+pub(super) struct FragmentTrack {
+    track: Track,
+    defaults: SampleDefaults,
+}
+
+impl FragmentTrack {
+    pub(super) fn build_trak(&self, movie_timescale: NonZeroU32) -> Result<TrakBox, MuxError> {
+        let tkhd = self.track.build_tkhd(movie_timescale, Duration::ZERO)?;
+        let sample_table = SampleTable::empty();
+        let mdia = self
+            .track
+            .build_mdia(sample_table.media_duration(), &sample_table)?;
+        let edts = self.track.build_edts(movie_timescale)?;
 
         Ok(TrakBox {
             tkhd,
@@ -417,7 +440,45 @@ impl Track {
         })
     }
 
-    pub(crate) fn build_traf(&self) -> Result<TrafBox, MuxError> {
-        todo!()
+    pub(super) fn build_trex(&self) -> TrexBox {
+        TrexBox {
+            track_id: self.track.id.get(),
+            default_sample_description_index: 1, // 1-based index, so 1 means the first (and only) entry in stsd
+            default_sample_duration: self.defaults.sample_duration.unwrap_or(0),
+            default_sample_size: self.defaults.sample_size.unwrap_or(0),
+            default_sample_flags: self.defaults.sample_flags.unwrap_or_default(),
+            ..Default::default()
+        }
+    }
+
+    pub(super) fn build_traf(
+        &self,
+        sample_table: &SampleTable,
+        moof_offset: u64,
+    ) -> Result<TrafBox, MuxError> {
+        let tfhd = TfhdBox {
+            flags: TfhdFlags::DEFAULT_BASE_IS_MOOF,
+            track_id: self.track.id.get(),
+            ..Default::default()
+        };
+
+        let base_media_decode_time = sample_table.base_media_decode_time(self.track.timescale)?;
+        let tfdt = TfdtBox::new(base_media_decode_time);
+
+        let truns = sample_table.build_truns(
+            self.track.timescale,
+            moof_offset,
+            self.defaults.sample_duration,
+            self.defaults.sample_size,
+            self.defaults.sample_flags,
+        )?;
+
+        Ok(TrafBox {
+            tfhd,
+            tfdt: Some(tfdt),
+            truns,
+            sbgps: Vec::new(),
+            sgpds: Vec::new(),
+        })
     }
 }
