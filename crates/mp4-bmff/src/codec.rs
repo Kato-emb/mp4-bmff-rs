@@ -206,6 +206,19 @@ pub trait BoxEncode {
 
         Ok(buf)
     }
+
+    /// Calculates the total length of the complete box (header + payload).
+    ///
+    /// This is a helper method that combines the payload length from `encoded_len`
+    /// with the header length based on the box type. It is used internally when writing complete boxes.
+    fn boxed_len(&self) -> usize
+    where
+        Self: BoxCodec,
+    {
+        let payload_len = self.encoded_len();
+        let header = BoxHeader::new(self.boxtype(), payload_len as u64);
+        header.header_len() + payload_len
+    }
 }
 
 /// Calculates box total length helper function.
