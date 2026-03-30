@@ -1,7 +1,14 @@
+//! Error types for multiplexing operations.
 //!
+//! This module provides error handling for the muxer. Errors carry an
+//! [`ErrorKind`] describing the failure category, an optional human-readable
+//! message, and an optional source error for chaining.
 
 use core::error;
 use core::fmt;
+
+use alloc::boxed::Box;
+use alloc::string::String;
 
 /// Errors that can occur during multiplexing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

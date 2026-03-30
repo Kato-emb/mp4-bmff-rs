@@ -1,3 +1,14 @@
+//! Multiplexing and demultiplexing utilities for MP4 files.
+//!
+//! This module provides high-level APIs for constructing MP4 box structures
+//! from raw media samples. It supports both non-fragmented (`moov` + `mdat`)
+//! and fragmented (`moov` + `moof`/`mdat` pairs) output.
+//!
+//! # Modules
+//!
+//! - [`mux`]: Muxer for building MP4 box metadata from media samples
+//! - [`error`]: Error types for multiplexing operations
+
 use core::num::NonZeroU32;
 use core::time::Duration;
 
@@ -5,7 +16,7 @@ use mp4_bmff::types::FourCC;
 
 mod internal;
 
-pub mod error;
+mod error;
 
 #[cfg(feature = "mux")]
 pub mod mux;
@@ -116,17 +127,22 @@ impl<T: AsRef<[u8]>> Sample<T> {
     }
 }
 
+/// Description of a visual (video) sample entry.
 #[derive(Debug)]
 pub enum VisualSampleDescription {
+    /// AVC (H.264) sample entry using the `avc1` box.
     #[cfg(feature = "avc")]
     Avc1(mp4_bmff::boxes::avc::Avc1SampleEntry),
+    /// AVC (H.264) sample entry using the `avc3` box (in-band parameter sets).
     #[cfg(feature = "avc")]
     Avc3(mp4_bmff::boxes::avc::Avc3SampleEntry),
+    /// MPEG-4 Visual sample entry using the `mp4v` box.
     #[cfg(feature = "mp4")]
     Mp4v(mp4_bmff::boxes::mp4::Mp4vSampleEntry),
 }
 
 impl VisualSampleDescription {
+    /// Returns the width of the visual sample in pixels.
     pub fn width(&self) -> u16 {
         match self {
             #[cfg(feature = "avc")]
@@ -138,6 +154,7 @@ impl VisualSampleDescription {
         }
     }
 
+    /// Returns the height of the visual sample in pixels.
     pub fn height(&self) -> u16 {
         match self {
             #[cfg(feature = "avc")]
@@ -150,36 +167,52 @@ impl VisualSampleDescription {
     }
 }
 
+/// Description of an audio sample entry.
 #[derive(Debug)]
 pub enum AudioSampleDescription {
+    /// MPEG-4 Audio sample entry using the `mp4a` box.
     #[cfg(feature = "mp4")]
     Mp4a(mp4_bmff::boxes::mp4::Mp4aSampleEntry),
 }
 
+/// Description of a metadata sample entry (placeholder).
 #[derive(Debug)]
 pub enum MetadataSampleDescription {}
 
+/// Description of a hint sample entry (placeholder).
 #[derive(Debug)]
 pub enum HintSampleDescription {}
 
+/// Description of a text sample entry (placeholder).
 #[derive(Debug)]
 pub enum TextSampleDescription {}
 
+/// Description of a subtitle sample entry (placeholder).
 #[derive(Debug)]
 pub enum SubtitleSampleDescription {}
 
+/// Description of a font sample entry (placeholder).
 #[derive(Debug)]
 pub enum FontSampleDescription {}
 
+/// Defines the media type and codec-specific description for a track.
 #[derive(Debug)]
 pub enum MediaDefinition {
+    /// Video track with a visual sample description.
     Video(VisualSampleDescription),
+    /// Audio track with an audio sample description.
     Audio(AudioSampleDescription),
+    /// Metadata track.
     Metadata(MetadataSampleDescription),
+    /// Hint track (streaming hints).
     Hint(HintSampleDescription),
+    /// Text track.
     Text(TextSampleDescription),
+    /// Subtitle track.
     Subtitle(SubtitleSampleDescription),
+    /// Font track.
     Font(FontSampleDescription),
+    /// Other media type identified by a FourCC code.
     Other(FourCC),
 }
 
@@ -235,6 +268,7 @@ pub enum EditSegment {
 }
 
 impl EditSegment {
+    /// Returns the duration of this edit segment.
     pub fn duration(&self) -> Duration {
         match self {
             EditSegment::Empty { duration } => *duration,
