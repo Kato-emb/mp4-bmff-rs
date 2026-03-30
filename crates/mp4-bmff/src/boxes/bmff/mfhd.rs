@@ -59,6 +59,17 @@ pub struct MfhdBox {
     pub sequence_number: u32,
 }
 
+impl MfhdBox {
+    /// Creates a new `MfhdBox` with the specified sequence number.
+    pub fn new(sequence_number: u32) -> Self {
+        Self {
+            version: 0,
+            flags: MfhdFlags::empty(),
+            sequence_number,
+        }
+    }
+}
+
 impl BoxCodec for MfhdBox {
     fn boxtype(&self) -> BoxType {
         BoxType::MFHD

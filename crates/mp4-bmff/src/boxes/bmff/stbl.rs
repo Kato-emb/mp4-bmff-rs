@@ -479,6 +479,12 @@ mod owned {
         }
     }
 
+    impl Default for ChunkOffset {
+        fn default() -> Self {
+            ChunkOffset::Stco(StcoBox::default())
+        }
+    }
+
     impl From<StcoBox> for ChunkOffset {
         fn from(stco: StcoBox) -> Self {
             ChunkOffset::Stco(stco)
