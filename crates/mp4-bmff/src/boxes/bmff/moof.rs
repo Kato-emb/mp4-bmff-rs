@@ -15,7 +15,6 @@ use crate::error::*;
 use crate::iter::BoxIter;
 
 use super::MfhdBox;
-use super::MvexBoxView;
 use super::TrafBoxView;
 
 /// A reference to a Movie Fragment Box (`moof`).
@@ -73,23 +72,6 @@ impl<'a> MoofBoxView<'a> {
             Err(e) => Some(Err(e)),
         })
     }
-
-    /// Returns the Movie Extends Box (`mvex`) contained in this `moof` box if present.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if there are multiple `mvex` boxes. It's valid for the `mvex` box to be missing, in which case this returns `Ok(None)`.
-    pub fn mvex(&self) -> Result<Option<MvexBoxView<'a>>> {
-        for b in self.boxes() {
-            let b = b?;
-            if b.boxtype() == BoxType::MVEX {
-                let mvex = MvexBoxView::decode(b.into_payload())?;
-                return Ok(Some(mvex));
-            }
-        }
-
-        Ok(None)
-    }
 }
 
 impl BoxCodec for MoofBoxView<'_> {
@@ -115,7 +97,6 @@ mod owned {
     use crate::codec::write_box_in;
     use crate::cursor::WriteCursor;
 
-    use crate::boxes::bmff::MvexBox;
     use crate::boxes::bmff::TrafBox;
 
     /// An owned Movie Fragment Box (`moof`).
@@ -127,15 +108,12 @@ mod owned {
     ///
     /// - `mfhd`: Movie Fragment Header with sequence number.
     /// - `trafs`: Track Fragment boxes (one per track in this fragment).
-    /// - `mvex`: Optional Movie Extends Box.
     #[derive(Debug, Clone)]
     pub struct MoofBox {
         /// Movie Fragment Header Box (`mfhd`) with fragment sequence number.
         pub mfhd: MfhdBox,
         /// Track Fragment Boxes (`traf`), one per track in this fragment.
         pub trafs: Vec<TrafBox>,
-        /// Movie Extends Box (`mvex`), if present.
-        pub mvex: Option<MvexBox>,
     }
 
     impl TryFrom<&MoofBoxView<'_>> for MoofBox {
@@ -144,7 +122,6 @@ mod owned {
         fn try_from(view: &MoofBoxView<'_>) -> Result<Self> {
             let mut mfhd = None;
             let mut trafs = Vec::new();
-            let mut mvex = None;
 
             for result in view.boxes() {
                 let rawbox = result?;
@@ -166,18 +143,6 @@ mod owned {
                         let traf_box = TrafBox::try_from(&TrafBoxView::decode(rawbox.payload())?)?;
                         trafs.push(traf_box);
                     }
-                    BoxType::MVEX => {
-                        if mvex.is_some() {
-                            return Err(Error::in_box(
-                                ErrorKind::BoxDuplicate {
-                                    duplicate: BoxType::MVEX,
-                                },
-                                BoxType::MOOF,
-                            ));
-                        }
-                        let mvex_box = MvexBox::try_from(&MvexBoxView::decode(rawbox.payload())?)?;
-                        mvex = Some(mvex_box);
-                    }
                     _ => {}
                 }
             }
@@ -191,7 +156,7 @@ mod owned {
                 )
             })?;
 
-            Ok(MoofBox { mfhd, trafs, mvex })
+            Ok(MoofBox { mfhd, trafs })
         }
     }
 
@@ -215,9 +180,6 @@ mod owned {
             for traf in &self.trafs {
                 len += boxed_len(traf);
             }
-            if let Some(mvex) = &self.mvex {
-                len += boxed_len(mvex);
-            }
             len
         }
 
@@ -227,9 +189,6 @@ mod owned {
             write_box_in(&mut cur, &self.mfhd)?;
             for traf in &self.trafs {
                 write_box_in(&mut cur, traf)?;
-            }
-            if let Some(mvex) = &self.mvex {
-                write_box_in(&mut cur, mvex)?;
             }
 
             Ok(cur.position())
@@ -306,7 +265,6 @@ mod tests {
         assert_eq!(mfhd.sequence_number, 1);
 
         assert_eq!(moof.trafs().count(), 0);
-        assert!(moof.mvex().unwrap().is_none());
     }
 
     #[test]
@@ -334,7 +292,6 @@ mod tests {
 
         assert_eq!(owned.mfhd.sequence_number, 1);
         assert!(owned.trafs.is_empty());
-        assert!(owned.mvex.is_none());
     }
 
     #[cfg(feature = "alloc")]
