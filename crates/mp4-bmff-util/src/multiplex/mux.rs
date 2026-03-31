@@ -264,7 +264,7 @@ impl FragmentedMuxer {
 fn validate_and_build_chunk<T: AsRef<[u8]>>(
     samples: &[Sample<T>],
     data_offset: u64,
-) -> Result<(NonZeroU32, SampleChunk)> {
+) -> Result<(NonZeroU32, Chunk)> {
     let first = samples
         .first()
         .ok_or(Error::new(ErrorKind::InvalidInput).with_message("samples must not be empty"))?;
@@ -281,9 +281,9 @@ fn validate_and_build_chunk<T: AsRef<[u8]>>(
         entries.push(SampleMetadata::try_from(sample)?);
     }
 
-    let chunk = SampleChunk {
+    let chunk = Chunk {
         data_offset,
-        entries,
+        samples: entries,
     };
 
     Ok((track_id, chunk))
@@ -634,21 +634,21 @@ fn build_stbl(
     let mut sample_number: u32 = 0;
 
     for chunk in sample_table.chunks.iter() {
-        debug_assert!(!chunk.entries.is_empty());
+        debug_assert!(!chunk.samples.is_empty());
 
         chunk_number = chunk_number.checked_add(1).ok_or(ErrorKind::Overflow)?;
-        let samples_per_chunk = u32::try_from(chunk.entries.len()).map_err(|_| {
+        let samples_per_chunk = u32::try_from(chunk.samples.len()).map_err(|_| {
             Error::new(ErrorKind::Overflow)
                 .with_message("Number of samples per chunk exceeds u32 range")
         })?;
         stsc.push(chunk_number, samples_per_chunk, 1);
         chunk_offset.push(chunk.data_offset);
 
-        for sample in chunk.entries.iter() {
+        for sample in chunk.samples.iter() {
             sample_number = sample_number.checked_add(1).ok_or(ErrorKind::Overflow)?;
+            let sample_delta = sample_delta(sample, media_timescale.get())?;
+            let cto = composition_time_offset(sample, media_timescale.get())?;
 
-            let sample_delta = sample.sample_delta(media_timescale)?;
-            let cto = sample.composition_time_offset(media_timescale)?;
             stts.push(sample_delta);
             stsz.push(sample.size);
             ctts.push(cto);
@@ -696,28 +696,32 @@ enum FlagsStrategy {
 }
 
 fn build_trun(
-    chunk: &SampleChunk,
+    chunk: &Chunk,
     media_timescale: NonZeroU32,
     moof_offset: u64,
     default_sample_duration: Option<u32>,
     default_sample_size: Option<u32>,
     default_sample_flags: Option<SampleFlags>,
 ) -> Result<TrunBox> {
-    if chunk.entries.is_empty() {
+    if chunk.samples.is_empty() {
         return Err(Error::new(ErrorKind::InvalidInput)
             .with_message("Cannot build trun from an empty chunk"));
     }
 
     // 1. Convert all samples to timescale units
     let computed: Vec<_> = chunk
-        .entries
+        .samples
         .iter()
         .map(|meta| {
             Ok((
-                meta.sample_delta(media_timescale)?,
+                sample_delta(meta, media_timescale.get())?,
                 meta.size,
-                meta.sample_flags(),
-                meta.composition_time_offset(media_timescale)?,
+                if meta.is_sync {
+                    SampleFlags::sync()
+                } else {
+                    SampleFlags::non_sync()
+                },
+                composition_time_offset(meta, media_timescale.get())?,
             ))
         })
         .collect::<Result<_>>()?;
@@ -820,6 +824,22 @@ fn build_truns(
     Ok(truns)
 }
 
+fn sample_delta(sample: &Sample, timescale: u32) -> Result<u32> {
+    let delta = duration_to_ticks(sample.duration, timescale).ok_or(ErrorKind::Overflow)?;
+    Ok(u32::try_from(delta)?)
+}
+
+fn composition_time_offset(sample: &Sample, timescale: u32) -> Result<i32> {
+    let Some(cto_ns) = sample.composition_time_offset_ns() else {
+        return Ok(0);
+    };
+
+    let abs = nanos_to_ticks(cto_ns.unsigned_abs(), timescale).ok_or(ErrorKind::Overflow)?;
+    let ticks = i32::try_from(abs)?;
+
+    Ok(if cto_ns < 0 { -ticks } else { ticks })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -827,8 +847,8 @@ mod tests {
 
     const TS_90K: NonZeroU32 = unsafe { NonZeroU32::new_unchecked(90_000) };
 
-    fn sample_meta(dts_ns: u64, duration_ms: u64, size: u32, is_sync: bool) -> SampleMetadata {
-        SampleMetadata {
+    fn sample(dts_ns: u64, duration_ms: u64, size: u32, is_sync: bool) -> Sample {
+        Sample {
             dts_ns,
             pts_ns: None,
             duration: Duration::from_millis(duration_ms),
@@ -837,10 +857,10 @@ mod tests {
         }
     }
 
-    fn chunk_from(entries: Vec<SampleMetadata>, data_offset: u64) -> SampleChunk {
-        SampleChunk {
+    fn chunk_from(entries: Vec<Sample>, data_offset: u64) -> Chunk {
+        Chunk {
             data_offset,
-            entries,
+            samples: entries,
         }
     }
 
@@ -850,7 +870,7 @@ mod tests {
 
     #[test]
     fn validate_empty_samples_returns_error() {
-        let samples: &[Sample<&[u8]>] = &[];
+        let samples: &[Sample] = &[];
         let err = validate_and_build_chunk(samples, 0).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidInput);
     }
@@ -858,7 +878,14 @@ mod tests {
     #[test]
     fn validate_mixed_track_ids_returns_error() {
         let s1 = Sample::new(1, 0, None, Duration::from_millis(33), true, &[0u8; 100][..]);
-        let s2 = Sample::new(2, 33_000_000, None, Duration::from_millis(33), false, &[0u8; 100][..]);
+        let s2 = Sample::new(
+            2,
+            33_000_000,
+            None,
+            Duration::from_millis(33),
+            false,
+            &[0u8; 100][..],
+        );
         let err = validate_and_build_chunk(&[s1, s2], 0).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidInput);
     }
@@ -868,9 +895,9 @@ mod tests {
         let s = Sample::new(1, 0, None, Duration::from_millis(33), true, &[0u8; 50][..]);
         let (track_id, chunk) = validate_and_build_chunk(&[s], 128).unwrap();
         assert_eq!(track_id.get(), 1);
-        assert_eq!(chunk.entries.len(), 1);
+        assert_eq!(chunk.samples.len(), 1);
         assert_eq!(chunk.data_offset, 128);
-        assert_eq!(chunk.entries[0].size, 50);
+        assert_eq!(chunk.samples[0].size, 50);
     }
 
     // ---------------------------------------------------------------
@@ -881,8 +908,8 @@ mod tests {
     fn trun_flags_all_default() {
         let df = SampleFlags::non_sync();
         let entries = vec![
-            sample_meta(0, 33, 1000, false),
-            sample_meta(33_000_000, 33, 1000, false),
+            sample(0, 33, 1000, false),
+            sample(33_000_000, 33, 1000, false),
         ];
         let chunk = chunk_from(entries, 0);
 
@@ -898,9 +925,9 @@ mod tests {
     fn trun_flags_first_sample_only() {
         let df = SampleFlags::non_sync();
         let entries = vec![
-            sample_meta(0, 33, 1000, true),               // sync → differs from default
-            sample_meta(33_000_000, 33, 1000, false),      // non_sync → matches default
-            sample_meta(66_000_000, 33, 1000, false),      // non_sync → matches default
+            sample(0, 33, 1000, true),           // sync → differs from default
+            sample(33_000_000, 33, 1000, false), // non_sync → matches default
+            sample(66_000_000, 33, 1000, false), // non_sync → matches default
         ];
         let chunk = chunk_from(entries, 0);
 
@@ -915,9 +942,9 @@ mod tests {
     fn trun_flags_per_sample() {
         let df = SampleFlags::non_sync();
         let entries = vec![
-            sample_meta(0, 33, 1000, true),
-            sample_meta(33_000_000, 33, 1000, true),       // second also differs
-            sample_meta(66_000_000, 33, 1000, false),
+            sample(0, 33, 1000, true),
+            sample(33_000_000, 33, 1000, true), // second also differs
+            sample(66_000_000, 33, 1000, false),
         ];
         let chunk = chunk_from(entries, 0);
 
@@ -931,8 +958,8 @@ mod tests {
     #[test]
     fn trun_flags_no_default_uses_per_sample() {
         let entries = vec![
-            sample_meta(0, 33, 1000, true),
-            sample_meta(33_000_000, 33, 1000, true),
+            sample(0, 33, 1000, true),
+            sample(33_000_000, 33, 1000, true),
         ];
         let chunk = chunk_from(entries, 0);
 
@@ -944,7 +971,7 @@ mod tests {
     #[test]
     fn trun_single_sample_all_default() {
         let df = SampleFlags::sync();
-        let entries = vec![sample_meta(0, 33, 1000, true)];
+        let entries = vec![sample(0, 33, 1000, true)];
         let chunk = chunk_from(entries, 0);
 
         let trun = build_trun(&chunk, TS_90K, 0, None, None, Some(df)).unwrap();
@@ -957,7 +984,7 @@ mod tests {
     #[test]
     fn trun_single_sample_differs_uses_first_sample_flags() {
         let df = SampleFlags::non_sync();
-        let entries = vec![sample_meta(0, 33, 1000, true)];
+        let entries = vec![sample(0, 33, 1000, true)];
         let chunk = chunk_from(entries, 0);
 
         let trun = build_trun(&chunk, TS_90K, 0, None, None, Some(df)).unwrap();
@@ -979,10 +1006,7 @@ mod tests {
 
     #[test]
     fn trun_omits_duration_when_all_match_default() {
-        let entries = vec![
-            sample_meta(0, 33, 500, true),
-            sample_meta(33_000_000, 33, 600, true),
-        ];
+        let entries = vec![sample(0, 33, 500, true), sample(33_000_000, 33, 600, true)];
         let chunk = chunk_from(entries, 0);
         // 33ms * 90000 = 2970
         let trun = build_trun(&chunk, TS_90K, 0, Some(2970), None, None).unwrap();
@@ -994,8 +1018,8 @@ mod tests {
     #[test]
     fn trun_omits_size_when_all_match_default() {
         let entries = vec![
-            sample_meta(0, 33, 1000, true),
-            sample_meta(33_000_000, 33, 1000, true),
+            sample(0, 33, 1000, true),
+            sample(33_000_000, 33, 1000, true),
         ];
         let chunk = chunk_from(entries, 0);
 
@@ -1008,8 +1032,8 @@ mod tests {
     #[test]
     fn trun_emits_size_when_mismatch() {
         let entries = vec![
-            sample_meta(0, 33, 1000, true),
-            sample_meta(33_000_000, 33, 2000, true),
+            sample(0, 33, 1000, true),
+            sample(33_000_000, 33, 2000, true),
         ];
         let chunk = chunk_from(entries, 0);
 
@@ -1025,10 +1049,7 @@ mod tests {
 
     #[test]
     fn stbl_ctts_none_when_all_zero() {
-        let entries = vec![
-            sample_meta(0, 33, 100, true),
-            sample_meta(33_000_000, 33, 100, true),
-        ];
+        let entries = vec![sample(0, 33, 100, true), sample(33_000_000, 33, 100, true)];
         let table = SampleTable {
             chunks: vec![chunk_from(entries, 0)],
         };
@@ -1041,14 +1062,14 @@ mod tests {
     #[test]
     fn stbl_ctts_present_when_nonzero() {
         let entries = vec![
-            SampleMetadata {
+            Sample {
                 dts_ns: 0,
                 pts_ns: Some(33_000_000),
                 duration: Duration::from_millis(33),
                 is_sync: true,
                 size: 100,
             },
-            sample_meta(33_000_000, 33, 100, false),
+            sample(33_000_000, 33, 100, false),
         ];
         let table = SampleTable {
             chunks: vec![chunk_from(entries, 0)],
@@ -1061,10 +1082,7 @@ mod tests {
 
     #[test]
     fn stbl_stss_none_when_all_sync() {
-        let entries = vec![
-            sample_meta(0, 33, 100, true),
-            sample_meta(33_000_000, 33, 100, true),
-        ];
+        let entries = vec![sample(0, 33, 100, true), sample(33_000_000, 33, 100, true)];
         let table = SampleTable {
             chunks: vec![chunk_from(entries, 0)],
         };
@@ -1077,9 +1095,9 @@ mod tests {
     #[test]
     fn stbl_stss_present_when_partial_sync() {
         let entries = vec![
-            sample_meta(0, 33, 100, true),
-            sample_meta(33_000_000, 33, 100, false),
-            sample_meta(66_000_000, 33, 100, true),
+            sample(0, 33, 100, true),
+            sample(33_000_000, 33, 100, false),
+            sample(66_000_000, 33, 100, true),
         ];
         let table = SampleTable {
             chunks: vec![chunk_from(entries, 0)],
@@ -1140,9 +1158,30 @@ mod tests {
         let mut muxer = builder.build().unwrap();
 
         let samples = [
-            Sample::new(track_id, 0, None, Duration::from_millis(33), true, vec![0u8; 1000]),
-            Sample::new(track_id, 33_000_000, None, Duration::from_millis(33), false, vec![0u8; 800]),
-            Sample::new(track_id, 66_000_000, None, Duration::from_millis(33), true, vec![0u8; 900]),
+            Sample::new(
+                track_id,
+                0,
+                None,
+                Duration::from_millis(33),
+                true,
+                vec![0u8; 1000],
+            ),
+            Sample::new(
+                track_id,
+                33_000_000,
+                None,
+                Duration::from_millis(33),
+                false,
+                vec![0u8; 800],
+            ),
+            Sample::new(
+                track_id,
+                66_000_000,
+                None,
+                Duration::from_millis(33),
+                true,
+                vec![0u8; 900],
+            ),
         ];
         muxer.push_chunk(&samples, 0).unwrap();
 
@@ -1213,8 +1252,22 @@ mod tests {
         let (_moov, mut muxer) = builder.build_fragmented().unwrap();
 
         let samples = [
-            Sample::new(track_id, 0, None, Duration::from_millis(33), true, vec![0u8; 500]),
-            Sample::new(track_id, 33_000_000, None, Duration::from_millis(33), false, vec![0u8; 400]),
+            Sample::new(
+                track_id,
+                0,
+                None,
+                Duration::from_millis(33),
+                true,
+                vec![0u8; 500],
+            ),
+            Sample::new(
+                track_id,
+                33_000_000,
+                None,
+                Duration::from_millis(33),
+                false,
+                vec![0u8; 400],
+            ),
         ];
         muxer.push_chunk(&samples).unwrap();
 
@@ -1244,13 +1297,27 @@ mod tests {
         let (_moov, mut muxer) = builder.build_fragmented().unwrap();
 
         // First fragment
-        let s1 = [Sample::new(track_id, 0, None, Duration::from_millis(33), true, vec![0u8; 100])];
+        let s1 = [Sample::new(
+            track_id,
+            0,
+            None,
+            Duration::from_millis(33),
+            true,
+            vec![0u8; 100],
+        )];
         muxer.push_chunk(&s1).unwrap();
         let moof1 = muxer.flush_fragment().unwrap();
         assert_eq!(moof1.mfhd.sequence_number, 1);
 
         // Second fragment — sequence number increments, data_offset resets
-        let s2 = [Sample::new(track_id, 33_000_000, None, Duration::from_millis(33), true, vec![0u8; 200])];
+        let s2 = [Sample::new(
+            track_id,
+            33_000_000,
+            None,
+            Duration::from_millis(33),
+            true,
+            vec![0u8; 200],
+        )];
         muxer.push_chunk(&s2).unwrap();
         let moof2 = muxer.flush_fragment().unwrap();
         assert_eq!(moof2.mfhd.sequence_number, 2);

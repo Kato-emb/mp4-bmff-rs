@@ -11,97 +11,35 @@ use super::Sample;
 use super::Result;
 use super::error::*;
 
-/// Metadata for a sample, used for building sample tables entries.
-#[derive(Debug, Clone, Copy)]
-pub(super) struct SampleMetadata {
-    pub dts_ns: u64,
-    pub pts_ns: Option<i64>,
-    pub duration: Duration,
-    pub is_sync: bool,
-    pub size: u32,
-}
-
-impl SampleMetadata {
-    pub(super) fn from_sample<T: AsRef<[u8]>>(sample: &Sample<T>) -> Result<Self> {
-        let size = u32::try_from(sample.data.as_ref().len())?;
-
-        Ok(SampleMetadata {
-            dts_ns: sample.dts_ns,
-            pts_ns: sample.pts_ns,
-            duration: sample.duration,
-            is_sync: sample.is_sync,
-            size,
-        })
-    }
-
-    pub(super) fn sample_delta(&self, timescale: NonZeroU32) -> Result<u32> {
-        let Some(ticks) = duration_to_ticks(self.duration, timescale.get()) else {
-            return Err(ErrorKind::Overflow.into());
-        };
-
-        u32::try_from(ticks).map_err(Into::into)
-    }
-
-    pub(super) fn sample_flags(&self) -> SampleFlags {
-        if self.is_sync {
-            SampleFlags::sync()
-        } else {
-            SampleFlags::non_sync()
-        }
-    }
-
-    pub(super) fn composition_time_offset(&self, media_timescale: NonZeroU32) -> Result<i32> {
-        let Some(pts) = self.pts_ns else {
-            return Ok(0);
-        };
-
-        let diff_ns = pts.checked_sub(self.dts_ns as i64);
-        let ticks = diff_ns
-            .and_then(|d| d.checked_mul(i64::from(media_timescale.get())))
-            .and_then(|ticks| ticks.checked_div(1_000_000_000))
-            .ok_or(ErrorKind::Overflow)?;
-
-        i32::try_from(ticks).map_err(Into::into)
-    }
-}
-
-impl<T: AsRef<[u8]>> TryFrom<&Sample<T>> for SampleMetadata {
-    type Error = Error;
-
-    fn try_from(sample: &Sample<T>) -> Result<Self> {
-        Self::from_sample(sample)
-    }
-}
-
 #[derive(Debug)]
-pub(super) struct SampleChunk {
+pub(super) struct Chunk {
     pub data_offset: u64,
-    pub entries: Vec<SampleMetadata>,
+    pub samples: Vec<Sample>,
 }
 
-impl SampleChunk {
+impl Chunk {
     pub(super) fn total_size(&self) -> u64 {
-        self.entries.iter().map(|e| u64::from(e.size)).sum()
+        self.samples.iter().map(|e| u64::from(e.size)).sum()
     }
 }
 
 #[derive(Debug, Default)]
 pub(super) struct SampleTable {
-    pub chunks: Vec<SampleChunk>,
+    pub chunks: Vec<Chunk>,
 }
 
 impl SampleTable {
     pub(super) fn media_duration(&self) -> Duration {
         self.chunks
             .iter()
-            .flat_map(|group| group.entries.iter())
+            .flat_map(|group| group.samples.iter())
             .fold(Duration::ZERO, |acc, entry| acc + entry.duration)
     }
 
     pub(super) fn first_decode_time_ns(&self) -> Option<u64> {
         self.chunks
             .first()
-            .and_then(|chunk| chunk.entries.first())
+            .and_then(|chunk| chunk.samples.first())
             .map(|s| s.dts_ns)
     }
 }
@@ -163,7 +101,7 @@ impl Movie {
         }
     }
 
-    pub(super) fn push_chunk(&mut self, track_id: u32, chunk: SampleChunk) -> Result<()> {
+    pub(super) fn push_chunk(&mut self, track_id: u32, chunk: Chunk) -> Result<()> {
         let track = self.get_track_mut(track_id).ok_or_else(|| {
             Error::new(ErrorKind::InvalidInput)
                 .with_message(format!("Track ID {} not found", track_id))
@@ -192,6 +130,7 @@ impl Movie {
         self.tracks.iter_mut().find(|t| t.id.get() == track_id)
     }
 }
+
 pub(super) fn nanos_to_ticks(nanos: u64, timescale: u32) -> Option<u64> {
     let timescale = u64::from(timescale);
     let secs = nanos / 1_000_000_000;
