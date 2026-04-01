@@ -21,3 +21,6 @@ target
 #.idea/
 
 *.mp4
+
+# Integration test fixtures for mp4-bmff-util (see crates/mp4-bmff-util/tests/mux.rs)
+!crates/mp4-bmff-util/tests/samples/*.mp4
