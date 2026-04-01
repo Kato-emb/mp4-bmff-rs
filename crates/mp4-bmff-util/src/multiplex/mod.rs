@@ -27,6 +27,22 @@ pub mod demux;
 pub type MuxError = error::Error;
 type Result<T> = core::result::Result<T, MuxError>;
 
+/// Unique identifier for a track within an MP4 file, used to associate samples and metadata with the correct track.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TrackId(u32);
+
+impl TrackId {
+    /// Creates a new `TrackId` with the given value.
+    pub(super) fn new(id: u32) -> Self {
+        Self(id)
+    }
+
+    /// Returns the underlying `u32` value of the `TrackId`.
+    pub fn get(&self) -> u32 {
+        self.0
+    }
+}
+
 /// Represents a media sample in an MP4 file, containing metadata and sample data.
 #[derive(Debug)]
 pub struct Sample {
@@ -35,13 +51,35 @@ pub struct Sample {
     duration: Duration,
     is_sync: bool,
     size: u32,
+    data_offset: u64,
 }
 
 impl Sample {
+    /// Creates a new `Sample` with the given parameters.
+    pub fn new(
+        dts_ns: u64,
+        pts_ns: Option<i64>,
+        duration: Duration,
+        is_sync: bool,
+        size: u32,
+        data_offset: u64,
+    ) -> Self {
+        Self {
+            dts_ns,
+            pts_ns,
+            duration,
+            is_sync,
+            size,
+            data_offset,
+        }
+    }
+
+    /// Returns the sample duration as a `Duration` type.
     pub fn duration(&self) -> Duration {
         self.duration
     }
 
+    /// Returns the composition time offset in nanoseconds, calculated as `pts - dts`.
     pub fn composition_time_offset_ns(&self) -> Option<i64> {
         self.pts_ns
             .and_then(|pts| pts.checked_sub(self.dts_ns as i64))

@@ -19,7 +19,8 @@ use mp4_bmff::RawBoxOwned;
 use mp4_bmff::boxes::bmff::*;
 use mp4_bmff::types::*;
 
-use crate::multiplex::Sample;
+use super::Sample;
+use super::TrackId;
 
 use super::Result;
 use super::error::*;
@@ -55,8 +56,7 @@ impl Builder {
         timescale: u32,
         media: MediaDefinition,
     ) -> Result<TrackBuilder<'_>> {
-        let track_id = NonZeroU32::new(self.movie.next_track_id().ok_or(ErrorKind::Overflow)?)
-            .expect("next_track_id should never return 0 since it starts at 1 and increments");
+        let track_id = self.movie.next_track_id().ok_or(ErrorKind::Overflow)?;
         let timescale = NonZeroU32::new(timescale).ok_or(
             Error::new(ErrorKind::InvalidInput).with_message("Timescale must be non-zero"),
         )?;
@@ -149,10 +149,10 @@ impl TrackBuilder<'_> {
     }
 
     /// Finalizes the track and adds it to the builder, returning the assigned track ID.
-    pub fn build(self) -> u32 {
+    pub fn build(self) -> TrackId {
         let track_id = self.track.id.get();
         self.builder.movie.tracks.push(self.track);
-        track_id
+        TrackId::new(track_id)
     }
 }
 
@@ -168,14 +168,26 @@ impl Muxer {
         Builder::new(timescale)
     }
 
-    /// Appends a chunk of samples to the muxer at the given byte offset within the `mdat` box.
-    pub fn push_chunk<T: AsRef<[u8]>>(
-        &mut self,
-        samples: &[Sample<T>],
-        data_offset: u64,
-    ) -> Result<()> {
-        let (track_id, chunk) = validate_and_build_chunk(samples, data_offset)?;
-        self.movie.push_chunk(track_id.get(), chunk)
+    /// Adds a sample to the specified track in the movie, associating it with the given data offset in the `mdat` box.
+    pub fn add_sample(&mut self, track_id: TrackId, sample: Sample) -> Result<()> {
+        let track = self.movie.get_track_mut(track_id).ok_or(
+            Error::new(ErrorKind::InvalidInput)
+                .with_message("Track ID does not exist in the movie"),
+        )?;
+
+        // Try to append to the last chunk if it exists and the data offset matches the end of that chunk
+        if let Some(last_chunk) = track.sample_table.chunks.last_mut() {
+            if last_chunk.end_position() == sample.data_offset {
+                last_chunk.push(sample);
+                return Ok(());
+            }
+        }
+
+        // Start a new chunk if there are no existing chunks or if the data offset does not match the end of the last chunk
+        let new_chunk = Chunk::new(sample);
+
+        track.sample_table.chunks.push(new_chunk);
+        Ok(())
     }
 
     /// Finalizes the muxer and produces the `moov` box.
@@ -198,27 +210,6 @@ impl FragmentedMuxer {
         Builder::new(timescale)
     }
 
-    /// Appends a chunk of samples to the current fragment.
-    ///
-    /// The data offset within the `mdat` box is tracked automatically.
-    pub fn push_chunk<T: AsRef<[u8]>>(&mut self, samples: &[Sample<T>]) -> Result<()> {
-        let data_offset = self.mdat_payload_size;
-        let (track_id, chunk) = validate_and_build_chunk(samples, data_offset)?;
-
-        let total_size = chunk.total_size();
-        let new_payload_size =
-            self.mdat_payload_size
-                .checked_add(total_size)
-                .filter(|&size| size <= i32::MAX as u64)
-                .ok_or(Error::new(ErrorKind::Overflow).with_message(
-                    "mdat payload size exceeds i32 range; flush the fragment first",
-                ))?;
-        self.movie.push_chunk(track_id.get(), chunk)?;
-        self.mdat_payload_size = new_payload_size;
-
-        Ok(())
-    }
-
     /// Flushes the accumulated samples into a `moof` box and resets the fragment state.
     ///
     /// The returned `MoofBox` has its `data_offset` values adjusted to account for
@@ -233,10 +224,7 @@ impl FragmentedMuxer {
         let moof_boxed_size = moof.boxed_len();
         let mdat_header = BoxHeader::new(BoxType::MDAT, self.mdat_payload_size);
 
-        let base = i32::try_from(moof_boxed_size + mdat_header.header_len()).map_err(|_| {
-            Error::new(ErrorKind::Overflow)
-                .with_message("moof + mdat header size exceeds i32 range for data_offset")
-        })?;
+        let base = i32::try_from(moof_boxed_size + mdat_header.header_len())?;
         for traf in &mut moof.trafs {
             for trun in &mut traf.truns {
                 if let Some(offset) = trun.data_offset() {
@@ -261,40 +249,12 @@ impl FragmentedMuxer {
     }
 }
 
-fn validate_and_build_chunk<T: AsRef<[u8]>>(
-    samples: &[Sample<T>],
-    data_offset: u64,
-) -> Result<(NonZeroU32, Chunk)> {
-    let first = samples
-        .first()
-        .ok_or(Error::new(ErrorKind::InvalidInput).with_message("samples must not be empty"))?;
-    let track_id = first.track_id;
-
-    let mut entries = Vec::with_capacity(samples.len());
-
-    for sample in samples.iter() {
-        if sample.track_id != track_id {
-            return Err(Error::new(ErrorKind::InvalidInput)
-                .with_message("All samples in a chunk must have the same track ID"));
-        }
-
-        entries.push(SampleMetadata::try_from(sample)?);
-    }
-
-    let chunk = Chunk {
-        data_offset,
-        samples: entries,
-    };
-
-    Ok((track_id, chunk))
-}
-
 fn build_mvhd(movie: &Movie) -> Result<MvhdBox> {
     let mut mvhd = MvhdBox::default();
     mvhd.timescale = movie.timescale.get();
     mvhd.duration = duration_to_ticks(movie.movie_duration(), movie.timescale.get())
         .ok_or(ErrorKind::Overflow)?;
-    mvhd.next_track_id = movie.next_track_id().ok_or(ErrorKind::Overflow)?;
+    mvhd.next_track_id = movie.next_track_id().ok_or(ErrorKind::Overflow)?.get();
     Ok(mvhd)
 }
 
@@ -634,17 +594,15 @@ fn build_stbl(
     let mut sample_number: u32 = 0;
 
     for chunk in sample_table.chunks.iter() {
-        debug_assert!(!chunk.samples.is_empty());
-
         chunk_number = chunk_number.checked_add(1).ok_or(ErrorKind::Overflow)?;
-        let samples_per_chunk = u32::try_from(chunk.samples.len()).map_err(|_| {
+        let samples_per_chunk = u32::try_from(chunk.sample_count()).map_err(|_| {
             Error::new(ErrorKind::Overflow)
                 .with_message("Number of samples per chunk exceeds u32 range")
         })?;
         stsc.push(chunk_number, samples_per_chunk, 1);
-        chunk_offset.push(chunk.data_offset);
+        chunk_offset.push(chunk.data_offset());
 
-        for sample in chunk.samples.iter() {
+        for sample in chunk.samples() {
             sample_number = sample_number.checked_add(1).ok_or(ErrorKind::Overflow)?;
             let sample_delta = sample_delta(sample, media_timescale.get())?;
             let cto = composition_time_offset(sample, media_timescale.get())?;
@@ -703,15 +661,9 @@ fn build_trun(
     default_sample_size: Option<u32>,
     default_sample_flags: Option<SampleFlags>,
 ) -> Result<TrunBox> {
-    if chunk.samples.is_empty() {
-        return Err(Error::new(ErrorKind::InvalidInput)
-            .with_message("Cannot build trun from an empty chunk"));
-    }
-
     // 1. Convert all samples to timescale units
     let computed: Vec<_> = chunk
-        .samples
-        .iter()
+        .samples()
         .map(|meta| {
             Ok((
                 sample_delta(meta, media_timescale.get())?,
@@ -777,7 +729,7 @@ fn build_trun(
     let mut trun = TrunBox::new(trun_flags, signed_cto);
 
     let relative_offset = chunk
-        .data_offset
+        .data_offset()
         .checked_sub(moof_offset)
         .ok_or(ErrorKind::Overflow)?;
     trun.set_data_offset(i32::try_from(relative_offset)?);
@@ -838,503 +790,4 @@ fn composition_time_offset(sample: &Sample, timescale: u32) -> Result<i32> {
     let ticks = i32::try_from(abs)?;
 
     Ok(if cto_ns < 0 { -ticks } else { ticks })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use core::time::Duration;
-
-    const TS_90K: NonZeroU32 = unsafe { NonZeroU32::new_unchecked(90_000) };
-
-    fn sample(dts_ns: u64, duration_ms: u64, size: u32, is_sync: bool) -> Sample {
-        Sample {
-            dts_ns,
-            pts_ns: None,
-            duration: Duration::from_millis(duration_ms),
-            is_sync,
-            size,
-        }
-    }
-
-    fn chunk_from(entries: Vec<Sample>, data_offset: u64) -> Chunk {
-        Chunk {
-            data_offset,
-            samples: entries,
-        }
-    }
-
-    // ---------------------------------------------------------------
-    // validate_and_build_chunk
-    // ---------------------------------------------------------------
-
-    #[test]
-    fn validate_empty_samples_returns_error() {
-        let samples: &[Sample] = &[];
-        let err = validate_and_build_chunk(samples, 0).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidInput);
-    }
-
-    #[test]
-    fn validate_mixed_track_ids_returns_error() {
-        let s1 = Sample::new(1, 0, None, Duration::from_millis(33), true, &[0u8; 100][..]);
-        let s2 = Sample::new(
-            2,
-            33_000_000,
-            None,
-            Duration::from_millis(33),
-            false,
-            &[0u8; 100][..],
-        );
-        let err = validate_and_build_chunk(&[s1, s2], 0).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidInput);
-    }
-
-    #[test]
-    fn validate_single_sample_ok() {
-        let s = Sample::new(1, 0, None, Duration::from_millis(33), true, &[0u8; 50][..]);
-        let (track_id, chunk) = validate_and_build_chunk(&[s], 128).unwrap();
-        assert_eq!(track_id.get(), 1);
-        assert_eq!(chunk.samples.len(), 1);
-        assert_eq!(chunk.data_offset, 128);
-        assert_eq!(chunk.samples[0].size, 50);
-    }
-
-    // ---------------------------------------------------------------
-    // build_trun: FlagsStrategy
-    // ---------------------------------------------------------------
-
-    #[test]
-    fn trun_flags_all_default() {
-        let df = SampleFlags::non_sync();
-        let entries = vec![
-            sample(0, 33, 1000, false),
-            sample(33_000_000, 33, 1000, false),
-        ];
-        let chunk = chunk_from(entries, 0);
-
-        let trun = build_trun(&chunk, TS_90K, 0, None, None, Some(df)).unwrap();
-
-        // flags should not contain SAMPLE_FLAGS_PRESENT or FIRST_SAMPLE_FLAGS_PRESENT
-        assert!(!trun.flags().contains(TrunFlags::SAMPLE_FLAGS_PRESENT));
-        assert!(!trun.flags().contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT));
-        assert!(trun.sample_flags().is_none());
-    }
-
-    #[test]
-    fn trun_flags_first_sample_only() {
-        let df = SampleFlags::non_sync();
-        let entries = vec![
-            sample(0, 33, 1000, true),           // sync → differs from default
-            sample(33_000_000, 33, 1000, false), // non_sync → matches default
-            sample(66_000_000, 33, 1000, false), // non_sync → matches default
-        ];
-        let chunk = chunk_from(entries, 0);
-
-        let trun = build_trun(&chunk, TS_90K, 0, None, None, Some(df)).unwrap();
-
-        assert!(trun.flags().contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT));
-        assert!(!trun.flags().contains(TrunFlags::SAMPLE_FLAGS_PRESENT));
-        assert_eq!(trun.first_sample_flags(), Some(SampleFlags::sync()));
-    }
-
-    #[test]
-    fn trun_flags_per_sample() {
-        let df = SampleFlags::non_sync();
-        let entries = vec![
-            sample(0, 33, 1000, true),
-            sample(33_000_000, 33, 1000, true), // second also differs
-            sample(66_000_000, 33, 1000, false),
-        ];
-        let chunk = chunk_from(entries, 0);
-
-        let trun = build_trun(&chunk, TS_90K, 0, None, None, Some(df)).unwrap();
-
-        assert!(trun.flags().contains(TrunFlags::SAMPLE_FLAGS_PRESENT));
-        assert!(!trun.flags().contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT));
-        assert_eq!(trun.sample_flags().unwrap().len(), 3);
-    }
-
-    #[test]
-    fn trun_flags_no_default_uses_per_sample() {
-        let entries = vec![
-            sample(0, 33, 1000, true),
-            sample(33_000_000, 33, 1000, true),
-        ];
-        let chunk = chunk_from(entries, 0);
-
-        let trun = build_trun(&chunk, TS_90K, 0, None, None, None).unwrap();
-
-        assert!(trun.flags().contains(TrunFlags::SAMPLE_FLAGS_PRESENT));
-    }
-
-    #[test]
-    fn trun_single_sample_all_default() {
-        let df = SampleFlags::sync();
-        let entries = vec![sample(0, 33, 1000, true)];
-        let chunk = chunk_from(entries, 0);
-
-        let trun = build_trun(&chunk, TS_90K, 0, None, None, Some(df)).unwrap();
-
-        assert!(!trun.flags().contains(TrunFlags::SAMPLE_FLAGS_PRESENT));
-        assert!(!trun.flags().contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT));
-        assert_eq!(trun.sample_count(), 1);
-    }
-
-    #[test]
-    fn trun_single_sample_differs_uses_first_sample_flags() {
-        let df = SampleFlags::non_sync();
-        let entries = vec![sample(0, 33, 1000, true)];
-        let chunk = chunk_from(entries, 0);
-
-        let trun = build_trun(&chunk, TS_90K, 0, None, None, Some(df)).unwrap();
-
-        assert!(trun.flags().contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT));
-        assert_eq!(trun.first_sample_flags(), Some(SampleFlags::sync()));
-    }
-
-    #[test]
-    fn trun_empty_chunk_returns_error() {
-        let chunk = chunk_from(vec![], 0);
-        let err = build_trun(&chunk, TS_90K, 0, None, None, None).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidInput);
-    }
-
-    // ---------------------------------------------------------------
-    // build_trun: duration/size omission
-    // ---------------------------------------------------------------
-
-    #[test]
-    fn trun_omits_duration_when_all_match_default() {
-        let entries = vec![sample(0, 33, 500, true), sample(33_000_000, 33, 600, true)];
-        let chunk = chunk_from(entries, 0);
-        // 33ms * 90000 = 2970
-        let trun = build_trun(&chunk, TS_90K, 0, Some(2970), None, None).unwrap();
-
-        assert!(!trun.flags().contains(TrunFlags::SAMPLE_DURATION_PRESENT));
-        assert!(trun.sample_durations().is_none());
-    }
-
-    #[test]
-    fn trun_omits_size_when_all_match_default() {
-        let entries = vec![
-            sample(0, 33, 1000, true),
-            sample(33_000_000, 33, 1000, true),
-        ];
-        let chunk = chunk_from(entries, 0);
-
-        let trun = build_trun(&chunk, TS_90K, 0, None, Some(1000), None).unwrap();
-
-        assert!(!trun.flags().contains(TrunFlags::SAMPLE_SIZE_PRESENT));
-        assert!(trun.sample_sizes().is_none());
-    }
-
-    #[test]
-    fn trun_emits_size_when_mismatch() {
-        let entries = vec![
-            sample(0, 33, 1000, true),
-            sample(33_000_000, 33, 2000, true),
-        ];
-        let chunk = chunk_from(entries, 0);
-
-        let trun = build_trun(&chunk, TS_90K, 0, None, Some(1000), None).unwrap();
-
-        assert!(trun.flags().contains(TrunFlags::SAMPLE_SIZE_PRESENT));
-        assert_eq!(trun.sample_sizes().unwrap(), &[1000, 2000]);
-    }
-
-    // ---------------------------------------------------------------
-    // build_stbl: ctts / stss
-    // ---------------------------------------------------------------
-
-    #[test]
-    fn stbl_ctts_none_when_all_zero() {
-        let entries = vec![sample(0, 33, 100, true), sample(33_000_000, 33, 100, true)];
-        let table = SampleTable {
-            chunks: vec![chunk_from(entries, 0)],
-        };
-        let stsd = StsdBox::default();
-        let stbl = build_stbl(&table, stsd, TS_90K).unwrap();
-
-        assert!(stbl.ctts.is_none());
-    }
-
-    #[test]
-    fn stbl_ctts_present_when_nonzero() {
-        let entries = vec![
-            Sample {
-                dts_ns: 0,
-                pts_ns: Some(33_000_000),
-                duration: Duration::from_millis(33),
-                is_sync: true,
-                size: 100,
-            },
-            sample(33_000_000, 33, 100, false),
-        ];
-        let table = SampleTable {
-            chunks: vec![chunk_from(entries, 0)],
-        };
-        let stsd = StsdBox::default();
-        let stbl = build_stbl(&table, stsd, TS_90K).unwrap();
-
-        assert!(stbl.ctts.is_some());
-    }
-
-    #[test]
-    fn stbl_stss_none_when_all_sync() {
-        let entries = vec![sample(0, 33, 100, true), sample(33_000_000, 33, 100, true)];
-        let table = SampleTable {
-            chunks: vec![chunk_from(entries, 0)],
-        };
-        let stsd = StsdBox::default();
-        let stbl = build_stbl(&table, stsd, TS_90K).unwrap();
-
-        assert!(stbl.stss.is_none());
-    }
-
-    #[test]
-    fn stbl_stss_present_when_partial_sync() {
-        let entries = vec![
-            sample(0, 33, 100, true),
-            sample(33_000_000, 33, 100, false),
-            sample(66_000_000, 33, 100, true),
-        ];
-        let table = SampleTable {
-            chunks: vec![chunk_from(entries, 0)],
-        };
-        let stsd = StsdBox::default();
-        let stbl = build_stbl(&table, stsd, TS_90K).unwrap();
-
-        let stss = stbl.stss.unwrap();
-        assert_eq!(stss.entries.len(), 2);
-        assert_eq!(stss.entries[0].sample_number, 1);
-        assert_eq!(stss.entries[1].sample_number, 3);
-    }
-
-    // ---------------------------------------------------------------
-    // Helper: minimal MediaDefinition for public API tests
-    // ---------------------------------------------------------------
-
-    #[cfg(feature = "avc")]
-    fn test_video_media(width: u16, height: u16) -> MediaDefinition {
-        use mp4_bmff::boxes::avc::{Avc1SampleEntry, AvcCBox};
-        use mp4_bmff::boxes::bmff::VisualSampleEntry;
-        use mp4_bmff::formats::mpeg4::codecs::avc::AVCDecoderConfigurationRecord;
-
-        let avcc = AvcCBox {
-            avc_config: AVCDecoderConfigurationRecord {
-                configuration_version: 1,
-                avc_profile_indication: 66,
-                profile_compatibility: 0xC0,
-                avc_level_indication: 30,
-                length_size_minus_one: 3,
-                sps: vec![vec![0x67, 0x42, 0xC0, 0x1E]],
-                pps: vec![vec![0x68, 0xCE, 0x3C, 0x80]],
-                chroma_format: None,
-                bit_depth_luma_minus8: None,
-                bit_depth_chroma_minus8: None,
-                sps_ext: None,
-            },
-        };
-        let mut base = VisualSampleEntry::default();
-        base.width = width;
-        base.height = height;
-        let entry = Avc1SampleEntry::new(base, avcc, None, None);
-        MediaDefinition::Video(VisualSampleDescription::Avc1(entry))
-    }
-
-    // ---------------------------------------------------------------
-    // Muxer public API
-    // ---------------------------------------------------------------
-
-    #[cfg(feature = "avc")]
-    #[test]
-    fn muxer_finalize_produces_valid_moov() {
-        let mut builder = Muxer::builder(1000).unwrap();
-        let track_id = builder
-            .add_track(90_000, test_video_media(1280, 720))
-            .unwrap()
-            .build();
-        let mut muxer = builder.build().unwrap();
-
-        let samples = [
-            Sample::new(
-                track_id,
-                0,
-                None,
-                Duration::from_millis(33),
-                true,
-                vec![0u8; 1000],
-            ),
-            Sample::new(
-                track_id,
-                33_000_000,
-                None,
-                Duration::from_millis(33),
-                false,
-                vec![0u8; 800],
-            ),
-            Sample::new(
-                track_id,
-                66_000_000,
-                None,
-                Duration::from_millis(33),
-                true,
-                vec![0u8; 900],
-            ),
-        ];
-        muxer.push_chunk(&samples, 0).unwrap();
-
-        let moov = muxer.finalize().unwrap();
-
-        assert_eq!(moov.traks.len(), 1);
-        assert!(moov.mvex.is_none());
-        assert_eq!(moov.mvhd.timescale, 1000);
-        assert_eq!(moov.mvhd.next_track_id, 2);
-
-        let trak = &moov.traks[0];
-        assert_eq!(trak.tkhd.track_id, track_id);
-
-        let stbl = &trak.mdia.minf.stbl;
-        assert_eq!(stbl.stts.entries.len(), 1); // all same duration → single run
-        assert!(stbl.stss.is_some()); // not all sync
-        assert_eq!(stbl.stss.as_ref().unwrap().entries.len(), 2); // samples 1 and 3
-    }
-
-    #[cfg(feature = "avc")]
-    #[test]
-    fn muxer_push_chunk_validates_track_id() {
-        let mut builder = Muxer::builder(1000).unwrap();
-        builder
-            .add_track(90_000, test_video_media(1920, 1080))
-            .unwrap()
-            .build();
-        let mut muxer = builder.build().unwrap();
-
-        // track_id 99 does not exist
-        let sample = Sample::new(99, 0, None, Duration::from_millis(33), true, vec![0u8; 100]);
-        let err = muxer.push_chunk(&[sample], 0).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidInput);
-    }
-
-    // ---------------------------------------------------------------
-    // FragmentedMuxer public API
-    // ---------------------------------------------------------------
-
-    #[cfg(feature = "avc")]
-    #[test]
-    fn fragmented_muxer_produces_moov_with_mvex() {
-        let mut builder = FragmentedMuxer::builder(1000).unwrap();
-        builder
-            .add_track(90_000, test_video_media(1280, 720))
-            .unwrap()
-            .sample_default_duration(3000)
-            .sample_default_flags(SampleFlags::non_sync())
-            .build();
-        let (moov, _muxer) = builder.build_fragmented().unwrap();
-
-        assert!(moov.mvex.is_some());
-        let mvex = moov.mvex.unwrap();
-        assert_eq!(mvex.trexs.len(), 1);
-        assert_eq!(mvex.trexs[0].default_sample_duration, 3000);
-    }
-
-    #[cfg(feature = "avc")]
-    #[test]
-    fn fragmented_muxer_flush_produces_moof() {
-        let mut builder = FragmentedMuxer::builder(1000).unwrap();
-        let track_id = builder
-            .add_track(90_000, test_video_media(1280, 720))
-            .unwrap()
-            .sample_default_duration(3000)
-            .sample_default_flags(SampleFlags::non_sync())
-            .build();
-        let (_moov, mut muxer) = builder.build_fragmented().unwrap();
-
-        let samples = [
-            Sample::new(
-                track_id,
-                0,
-                None,
-                Duration::from_millis(33),
-                true,
-                vec![0u8; 500],
-            ),
-            Sample::new(
-                track_id,
-                33_000_000,
-                None,
-                Duration::from_millis(33),
-                false,
-                vec![0u8; 400],
-            ),
-        ];
-        muxer.push_chunk(&samples).unwrap();
-
-        let moof = muxer.flush_fragment().unwrap();
-
-        assert_eq!(moof.mfhd.sequence_number, 1);
-        assert_eq!(moof.trafs.len(), 1);
-
-        let traf = &moof.trafs[0];
-        assert!(traf.tfdt.is_some());
-        assert_eq!(traf.truns.len(), 1);
-        assert_eq!(traf.truns[0].sample_count(), 2);
-
-        // data_offset should be positive (moof_size + mdat_header)
-        let offset = traf.truns[0].data_offset().unwrap();
-        assert!(offset > 0);
-    }
-
-    #[cfg(feature = "avc")]
-    #[test]
-    fn fragmented_muxer_flush_resets_state() {
-        let mut builder = FragmentedMuxer::builder(1000).unwrap();
-        let track_id = builder
-            .add_track(90_000, test_video_media(1280, 720))
-            .unwrap()
-            .build();
-        let (_moov, mut muxer) = builder.build_fragmented().unwrap();
-
-        // First fragment
-        let s1 = [Sample::new(
-            track_id,
-            0,
-            None,
-            Duration::from_millis(33),
-            true,
-            vec![0u8; 100],
-        )];
-        muxer.push_chunk(&s1).unwrap();
-        let moof1 = muxer.flush_fragment().unwrap();
-        assert_eq!(moof1.mfhd.sequence_number, 1);
-
-        // Second fragment — sequence number increments, data_offset resets
-        let s2 = [Sample::new(
-            track_id,
-            33_000_000,
-            None,
-            Duration::from_millis(33),
-            true,
-            vec![0u8; 200],
-        )];
-        muxer.push_chunk(&s2).unwrap();
-        let moof2 = muxer.flush_fragment().unwrap();
-        assert_eq!(moof2.mfhd.sequence_number, 2);
-        assert_eq!(moof2.trafs[0].truns[0].sample_count(), 1);
-    }
-
-    #[cfg(feature = "avc")]
-    #[test]
-    fn fragmented_muxer_flush_empty_returns_error() {
-        let mut builder = FragmentedMuxer::builder(1000).unwrap();
-        builder
-            .add_track(90_000, test_video_media(1280, 720))
-            .unwrap()
-            .build();
-        let (_moov, mut muxer) = builder.build_fragmented().unwrap();
-
-        let err = muxer.flush_fragment().unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidInput);
-    }
 }

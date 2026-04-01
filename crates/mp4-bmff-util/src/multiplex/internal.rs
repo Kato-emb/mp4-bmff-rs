@@ -7,19 +7,48 @@ use mp4_bmff::types::*;
 use super::EditSegment;
 use super::MediaDefinition;
 use super::Sample;
-
-use super::Result;
-use super::error::*;
+use super::TrackId;
 
 #[derive(Debug)]
 pub(super) struct Chunk {
-    pub data_offset: u64,
-    pub samples: Vec<Sample>,
+    first: Sample,
+    rest: Vec<Sample>,
 }
 
 impl Chunk {
+    pub(super) fn new(first: Sample) -> Self {
+        Self {
+            first,
+            rest: Vec::new(),
+        }
+    }
+
+    pub(super) fn push(&mut self, sample: Sample) {
+        self.rest.push(sample);
+    }
+
+    pub(super) const fn first(&self) -> &Sample {
+        &self.first
+    }
+
+    pub(super) fn samples(&self) -> impl Iterator<Item = &Sample> {
+        core::iter::once(&self.first).chain(self.rest.iter())
+    }
+
+    pub(super) fn sample_count(&self) -> usize {
+        1 + self.rest.len()
+    }
+
+    pub(super) fn data_offset(&self) -> u64 {
+        self.first.data_offset
+    }
+
     pub(super) fn total_size(&self) -> u64 {
-        self.samples.iter().map(|e| u64::from(e.size)).sum()
+        self.samples().map(|s| s.size as u64).sum()
+    }
+
+    pub(super) fn end_position(&self) -> u64 {
+        self.data_offset() + self.total_size()
     }
 }
 
@@ -32,15 +61,12 @@ impl SampleTable {
     pub(super) fn media_duration(&self) -> Duration {
         self.chunks
             .iter()
-            .flat_map(|group| group.samples.iter())
+            .flat_map(|group| group.samples())
             .fold(Duration::ZERO, |acc, entry| acc + entry.duration)
     }
 
     pub(super) fn first_decode_time_ns(&self) -> Option<u64> {
-        self.chunks
-            .first()
-            .and_then(|chunk| chunk.samples.first())
-            .map(|s| s.dts_ns)
+        self.chunks.first().map(|chunk| chunk.first().dts_ns)
     }
 }
 
@@ -101,20 +127,10 @@ impl Movie {
         }
     }
 
-    pub(super) fn push_chunk(&mut self, track_id: u32, chunk: Chunk) -> Result<()> {
-        let track = self.get_track_mut(track_id).ok_or_else(|| {
-            Error::new(ErrorKind::InvalidInput)
-                .with_message(format!("Track ID {} not found", track_id))
-        })?;
-
-        track.sample_table.chunks.push(chunk);
-        Ok(())
-    }
-
-    pub(super) fn next_track_id(&self) -> Option<u32> {
+    pub(super) fn next_track_id(&self) -> Option<NonZeroU32> {
         match self.tracks.iter().map(|t| t.id.get()).max() {
-            Some(max_id) => max_id.checked_add(1),
-            None => Some(1),
+            Some(max_id) => max_id.checked_add(1).and_then(NonZeroU32::new),
+            None => NonZeroU32::new(1),
         }
     }
 
@@ -126,8 +142,10 @@ impl Movie {
             .unwrap_or(Duration::ZERO)
     }
 
-    fn get_track_mut(&mut self, track_id: u32) -> Option<&mut Track> {
-        self.tracks.iter_mut().find(|t| t.id.get() == track_id)
+    pub(super) fn get_track_mut(&mut self, track_id: TrackId) -> Option<&mut Track> {
+        self.tracks
+            .iter_mut()
+            .find(|t| t.id.get() == track_id.get())
     }
 }
 
