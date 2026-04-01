@@ -13,8 +13,6 @@ use alloc::vec::Vec;
 
 use mp4_bmff::BoxCodec;
 use mp4_bmff::BoxEncode;
-use mp4_bmff::BoxHeader;
-use mp4_bmff::BoxType;
 use mp4_bmff::RawBoxOwned;
 use mp4_bmff::boxes::bmff::*;
 use mp4_bmff::types::*;
@@ -75,14 +73,6 @@ impl Builder {
 
     /// Builds a `FragmentedMuxer` along with the initial `MoovBox` for fragmented MP4 output.
     pub fn build_fragmented(self) -> Result<(MoovBox, FragmentedMuxer)> {
-        debug_assert!(
-            self.movie
-                .tracks
-                .iter()
-                .all(|t| t.sample_table.chunks.is_empty()),
-            "Fragmented movies should not have samples in the MovieBox; samples go in separate MovieFragment boxes (moof)"
-        );
-
         let mut moov = build_moov(&self.movie)?;
         moov.mvex = Some(build_mvex(&self.movie)?);
 
@@ -91,7 +81,6 @@ impl Builder {
             FragmentedMuxer {
                 movie: self.movie,
                 sequence_number: 0,
-                mdat_payload_size: 0,
             },
         ))
     }
@@ -170,28 +159,22 @@ impl Muxer {
 
     /// Adds a sample to the specified track in the movie, associating it with the given data offset in the `mdat` box.
     pub fn add_sample(&mut self, track_id: TrackId, sample: Sample) -> Result<()> {
-        let track = self.movie.get_track_mut(track_id).ok_or(
-            Error::new(ErrorKind::InvalidInput)
-                .with_message("Track ID does not exist in the movie"),
-        )?;
-
-        // Try to append to the last chunk if it exists and the data offset matches the end of that chunk
-        if let Some(last_chunk) = track.sample_table.chunks.last_mut() {
-            if last_chunk.end_position() == sample.data_offset {
-                last_chunk.push(sample);
-                return Ok(());
-            }
-        }
-
-        // Start a new chunk if there are no existing chunks or if the data offset does not match the end of the last chunk
-        let new_chunk = Chunk::new(sample);
-
-        track.sample_table.chunks.push(new_chunk);
-        Ok(())
+        self.movie.add_sample(track_id, sample)
     }
 
     /// Finalizes the muxer and produces the `moov` box.
-    pub fn finalize(&self) -> Result<MoovBox> {
+    pub fn finalize(self) -> Result<MoovBox> {
+        if self
+            .movie
+            .tracks
+            .iter()
+            .any(|t| t.sample_table.chunks.is_empty())
+        {
+            return Err(Error::new(ErrorKind::InvalidInput).with_message(
+                "Non-fragmented muxer cannot have tracks with no samples; all tracks must have at least one sample",
+            ));
+        }
+
         build_moov(&self.movie)
     }
 }
@@ -201,7 +184,6 @@ impl Muxer {
 pub struct FragmentedMuxer {
     movie: Movie,
     sequence_number: u32,
-    mdat_payload_size: u64,
 }
 
 impl FragmentedMuxer {
@@ -210,32 +192,19 @@ impl FragmentedMuxer {
         Builder::new(timescale)
     }
 
+    /// Adds a sample to the specified track in the movie, associating it with the given data offset in the `mdat` box.
+    pub fn add_sample(&mut self, track_id: TrackId, sample: Sample) -> Result<()> {
+        self.movie.add_sample(track_id, sample)
+    }
+
     /// Flushes the accumulated samples into a `moof` box and resets the fragment state.
-    ///
-    /// The returned `MoofBox` has its `data_offset` values adjusted to account for
-    /// the `moof` box size and the `mdat` header that immediately follows it.
     pub fn flush_fragment(&mut self) -> Result<MoofBox> {
         self.sequence_number = self
             .sequence_number
             .checked_add(1)
             .ok_or(ErrorKind::Overflow)?;
 
-        let mut moof = build_moof(&self.movie, self.sequence_number, 0)?;
-        let moof_boxed_size = moof.boxed_len();
-        let mdat_header = BoxHeader::new(BoxType::MDAT, self.mdat_payload_size);
-
-        let base = i32::try_from(moof_boxed_size + mdat_header.header_len())?;
-        for traf in &mut moof.trafs {
-            for trun in &mut traf.truns {
-                if let Some(offset) = trun.data_offset() {
-                    let adjusted = offset.checked_add(base).ok_or(
-                        Error::new(ErrorKind::Overflow)
-                            .with_message("data_offset + base exceeds i32 range"),
-                    )?;
-                    trun.set_data_offset(adjusted);
-                }
-            }
-        }
+        let moof = build_moof(&self.movie, self.sequence_number, 0)?;
 
         self.clear();
         Ok(moof)
@@ -245,7 +214,6 @@ impl FragmentedMuxer {
         for track in self.movie.tracks.iter_mut() {
             track.sample_table.chunks.clear();
         }
-        self.mdat_payload_size = 0;
     }
 }
 
@@ -493,11 +461,7 @@ fn build_elst(track: &Track, movie_timescale: NonZeroU32) -> Result<Option<ElstB
 
 fn build_edts(track: &Track, movie_timescale: NonZeroU32) -> Result<Option<EdtsBox>> {
     let elst = build_elst(track, movie_timescale)?;
-
-    match elst {
-        Some(elst) => Ok(Some(EdtsBox { elst: Some(elst) })),
-        None => Ok(None),
-    }
+    Ok(elst.map(|elst| EdtsBox { elst: Some(elst) }))
 }
 
 fn build_trak(track: &Track, movie_timescale: NonZeroU32) -> Result<TrakBox> {
@@ -643,16 +607,6 @@ fn build_stbl(
     })
 }
 
-/// Strategy for emitting sample flags in a `trun` box.
-enum FlagsStrategy {
-    /// All samples match the default flags — omit flags entirely.
-    AllDefault,
-    /// Only the first sample differs from the default — use `first_sample_flags`.
-    FirstSampleOnly(SampleFlags),
-    /// Multiple samples differ — write per-sample flags.
-    PerSample,
-}
-
 fn build_trun(
     chunk: &Chunk,
     media_timescale: NonZeroU32,
@@ -661,6 +615,16 @@ fn build_trun(
     default_sample_size: Option<u32>,
     default_sample_flags: Option<SampleFlags>,
 ) -> Result<TrunBox> {
+    /// Strategy for emitting sample flags in a `trun` box.
+    enum FlagsStrategy {
+        /// All samples match the default flags — omit flags entirely.
+        AllDefault,
+        /// Only the first sample differs from the default — use `first_sample_flags`.
+        FirstSampleOnly(SampleFlags),
+        /// Multiple samples differ — write per-sample flags.
+        PerSample,
+    }
+
     // 1. Convert all samples to timescale units
     let computed: Vec<_> = chunk
         .samples()
@@ -698,7 +662,11 @@ fn build_trun(
     //  - PerSample:        multiple differ           → write flags per sample
     let flags_strategy = match default_sample_flags {
         Some(df) if computed.iter().all(|c| c.2 == df) => FlagsStrategy::AllDefault,
-        Some(df) if computed[0].2 != df && computed[1..].iter().all(|c| c.2 == df) => {
+        Some(df)
+            if computed.len() > 1
+                && computed[0].2 != df
+                && computed[1..].iter().all(|c| c.2 == df) =>
+        {
             FlagsStrategy::FirstSampleOnly(computed[0].2)
         }
         _ => FlagsStrategy::PerSample,

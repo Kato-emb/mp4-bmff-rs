@@ -44,7 +44,7 @@ impl TrackId {
 }
 
 /// Represents a media sample in an MP4 file, containing metadata and sample data.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Sample {
     dts_ns: u64,
     pts_ns: Option<i64>,
@@ -82,7 +82,7 @@ impl Sample {
     /// Returns the composition time offset in nanoseconds, calculated as `pts - dts`.
     pub fn composition_time_offset_ns(&self) -> Option<i64> {
         self.pts_ns
-            .and_then(|pts| pts.checked_sub(self.dts_ns as i64))
+            .and_then(|pts| pts.checked_sub(i64::try_from(self.dts_ns).ok()?))
     }
 }
 

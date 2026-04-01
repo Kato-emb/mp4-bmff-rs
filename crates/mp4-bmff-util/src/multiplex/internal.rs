@@ -4,6 +4,9 @@ use core::time::Duration;
 use mp4_bmff::boxes::bmff::*;
 use mp4_bmff::types::*;
 
+use super::Result;
+use super::error::*;
+
 use super::EditSegment;
 use super::MediaDefinition;
 use super::Sample;
@@ -23,12 +26,21 @@ impl Chunk {
         }
     }
 
-    pub(super) fn push(&mut self, sample: Sample) {
-        self.rest.push(sample);
+    pub(super) fn try_push(&mut self, sample: Sample) -> bool {
+        if self.end_position() == sample.data_offset {
+            self.rest.push(sample);
+            true
+        } else {
+            false
+        }
     }
 
     pub(super) const fn first(&self) -> &Sample {
         &self.first
+    }
+
+    pub(super) fn last(&self) -> &Sample {
+        self.rest.last().unwrap_or(&self.first)
     }
 
     pub(super) fn samples(&self) -> impl Iterator<Item = &Sample> {
@@ -43,12 +55,9 @@ impl Chunk {
         self.first.data_offset
     }
 
-    pub(super) fn total_size(&self) -> u64 {
-        self.samples().map(|s| s.size as u64).sum()
-    }
-
     pub(super) fn end_position(&self) -> u64 {
-        self.data_offset() + self.total_size()
+        let last = self.last();
+        last.data_offset + u64::from(last.size)
     }
 }
 
@@ -142,7 +151,27 @@ impl Movie {
             .unwrap_or(Duration::ZERO)
     }
 
-    pub(super) fn get_track_mut(&mut self, track_id: TrackId) -> Option<&mut Track> {
+    pub(super) fn add_sample(&mut self, track_id: TrackId, sample: Sample) -> Result<()> {
+        let track = self.get_track_mut(track_id).ok_or(
+            Error::new(ErrorKind::InvalidInput).with_message(format!(
+                "Track ID {} does not exist in the movie",
+                track_id.get()
+            )),
+        )?;
+
+        // Try to add the sample to the last chunk of the track's sample table.
+        if let Some(last_chunk) = track.sample_table.chunks.last_mut() {
+            if last_chunk.try_push(sample) {
+                return Ok(());
+            }
+        }
+
+        // If it doesn't fit, start a new chunk.
+        track.sample_table.chunks.push(Chunk::new(sample));
+        Ok(())
+    }
+
+    fn get_track_mut(&mut self, track_id: TrackId) -> Option<&mut Track> {
         self.tracks
             .iter_mut()
             .find(|t| t.id.get() == track_id.get())
@@ -154,15 +183,15 @@ pub(super) fn nanos_to_ticks(nanos: u64, timescale: u32) -> Option<u64> {
     let secs = nanos / 1_000_000_000;
     let sub_nanos = nanos % 1_000_000_000;
 
-    // nanos * ts は最大 ≈ 4.3 × 10¹⁸ で、u64::MAX より小さいためオーバーフローしない。
     secs.checked_mul(timescale)?
         .checked_add(sub_nanos * timescale / 1_000_000_000)
 }
 
 pub(super) fn duration_to_ticks(duration: Duration, timescale: u32) -> Option<u64> {
+    let timescale = u64::from(timescale);
     let secs = duration.as_secs();
     let sub_nanos = u64::from(duration.subsec_nanos());
 
-    let nanos = secs.checked_mul(1_000_000_000)?.checked_add(sub_nanos)?;
-    nanos_to_ticks(nanos, timescale)
+    secs.checked_mul(timescale)?
+        .checked_add(sub_nanos * timescale / 1_000_000_000)
 }
