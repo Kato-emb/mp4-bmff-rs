@@ -35,6 +35,25 @@ define_box_flags!(
     }
 );
 
+impl TrunFlags {
+    fn from_entry(entry: &TrunEntry) -> Self {
+        let mut flags = TrunFlags::empty();
+        if entry.duration.is_some() {
+            flags |= TrunFlags::SAMPLE_DURATION_PRESENT;
+        }
+        if entry.size.is_some() {
+            flags |= TrunFlags::SAMPLE_SIZE_PRESENT;
+        }
+        if entry.flags.is_some() {
+            flags |= TrunFlags::SAMPLE_FLAGS_PRESENT;
+        }
+        if entry.composition_time_offset.is_some() {
+            flags |= TrunFlags::SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT;
+        }
+        flags
+    }
+}
+
 fn sample_data_size(flags: TrunFlags) -> usize {
     let mut size = 0;
     if flags.contains(TrunFlags::SAMPLE_DURATION_PRESENT) {
@@ -76,6 +95,7 @@ pub struct TrunEntry {
 #[derive(Debug)]
 struct TrunEntryIter<'a> {
     samples: &'a [u8],
+    remaining: usize,
     flags: TrunFlags,
     version: u8,
 }
@@ -85,11 +105,22 @@ impl Iterator for TrunEntryIter<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // When samples slice is empty, return None immediately
-        if self.samples.is_empty() {
+        if self.remaining == 0 {
             return None;
         }
 
         let sample_size = sample_data_size(self.flags);
+        if sample_size == 0 {
+            // No per-sample data, but still need to emit empty entries for sample_count
+            self.remaining -= 1;
+            return Some(Ok(TrunEntry {
+                duration: None,
+                size: None,
+                flags: None,
+                composition_time_offset: None,
+            }));
+        }
+
         let chunk = &self.samples[..sample_size];
         self.samples = &self.samples[sample_size..];
 
@@ -141,6 +172,8 @@ impl Iterator for TrunEntryIter<'_> {
             None
         };
 
+        self.remaining -= 1;
+
         Some(Ok(TrunEntry {
             duration,
             size,
@@ -150,13 +183,7 @@ impl Iterator for TrunEntryIter<'_> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let sample_size = sample_data_size(self.flags);
-        if sample_size == 0 {
-            (0, Some(0))
-        } else {
-            let count = self.samples.len() / sample_size;
-            (count, Some(count))
-        }
+        (self.remaining, Some(self.remaining))
     }
 }
 
@@ -195,6 +222,7 @@ impl<'a> TrunBoxView<'a> {
     pub fn entries(&self) -> impl ExactSizeIterator<Item = Result<TrunEntry>> + 'a {
         TrunEntryIter {
             samples: self.samples,
+            remaining: self.sample_count as usize,
             flags: self.flags,
             version: self.version,
         }
@@ -284,68 +312,21 @@ mod owned {
     /// - `data_offset`: Offset to first sample's data.
     /// - `first_sample_flags`: Special flags for first sample.
     /// - `samples`: Per-sample duration, size, flags, and composition offset.
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct TrunBox {
-        /// Box version (0 or 1; affects composition time offset sign).
+        /// Box version (0 or 1; affects composition time offset interpretation).
         version: u8,
-        /// Flags indicating which fields are present.
+        /// Flags indicating which per-sample fields are present.
         flags: TrunFlags,
-        /// Number of samples in this run (tracked independently of per-sample fields
-        /// so that sample_count remains correct even when all fields use defaults).
-        sample_count: u32,
         /// Signed offset from base to first sample's data.
         data_offset: Option<i32>,
         /// Flags for first sample (overrides sample\[0\].flags if present).
         first_sample_flags: Option<SampleFlags>,
-        // Per-sample data stored in separate vectors for each field, or None if not present.
-        sample_durations: Option<Vec<u32>>,
-        sample_sizes: Option<Vec<u32>>,
-        sample_flags: Option<Vec<SampleFlags>>,
-        sample_composition_time_offsets: Option<Vec<i64>>,
+        /// Per-sample data: duration, size, flags, composition time offset.
+        entries: Vec<TrunEntry>,
     }
 
     impl TrunBox {
-        /// Creates a new `TrunBox` with the specified flags and signed composition time offset.
-        /// The `signed_cto` parameter determines whether the box version is set to 1 (signed CTO) or 0 (unsigned CTO).
-        pub fn new(flags: TrunFlags, signed_cto: bool) -> Self {
-            let sample_durations = if flags.contains(TrunFlags::SAMPLE_DURATION_PRESENT) {
-                Some(Vec::new())
-            } else {
-                None
-            };
-
-            let sample_sizes = if flags.contains(TrunFlags::SAMPLE_SIZE_PRESENT) {
-                Some(Vec::new())
-            } else {
-                None
-            };
-
-            let sample_flags = if flags.contains(TrunFlags::SAMPLE_FLAGS_PRESENT) {
-                Some(Vec::new())
-            } else {
-                None
-            };
-
-            let sample_composition_time_offsets =
-                if flags.contains(TrunFlags::SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT) {
-                    Some(Vec::new())
-                } else {
-                    None
-                };
-
-            TrunBox {
-                version: if signed_cto { 1 } else { 0 },
-                flags,
-                sample_count: 0,
-                data_offset: None,
-                first_sample_flags: None,
-                sample_durations,
-                sample_sizes,
-                sample_flags,
-                sample_composition_time_offsets,
-            }
-        }
-
         /// Returns the version of this `trun` box.
         pub fn version(&self) -> u8 {
             self.version
@@ -356,114 +337,95 @@ mod owned {
             self.flags
         }
 
-        /// Returns the data offset for this `trun` box, or `None` if the data offset field is not present.
+        /// Returns the data offset from the base to the first sample's data, if present.
         pub fn data_offset(&self) -> Option<i32> {
             self.data_offset
         }
 
-        /// Sets the data offset for this `trun` box. This field is only valid if the `DATA_OFFSET_PRESENT` flag is set.
+        /// Sets the data offset for this `trun` box and updates the flags accordingly.
         pub fn set_data_offset(&mut self, offset: i32) {
             self.data_offset = Some(offset);
-            self.flags.insert(TrunFlags::DATA_OFFSET_PRESENT);
+            self.flags |= TrunFlags::DATA_OFFSET_PRESENT;
         }
 
-        /// Returns the first sample flags for this `trun` box, or `None` if the first sample flags field is not present.
+        /// Returns the first sample flags for this `trun` box, if present.
         pub fn first_sample_flags(&self) -> Option<SampleFlags> {
             self.first_sample_flags
         }
 
-        /// Sets the first sample flags for this `trun` box. This field is only valid if the `FIRST_SAMPLE_FLAGS_PRESENT` flag is set.
+        /// Sets the first sample flags for this `trun` box and updates the flags accordingly.
         pub fn set_first_sample_flags(&mut self, flags: SampleFlags) {
             self.first_sample_flags = Some(flags);
-            self.flags.insert(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT);
+            self.flags |= TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT;
         }
 
-        /// Returns the number of samples described in this `trun` box.
-        pub fn sample_count(&self) -> usize {
-            self.sample_count as usize
+        /// Returns a reference to the entries in this `trun` box.
+        pub fn entries(&self) -> &[TrunEntry] {
+            &self.entries
         }
 
-        /// Returns a reference to the sample durations vector, or `None` if the sample duration field is not present.
-        pub fn sample_durations(&self) -> Option<&[u32]> {
-            self.sample_durations.as_deref()
-        }
+        /// Adds a sample entry to this `trun` box.
+        pub fn try_push_entry(&mut self, entry: TrunEntry) -> Result<()> {
+            if self.entries.is_empty() {
+                self.flags |= TrunFlags::from_entry(&entry);
+                self.push_entry_in(entry);
 
-        /// Returns a reference to the sample sizes vector, or `None` if the sample size field is not present.
-        pub fn sample_sizes(&self) -> Option<&[u32]> {
-            self.sample_sizes.as_deref()
-        }
-
-        /// Returns a reference to the sample flags vector, or `None` if the sample flags field is not present.
-        pub fn sample_flags(&self) -> Option<&[SampleFlags]> {
-            self.sample_flags.as_deref()
-        }
-
-        /// Returns a reference to the sample composition time offsets vector, or `None` if the sample composition time offsets field is not present.
-        pub fn sample_composition_time_offsets(&self) -> Option<&[i64]> {
-            self.sample_composition_time_offsets.as_deref()
-        }
-
-        /// Returns the `TrunEntry` for the sample at the given index, or `None`
-        /// if the index is out of bounds.
-        pub fn get_entry(&self, index: usize) -> Option<TrunEntry> {
-            if index >= self.sample_count() {
-                return None;
+                return Ok(());
             }
 
-            let duration = self
-                .sample_durations
-                .as_ref()
-                .and_then(|v| v.get(index))
-                .copied();
-            let size = self
-                .sample_sizes
-                .as_ref()
-                .and_then(|v| v.get(index))
-                .copied();
-            let flags = self
-                .sample_flags
-                .as_ref()
-                .and_then(|v| v.get(index))
-                .copied();
-            let composition_time_offset = self
-                .sample_composition_time_offsets
-                .as_ref()
-                .and_then(|v| v.get(index))
-                .copied();
+            if self.flags.contains(TrunFlags::SAMPLE_DURATION_PRESENT) && entry.duration.is_none() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxField {
+                        field: "sample.duration",
+                        reason: "missing duration for samples",
+                    },
+                    BoxType::TRUN,
+                ));
+            }
 
-            Some(TrunEntry {
-                duration,
-                size,
-                flags,
-                composition_time_offset,
-            })
+            if self.flags.contains(TrunFlags::SAMPLE_SIZE_PRESENT) && entry.size.is_none() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxField {
+                        field: "sample.size",
+                        reason: "missing size for samples",
+                    },
+                    BoxType::TRUN,
+                ));
+            }
+
+            if self.flags.contains(TrunFlags::SAMPLE_FLAGS_PRESENT) && entry.flags.is_none() {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxField {
+                        field: "sample.flags",
+                        reason: "missing flags for samples",
+                    },
+                    BoxType::TRUN,
+                ));
+            }
+
+            if self
+                .flags
+                .contains(TrunFlags::SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT)
+                && entry.composition_time_offset.is_none()
+            {
+                return Err(Error::in_box(
+                    ErrorKind::InvalidBoxField {
+                        field: "sample.composition_time_offset",
+                        reason: "missing composition_time_offset for samples",
+                    },
+                    BoxType::TRUN,
+                ));
+            }
+
+            self.push_entry_in(entry);
+            Ok(())
         }
 
-        /// Returns an iterator over the `TrunEntry` items for all samples in this `trun` box.
-        pub fn entries(&self) -> impl Iterator<Item = TrunEntry> + '_ {
-            let count = self.sample_count();
-            (0..count).filter_map(|i| self.get_entry(i))
-        }
-
-        /// Adds a sample entry to this `trun` box. The fields of the entry must be `Some` if the corresponding flags are set in this box.
-        pub fn push_entry(&mut self, entry: TrunEntry) {
-            self.sample_count += 1;
-            if let Some(ref mut durations) = self.sample_durations {
-                durations.push(entry.duration.expect("missing duration for sample"));
+        fn push_entry_in(&mut self, entry: TrunEntry) {
+            if entry.composition_time_offset.is_some_and(|cto| cto < 0) && self.version == 0 {
+                self.version = 1; // Upgrade to version 1 if we have negative composition time offsets
             }
-            if let Some(ref mut sizes) = self.sample_sizes {
-                sizes.push(entry.size.expect("missing size for sample"));
-            }
-            if let Some(ref mut flags) = self.sample_flags {
-                flags.push(entry.flags.expect("missing flags for sample"));
-            }
-            if let Some(ref mut offsets) = self.sample_composition_time_offsets {
-                offsets.push(
-                    entry
-                        .composition_time_offset
-                        .expect("missing composition time offset for sample"),
-                );
-            }
+            self.entries.push(entry);
         }
     }
 
@@ -471,101 +433,14 @@ mod owned {
         type Error = Error;
 
         fn try_from(view: &TrunBoxView<'_>) -> Result<Self> {
-            let mut sample_durations: Option<Vec<u32>> =
-                if view.flags.contains(TrunFlags::SAMPLE_DURATION_PRESENT) {
-                    Some(Vec::with_capacity(view.sample_count as usize))
-                } else {
-                    None
-                };
-            let mut sample_sizes: Option<Vec<u32>> =
-                if view.flags.contains(TrunFlags::SAMPLE_SIZE_PRESENT) {
-                    Some(Vec::with_capacity(view.sample_count as usize))
-                } else {
-                    None
-                };
-            let mut sample_flags: Option<Vec<SampleFlags>> =
-                if view.flags.contains(TrunFlags::SAMPLE_FLAGS_PRESENT) {
-                    Some(Vec::with_capacity(view.sample_count as usize))
-                } else {
-                    None
-                };
-            let mut sample_composition_time_offsets: Option<Vec<i64>> = if view
-                .flags
-                .contains(TrunFlags::SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT)
-            {
-                Some(Vec::with_capacity(view.sample_count as usize))
-            } else {
-                None
-            };
-
-            for entry in view.entries() {
-                let entry = entry?;
-
-                if let Some(ref mut durations) = sample_durations {
-                    let sample_duration = entry.duration.ok_or_else(|| {
-                        Error::in_box(
-                            ErrorKind::InvalidBoxField {
-                                field: "sample.duration",
-                                reason: "missing duration for sample",
-                            },
-                            BoxType::TRUN,
-                        )
-                    })?;
-
-                    durations.push(sample_duration);
-                }
-                if let Some(ref mut sizes) = sample_sizes {
-                    let sample_size = entry.size.ok_or_else(|| {
-                        Error::in_box(
-                            ErrorKind::InvalidBoxField {
-                                field: "sample.size",
-                                reason: "missing size for sample",
-                            },
-                            BoxType::TRUN,
-                        )
-                    })?;
-
-                    sizes.push(sample_size);
-                }
-                if let Some(ref mut flags) = sample_flags {
-                    let sample_flags = entry.flags.ok_or_else(|| {
-                        Error::in_box(
-                            ErrorKind::InvalidBoxField {
-                                field: "sample.flags",
-                                reason: "missing flags for sample",
-                            },
-                            BoxType::TRUN,
-                        )
-                    })?;
-
-                    flags.push(sample_flags);
-                }
-                if let Some(ref mut offsets) = sample_composition_time_offsets {
-                    let sample_composition_time_offset =
-                        entry.composition_time_offset.ok_or_else(|| {
-                            Error::in_box(
-                                ErrorKind::InvalidBoxField {
-                                    field: "sample.composition_time_offset",
-                                    reason: "missing composition_time_offset for sample",
-                                },
-                                BoxType::TRUN,
-                            )
-                        })?;
-
-                    offsets.push(sample_composition_time_offset);
-                }
-            }
+            let entries = view.entries().collect::<Result<Vec<_>>>()?;
 
             Ok(TrunBox {
                 version: view.version,
                 flags: view.flags,
-                sample_count: view.sample_count,
                 data_offset: view.data_offset,
                 first_sample_flags: view.first_sample_flags,
-                sample_durations,
-                sample_sizes,
-                sample_flags,
-                sample_composition_time_offsets,
+                entries,
             })
         }
     }
@@ -590,15 +465,16 @@ mod owned {
                 + 3 // flags
                 + 4; // sample_count
 
-            if self.flags.contains(TrunFlags::DATA_OFFSET_PRESENT) {
+            let flags = self.flags();
+            if flags.contains(TrunFlags::DATA_OFFSET_PRESENT) {
                 size += 4;
             }
-            if self.flags.contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT) {
+            if flags.contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT) {
                 size += 4;
             }
 
-            let sample_size = sample_data_size(self.flags);
-            size += self.sample_count() * sample_size;
+            let sample_size = sample_data_size(flags);
+            size += self.entries.len() * sample_size;
 
             size
         }
@@ -606,12 +482,15 @@ mod owned {
         fn encode_into(&self, bytes: &mut [u8]) -> Result<usize> {
             let mut cur = WriteCursor::new(bytes);
 
-            cur.write_u8(self.version)?;
-            cur.write_array(&self.flags.to_be_bytes())?;
+            let version = self.version();
+            let flags = self.flags();
 
-            cur.write_u32_be(u32::try_from(self.sample_count())?)?;
+            cur.write_u8(version)?;
+            cur.write_array(&flags.to_be_bytes())?;
 
-            if self.flags.contains(TrunFlags::DATA_OFFSET_PRESENT) {
+            cur.write_u32_be(u32::try_from(self.entries.len())?)?;
+
+            if flags.contains(TrunFlags::DATA_OFFSET_PRESENT) {
                 if let Some(data_offset) = self.data_offset {
                     cur.write_i32_be(data_offset)?;
                 } else {
@@ -625,7 +504,7 @@ mod owned {
                 }
             }
 
-            if self.flags.contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT) {
+            if flags.contains(TrunFlags::FIRST_SAMPLE_FLAGS_PRESENT) {
                 if let Some(first_sample_flags) = self.first_sample_flags {
                     cur.write_u32_be(first_sample_flags.to_raw())?;
                 } else {
@@ -639,8 +518,8 @@ mod owned {
                 }
             }
 
-            for sample in self.entries() {
-                if self.flags.contains(TrunFlags::SAMPLE_DURATION_PRESENT) {
+            for sample in &self.entries {
+                if flags.contains(TrunFlags::SAMPLE_DURATION_PRESENT) {
                     if let Some(duration) = sample.duration {
                         cur.write_u32_be(duration)?;
                     } else {
@@ -654,7 +533,7 @@ mod owned {
                     }
                 }
 
-                if self.flags.contains(TrunFlags::SAMPLE_SIZE_PRESENT) {
+                if flags.contains(TrunFlags::SAMPLE_SIZE_PRESENT) {
                     if let Some(size) = sample.size {
                         cur.write_u32_be(size)?;
                     } else {
@@ -668,7 +547,7 @@ mod owned {
                     }
                 }
 
-                if self.flags.contains(TrunFlags::SAMPLE_FLAGS_PRESENT) {
+                if flags.contains(TrunFlags::SAMPLE_FLAGS_PRESENT) {
                     if let Some(flags) = sample.flags {
                         cur.write_u32_be(flags.to_raw())?;
                     } else {
@@ -682,12 +561,9 @@ mod owned {
                     }
                 }
 
-                if self
-                    .flags
-                    .contains(TrunFlags::SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT)
-                {
+                if flags.contains(TrunFlags::SAMPLE_COMPOSITION_TIME_OFFSETS_PRESENT) {
                     if let Some(offset) = sample.composition_time_offset {
-                        if self.version == 0 {
+                        if version == 0 {
                             let v = u32::try_from(offset)
                                 .map_err(|e| Error::from(e).with_box_type(BoxType::TRUN))?;
                             cur.write_u32_be(v)?;
@@ -849,6 +725,6 @@ mod tests {
 
         assert_eq!(owned.version(), view.version);
         assert_eq!(owned.flags().bits(), view.flags.bits());
-        assert_eq!(owned.sample_count(), view.sample_count as usize);
+        assert_eq!(owned.entries().len(), view.sample_count as usize);
     }
 }
