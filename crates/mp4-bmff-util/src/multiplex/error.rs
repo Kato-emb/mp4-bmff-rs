@@ -10,6 +10,8 @@ use core::fmt;
 use alloc::boxed::Box;
 use alloc::string::String;
 
+use super::TrackId;
+
 /// Errors that can occur during multiplexing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
@@ -17,6 +19,8 @@ pub enum ErrorKind {
     Overflow,
     /// An invalid input was provided. This can occur when the input data does not meet the expected format or constraints, such as when a sample's data length exceeds the maximum allowed size for a u32.
     InvalidInput,
+    /// A specified track was not found in the movie when attempting to add a sample or perform an operation on it.
+    TrackNotFound(TrackId),
     /// An error occurred while encoding a box.
     BoxEncode,
     /// An error occurred while decoding a box.
@@ -28,6 +32,9 @@ impl fmt::Display for ErrorKind {
         match self {
             ErrorKind::Overflow => write!(f, "Overflow error"),
             ErrorKind::InvalidInput => write!(f, "Invalid input error"),
+            ErrorKind::TrackNotFound(track_id) => {
+                write!(f, "Track with ID {} not found", track_id.get())
+            }
             ErrorKind::BoxEncode => write!(f, "Box encoding error"),
             ErrorKind::BoxDecode => write!(f, "Box decoding error"),
         }

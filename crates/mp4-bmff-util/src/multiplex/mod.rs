@@ -9,11 +9,10 @@
 //! - [`mux`]: Muxer for building MP4 box metadata from media samples
 //! - [`error`]: Error types for multiplexing operations
 
+use core::num::NonZeroU32;
 use core::time::Duration;
 
 use mp4_bmff::types::FourCC;
-
-mod internal;
 
 mod error;
 
@@ -28,17 +27,21 @@ pub type MuxError = error::Error;
 type Result<T> = core::result::Result<T, MuxError>;
 
 /// Unique identifier for a track within an MP4 file, used to associate samples and metadata with the correct track.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TrackId(u32);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TrackId(NonZeroU32);
 
 impl TrackId {
     /// Creates a new `TrackId` with the given value.
-    pub(super) fn new(id: u32) -> Self {
-        Self(id)
+    pub(super) fn new(id: u32) -> Option<Self> {
+        NonZeroU32::new(id).map(Self)
     }
 
     /// Returns the underlying `u32` value of the `TrackId`.
     pub fn get(&self) -> u32 {
+        self.0.get()
+    }
+
+    pub(super) fn into_inner(self) -> NonZeroU32 {
         self.0
     }
 }
