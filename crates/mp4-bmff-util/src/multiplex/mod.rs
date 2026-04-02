@@ -94,39 +94,13 @@ impl Sample {
 pub enum VisualSampleDescription {
     /// AVC (H.264) sample entry using the `avc1` box.
     #[cfg(feature = "avc")]
-    Avc1(mp4_bmff::boxes::avc::Avc1SampleEntry),
+    Avc1(mp4_bmff::formats::mpeg4::codecs::avc::AVCDecoderConfigurationRecord),
     /// AVC (H.264) sample entry using the `avc3` box (in-band parameter sets).
     #[cfg(feature = "avc")]
-    Avc3(mp4_bmff::boxes::avc::Avc3SampleEntry),
+    Avc3(mp4_bmff::formats::mpeg4::codecs::avc::AVCDecoderConfigurationRecord),
     /// MPEG-4 Visual sample entry using the `mp4v` box.
     #[cfg(feature = "mp4")]
-    Mp4v(mp4_bmff::boxes::mp4::Mp4vSampleEntry),
-}
-
-impl VisualSampleDescription {
-    /// Returns the width of the visual sample in pixels.
-    pub fn width(&self) -> u16 {
-        match self {
-            #[cfg(feature = "avc")]
-            VisualSampleDescription::Avc1(entry) => entry.base.width,
-            #[cfg(feature = "avc")]
-            VisualSampleDescription::Avc3(entry) => entry.base.width,
-            #[cfg(feature = "mp4")]
-            VisualSampleDescription::Mp4v(entry) => entry.base.width,
-        }
-    }
-
-    /// Returns the height of the visual sample in pixels.
-    pub fn height(&self) -> u16 {
-        match self {
-            #[cfg(feature = "avc")]
-            VisualSampleDescription::Avc1(entry) => entry.base.height,
-            #[cfg(feature = "avc")]
-            VisualSampleDescription::Avc3(entry) => entry.base.height,
-            #[cfg(feature = "mp4")]
-            VisualSampleDescription::Mp4v(entry) => entry.base.height,
-        }
-    }
+    Mp4v(mp4_bmff::formats::mpeg4::systems::descriptor::RawDescriptorOwned),
 }
 
 /// Description of an audio sample entry.
@@ -134,7 +108,7 @@ impl VisualSampleDescription {
 pub enum AudioSampleDescription {
     /// MPEG-4 Audio sample entry using the `mp4a` box.
     #[cfg(feature = "mp4")]
-    Mp4a(mp4_bmff::boxes::mp4::Mp4aSampleEntry),
+    Mp4a(mp4_bmff::formats::mpeg4::systems::descriptor::RawDescriptorOwned),
 }
 
 /// Description of a metadata sample entry (placeholder).
@@ -161,9 +135,23 @@ pub enum FontSampleDescription {}
 #[derive(Debug)]
 pub enum MediaDefinition {
     /// Video track with a visual sample description.
-    Video(VisualSampleDescription),
+    Video {
+        /// Width of the video frames in pixels.
+        width: u16,
+        /// Height of the video frames in pixels.
+        height: u16,
+        /// Codec-specific description of the visual samples.
+        codec: VisualSampleDescription,
+    },
     /// Audio track with an audio sample description.
-    Audio(AudioSampleDescription),
+    Audio {
+        /// Number of audio channels (e.g., 2 for stereo).
+        channel_count: u16,
+        /// Sample rate in Hz (e.g., 44100 for CD-quality audio).
+        sample_rate: u32,
+        /// Codec-specific description of the audio samples.
+        codec: AudioSampleDescription,
+    },
     /// Metadata track.
     Metadata(MetadataSampleDescription),
     /// Hint track (streaming hints).
@@ -182,8 +170,8 @@ impl MediaDefinition {
     /// Returns the handler type FourCC code corresponding to this media definition.
     pub fn handler_type(&self) -> FourCC {
         match self {
-            MediaDefinition::Video(_) => FourCC::new(*b"vide"),
-            MediaDefinition::Audio(_) => FourCC::new(*b"soun"),
+            MediaDefinition::Video { .. } => FourCC::new(*b"vide"),
+            MediaDefinition::Audio { .. } => FourCC::new(*b"soun"),
             MediaDefinition::Metadata(_) => FourCC::new(*b"meta"),
             MediaDefinition::Hint(_) => FourCC::new(*b"hint"),
             MediaDefinition::Text(_) => FourCC::new(*b"text"),

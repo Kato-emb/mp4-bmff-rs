@@ -178,7 +178,11 @@ fn mux_roundtrip_video() {
     let stsd_entry = &original_trak.mdia.minf.stbl.stsd.entries[0];
     assert_eq!(stsd_entry.boxtype(), BoxType::AVC1);
     let avc1 = Avc1SampleEntry::decode(stsd_entry.payload()).unwrap();
-    let media = MediaDefinition::Video(VisualSampleDescription::Avc1(avc1));
+    let media = MediaDefinition::Video {
+        width: avc1.base.width,
+        height: avc1.base.height,
+        codec: VisualSampleDescription::Avc1(avc1.avcc.avc_config),
+    };
 
     // 3. Extract sample info from original
     let samples = extract_samples(&original_trak.mdia.minf.stbl, timescale);
@@ -329,8 +333,16 @@ fn mux_multiple_tracks() {
     let avc1_1 = Avc1SampleEntry::decode(stsd_entry.payload()).unwrap();
     let avc1_2 = Avc1SampleEntry::decode(stsd_entry.payload()).unwrap();
 
-    let media1 = MediaDefinition::Video(VisualSampleDescription::Avc1(avc1_1));
-    let media2 = MediaDefinition::Video(VisualSampleDescription::Avc1(avc1_2));
+    let media1 = MediaDefinition::Video {
+        width: avc1_1.base.width,
+        height: avc1_1.base.height,
+        codec: VisualSampleDescription::Avc1(avc1_1.avcc.avc_config),
+    };
+    let media2 = MediaDefinition::Video {
+        width: avc1_2.base.width,
+        height: avc1_2.base.height,
+        codec: VisualSampleDescription::Avc1(avc1_2.avcc.avc_config),
+    };
 
     let mut builder = Muxer::builder(1000).unwrap();
     let tid1 = builder.add_track(90000, media1).unwrap().build();

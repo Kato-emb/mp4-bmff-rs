@@ -197,11 +197,11 @@ fn build_tkhd(track: &Track, movie_timescale: NonZeroU32) -> Result<TkhdBox> {
     tkhd.matrix = track.matrix;
 
     match &track.media {
-        MediaDefinition::Video(desc) => {
-            tkhd.width = U16F16::from_integer(i128::from(desc.width()));
-            tkhd.height = U16F16::from_integer(i128::from(desc.height()));
+        MediaDefinition::Video { width, height, .. } => {
+            tkhd.width = U16F16::from_integer(i128::from(*width));
+            tkhd.height = U16F16::from_integer(i128::from(*height));
         }
-        MediaDefinition::Audio(_) => {
+        MediaDefinition::Audio { .. } => {
             tkhd.volume = U8F8::from_f32(1.0);
         }
         _ => {} // Other media types use default tkhd values
@@ -235,43 +235,24 @@ fn build_minf(track: &Track) -> Result<MinfBox> {
 
 fn build_media_header(track: &Track) -> MediaHeaderBox {
     match &track.media {
-        MediaDefinition::Video(_) => MediaHeaderBox::Vmhd(VmhdBox::default()),
-        MediaDefinition::Audio(_) => MediaHeaderBox::Smhd(SmhdBox::default()),
-        MediaDefinition::Hint(_) => MediaHeaderBox::Hmhd(HmhdBox::default()),
+        MediaDefinition::Video { .. } => MediaHeaderBox::Vmhd(VmhdBox::default()),
+        MediaDefinition::Audio { .. } => MediaHeaderBox::Smhd(SmhdBox::default()),
+        MediaDefinition::Hint { .. } => MediaHeaderBox::Hmhd(HmhdBox::default()),
         _ => MediaHeaderBox::Nmhd(NmhdBox::default()),
     }
 }
 
-fn encode_sample_entry(entry: &(impl BoxCodec + BoxEncode)) -> Result<RawBoxOwned> {
-    let payload = entry.encode_to_vec().map_err(Error::box_encode)?;
-    Ok(RawBoxOwned::new(entry.boxtype(), payload))
-}
-
 fn build_stsd(track: &Track) -> Result<StsdBox> {
-    let entry = match &track.media {
-        MediaDefinition::Video(desc) => match desc {
-            #[cfg(feature = "avc")]
-            VisualSampleDescription::Avc1(e) => encode_sample_entry(e)?,
-            #[cfg(feature = "avc")]
-            VisualSampleDescription::Avc3(e) => encode_sample_entry(e)?,
-            #[cfg(feature = "mp4")]
-            VisualSampleDescription::Mp4v(e) => encode_sample_entry(e)?,
-        },
-        MediaDefinition::Audio(desc) => match desc {
-            #[cfg(feature = "mp4")]
-            AudioSampleDescription::Mp4a(e) => encode_sample_entry(e)?,
-        },
-        _ => {
-            return Err(Error::new(ErrorKind::InvalidInput).with_message(
-                "Sample description encoding is only supported for video and audio media types",
-            ));
-        }
-    };
+    let entry = build_sample_entry(&track.media)?;
 
     Ok(StsdBox {
         entries: alloc::vec![entry],
         ..Default::default()
     })
+}
+
+fn build_sample_entry(media: &MediaDefinition) -> Result<RawBoxOwned> {
+    todo!()
 }
 
 fn build_stbl(table: &SampleTable, stsd: StsdBox, scale: &TickScale) -> Result<StblBox> {
@@ -301,8 +282,10 @@ fn build_stbl(table: &SampleTable, stsd: StsdBox, scale: &TickScale) -> Result<S
             let delta = sample_delta_ticks(sample.dts_ns, sample.duration(), scale)?;
             let cto = cto_ticks(sample.composition_time_offset_ns().unwrap_or(0), scale)
                 .and_then(|t| i32::try_from(t).ok())
-                .ok_or(Error::new(ErrorKind::Overflow)
-                    .with_message("Composition time offset exceeds i32 tick range"))?;
+                .ok_or(
+                    Error::new(ErrorKind::Overflow)
+                        .with_message("Composition time offset exceeds i32 tick range"),
+                )?;
 
             stts.push(delta);
             stsz.push(sample.size);
@@ -375,8 +358,10 @@ fn build_elst(track: &Track, movie_timescale: NonZeroU32) -> Result<Option<ElstB
                 media_time: media_scale
                     .from_duration(*media_start)
                     .and_then(|t| i64::try_from(t).ok())
-                    .ok_or(Error::new(ErrorKind::Overflow)
-                        .with_message("Edit list media_start exceeds i64 tick range"))?,
+                    .ok_or(
+                        Error::new(ErrorKind::Overflow)
+                            .with_message("Edit list media_start exceeds i64 tick range"),
+                    )?,
                 media_rate: I16F16::from_f32(*media_rate),
             },
             EditSegment::Dwell {
@@ -389,8 +374,10 @@ fn build_elst(track: &Track, movie_timescale: NonZeroU32) -> Result<Option<ElstB
                 media_time: media_scale
                     .from_duration(*media_time)
                     .and_then(|t| i64::try_from(t).ok())
-                    .ok_or(Error::new(ErrorKind::Overflow)
-                        .with_message("Edit list media_time exceeds i64 tick range"))?,
+                    .ok_or(
+                        Error::new(ErrorKind::Overflow)
+                            .with_message("Edit list media_time exceeds i64 tick range"),
+                    )?,
                 media_rate: I16F16::from_f32(0.0),
             },
         };
