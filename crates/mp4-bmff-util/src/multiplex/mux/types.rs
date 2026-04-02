@@ -4,6 +4,7 @@ use core::time::Duration;
 use mp4_bmff::boxes::bmff::SampleFlags;
 use mp4_bmff::types::*;
 
+use super::Error;
 use super::ErrorKind;
 use super::Result;
 
@@ -26,15 +27,16 @@ impl Movie {
         }
     }
 
-    pub(super) fn next_track_id(&self) -> TrackId {
+    pub(super) fn next_track_id(&self) -> Result<TrackId> {
         let next_id = match self.tracks.iter().map(|t| t.id).max() {
             Some(max_id) => max_id.get().checked_add(1),
             None => Some(1),
         };
 
-        next_id
-            .and_then(TrackId::new)
-            .expect("Exceeded maximum track ID limit of 2^32 - 1")
+        next_id.and_then(TrackId::new).ok_or(
+            Error::new(ErrorKind::Overflow)
+                .with_message("Exceeded maximum track ID limit of 2^32 - 1"),
+        )
     }
 
     pub(super) fn add_sample(&mut self, track_id: TrackId, sample: Sample) -> Result<()> {
@@ -42,7 +44,7 @@ impl Movie {
             .get_track_mut(track_id)
             .ok_or(ErrorKind::TrackNotFound(track_id))?;
 
-        track.sample_table.push_sample(sample);
+        track.sample_table.push_sample(sample)?;
         Ok(())
     }
 
@@ -103,7 +105,15 @@ impl SampleTable {
         self.chunks.first().map(|chunk| chunk.first().dts_ns)
     }
 
-    fn push_sample(&mut self, sample: Sample) {
+    fn push_sample(&mut self, sample: Sample) -> Result<()> {
+        // Verify DTS is monotonically non-decreasing.
+        if let Some(last_chunk) = self.chunks.last() {
+            if sample.dts_ns < last_chunk.last().dts_ns {
+                return Err(Error::new(ErrorKind::InvalidInput)
+                    .with_message("Samples must be added in non-decreasing DTS order"));
+            }
+        }
+
         if !self
             .chunks
             .last_mut()
@@ -111,26 +121,27 @@ impl SampleTable {
         {
             self.chunks.push(Chunk::new(sample));
         }
+        Ok(())
     }
 }
 
 #[derive(Debug)]
 pub(super) struct Chunk {
-    first: Sample,
-    rest: Vec<Sample>,
+    head: Sample,
+    tail: Vec<Sample>,
 }
 
 impl Chunk {
     pub(super) fn new(first: Sample) -> Self {
         Self {
-            first,
-            rest: Vec::new(),
+            head: first,
+            tail: Vec::new(),
         }
     }
 
     pub(super) fn try_push(&mut self, sample: Sample) -> bool {
-        if self.end_position() == sample.data_offset {
-            self.rest.push(sample);
+        if self.end_position() == Some(sample.data_offset) {
+            self.tail.push(sample);
             true
         } else {
             false
@@ -138,28 +149,28 @@ impl Chunk {
     }
 
     pub(super) const fn first(&self) -> &Sample {
-        &self.first
+        &self.head
     }
 
     pub(super) fn last(&self) -> &Sample {
-        self.rest.last().unwrap_or(&self.first)
+        self.tail.last().unwrap_or(&self.head)
     }
 
     pub(super) fn samples(&self) -> impl Iterator<Item = &Sample> {
-        core::iter::once(&self.first).chain(self.rest.iter())
+        core::iter::once(&self.head).chain(self.tail.iter())
     }
 
     pub(super) fn sample_count(&self) -> usize {
-        1 + self.rest.len()
+        1 + self.tail.len()
     }
 
     pub(super) fn data_offset(&self) -> u64 {
-        self.first.data_offset
+        self.head.data_offset
     }
 
-    pub(super) fn end_position(&self) -> u64 {
+    fn end_position(&self) -> Option<u64> {
         let last = self.last();
-        last.data_offset + u64::from(last.size)
+        last.data_offset.checked_add(u64::from(last.size))
     }
 }
 
@@ -201,7 +212,7 @@ mod tests {
         let s2 = sample(33_000_000, 200, 100);
         assert!(chunk.try_push(s2));
         assert_eq!(chunk.sample_count(), 2);
-        assert_eq!(chunk.end_position(), 300);
+        assert_eq!(chunk.end_position(), Some(300));
     }
 
     #[test]
@@ -243,13 +254,20 @@ mod tests {
     fn sample_table_push_creates_chunks() {
         let mut table = SampleTable::default();
         // Contiguous samples → same chunk
-        table.push_sample(sample(0, 100, 0));
-        table.push_sample(sample(1, 100, 100));
+        table.push_sample(sample(0, 100, 0)).unwrap();
+        table.push_sample(sample(1, 100, 100)).unwrap();
         assert_eq!(table.chunks.len(), 1);
 
         // Non-contiguous → new chunk
-        table.push_sample(sample(2, 100, 500));
+        table.push_sample(sample(2, 100, 500)).unwrap();
         assert_eq!(table.chunks.len(), 2);
+    }
+
+    #[test]
+    fn sample_table_push_rejects_decreasing_dts() {
+        let mut table = SampleTable::default();
+        table.push_sample(sample(100, 100, 0)).unwrap();
+        assert!(table.push_sample(sample(50, 100, 100)).is_err());
     }
 
     #[test]
@@ -257,7 +275,7 @@ mod tests {
         let mut table = SampleTable::default();
         assert!(table.first_sample_dts().is_none());
 
-        table.push_sample(sample(42_000, 100, 0));
+        table.push_sample(sample(42_000, 100, 0)).unwrap();
         assert_eq!(table.first_sample_dts(), Some(42_000));
     }
 
@@ -286,7 +304,7 @@ mod tests {
     #[test]
     fn movie_next_track_id_starts_at_one() {
         let movie = Movie::new(nz(1000));
-        assert_eq!(movie.next_track_id().get(), 1);
+        assert_eq!(movie.next_track_id().unwrap().get(), 1);
     }
 
     #[test]
@@ -297,14 +315,14 @@ mod tests {
             nz(1000),
             dummy_media(),
         ));
-        assert_eq!(movie.next_track_id().get(), 2);
+        assert_eq!(movie.next_track_id().unwrap().get(), 2);
 
         movie.tracks.push(Track::new(
             TrackId::new(2).unwrap(),
             nz(1000),
             dummy_media(),
         ));
-        assert_eq!(movie.next_track_id().get(), 3);
+        assert_eq!(movie.next_track_id().unwrap().get(), 3);
     }
 
     #[test]

@@ -57,7 +57,7 @@ impl Builder {
         timescale: u32,
         media: MediaDefinition,
     ) -> Result<TrackBuilder<'_>> {
-        let track_id = self.movie.next_track_id();
+        let track_id = self.movie.next_track_id()?;
         let timescale = NonZeroU32::new(timescale).ok_or(
             Error::new(ErrorKind::InvalidInput).with_message("Timescale must be non-zero"),
         )?;
@@ -202,6 +202,16 @@ impl FragmentedMuxer {
 
     /// Flushes the accumulated samples into a `moof` box and resets the fragment state.
     pub fn flush_fragment(&mut self) -> Result<MoofBox> {
+        if self
+            .movie
+            .tracks
+            .iter()
+            .all(|t| t.sample_table.chunks.is_empty())
+        {
+            return Err(Error::new(ErrorKind::InvalidInput)
+                .with_message("Cannot flush an empty fragment; add at least one sample first"));
+        }
+
         self.sequence_number = self
             .sequence_number
             .checked_add(1)

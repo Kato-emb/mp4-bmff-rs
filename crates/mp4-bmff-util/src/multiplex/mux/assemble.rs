@@ -29,9 +29,9 @@ use super::types::{
 /// Timescale-bound converter for nanosecond ↔ tick transformations.
 ///
 /// All conversion methods share a single [`from_nanos`](Self::from_nanos)
-/// base, which guarantees the telescoping-sum property: the sum of per-sample
-/// deltas produced by [`sample_delta`](Self::sample_delta) equals the total
-/// returned by [`span`](Self::span).
+/// base, which guarantees the telescoping-sum property: the sum of
+/// per-sample deltas produced by [`delta`](Self::delta) equals the total
+/// span computed from the first and last timestamps.
 ///
 /// This type only accepts primitive / std types (`u64`, `i64`, `Duration`) as
 /// input, keeping it independent of domain types like `Sample` or `Track`.
@@ -39,6 +39,12 @@ struct TickScale(NonZeroU32);
 
 impl TickScale {
     /// Converts nanoseconds to ticks.
+    ///
+    /// The sub-second term `sub_nanos * ts / 1_000_000_000` uses integer
+    /// division and therefore truncates. This truncation is intentional:
+    /// because [`delta`](Self::delta) computes `from_nanos(end) − from_nanos(start)`,
+    /// the rounding errors cancel out (telescoping sum), so the sum of
+    /// per-sample deltas always equals the total span exactly.
     fn from_nanos(&self, nanos: u64) -> Option<u64> {
         let ts = u64::from(self.0.get());
         let secs = nanos / 1_000_000_000;
@@ -61,14 +67,12 @@ impl TickScale {
     /// Computes the tick difference between two nanosecond timestamps:
     /// `ticks(end_ns) − ticks(start_ns)`.
     fn delta(&self, start_ns: u64, end_ns: u64) -> Option<u64> {
-        Some(self.from_nanos(end_ns)? - self.from_nanos(start_ns)?)
+        self.from_nanos(end_ns)?
+            .checked_sub(self.from_nanos(start_ns)?)
     }
 
     /// Converts a signed nanosecond value to signed ticks.
     fn signed_from_nanos(&self, nanos: i64) -> Option<i64> {
-        if nanos == 0 {
-            return Some(0);
-        }
         let ticks = i64::try_from(self.from_nanos(nanos.unsigned_abs())?).ok()?;
         Some(if nanos < 0 { -ticks } else { ticks })
     }
@@ -78,15 +82,20 @@ impl TickScale {
 // Domain helpers — bridge between domain types and TickScale
 // ---------------------------------------------------------------------------
 
+/// Computes `ticks(ns + duration) − ticks(base_ns)` safely,
+/// bridging the `Duration` (`u128` nanos) → `u64` boundary.
+fn delta_duration(scale: &TickScale, base_ns: u64, ns: u64, duration: Duration) -> Option<u64> {
+    let end_ns = ns.checked_add(u64::try_from(duration.as_nanos()).ok()?)?;
+    scale.delta(base_ns, end_ns)
+}
+
 /// Computes the total media duration in ticks via the telescoping sum.
 fn media_duration(table: &SampleTable, scale: &TickScale) -> Result<u64> {
     let Some(last) = table.chunks.last().map(|c| c.last()) else {
         return Ok(0);
     };
     let first_ns = table.first_sample_dts().unwrap_or(0);
-    let end_ns = last.dts_ns + last.duration().as_nanos() as u64;
-    scale
-        .delta(first_ns, end_ns)
+    delta_duration(scale, first_ns, last.dts_ns, last.duration())
         .ok_or(Error::new(ErrorKind::Overflow).with_message("Media duration exceeds tick range"))
 }
 
@@ -96,7 +105,7 @@ fn track_duration(track: &Track, scale: &TickScale) -> Result<u64> {
     if let Some(edit_dur) = track.edit_duration() {
         scale
             .from_duration(edit_dur)
-            .ok_or(Error::new(ErrorKind::Overflow).with_message("edit list duration"))
+            .ok_or(Error::new(ErrorKind::Overflow).with_message("Edit list duration overflow"))
     } else {
         media_duration(&track.sample_table, scale)
     }
@@ -104,19 +113,33 @@ fn track_duration(track: &Track, scale: &TickScale) -> Result<u64> {
 
 /// Computes a sample's duration in `u32` ticks via the telescoping sum.
 fn sample_delta_ticks(dts_ns: u64, duration: Duration, scale: &TickScale) -> Result<u32> {
-    let end_ns = dts_ns + duration.as_nanos() as u64;
-    let ticks = scale
-        .delta(dts_ns, end_ns)
-        .ok_or(Error::new(ErrorKind::Overflow).with_message("Sample duration exceeds tick range"))?;
-    u32::try_from(ticks)
-        .map_err(|_| Error::new(ErrorKind::Overflow).with_message("Sample duration exceeds u32 range"))
+    delta_duration(scale, dts_ns, dts_ns, duration)
+        .and_then(|t| u32::try_from(t).ok())
+        .ok_or(Error::new(ErrorKind::Overflow).with_message("Sample delta exceeds u32 tick range"))
 }
 
 /// Converts a composition time offset (nanoseconds) to ticks.
-fn cto_ticks(cto_ns: i64, scale: &TickScale) -> Result<i64> {
-    scale
-        .signed_from_nanos(cto_ns)
-        .ok_or(Error::new(ErrorKind::Overflow).with_message("CTO exceeds tick range"))
+fn cto_ticks(cto_ns: i64, scale: &TickScale) -> Option<i64> {
+    scale.signed_from_nanos(cto_ns)
+}
+
+/// Converts an optional default sample duration to `u32` ticks.
+///
+/// Returns an error if the duration is set but overflows the tick range,
+/// rather than silently discarding it.
+fn default_duration_ticks(duration: Option<Duration>, scale: &TickScale) -> Result<Option<u32>> {
+    duration
+        .map(|d| {
+            let ticks = scale.from_duration(d).ok_or(
+                Error::new(ErrorKind::Overflow)
+                    .with_message("Default sample duration exceeds tick range"),
+            )?;
+            u32::try_from(ticks).map_err(|_| {
+                Error::new(ErrorKind::Overflow)
+                    .with_message("Default sample duration exceeds u32 range")
+            })
+        })
+        .transpose()
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +175,7 @@ fn build_mvhd(movie: &Movie) -> Result<MvhdBox> {
     Ok(MvhdBox {
         timescale: movie.timescale.get(),
         duration,
-        next_track_id: movie.next_track_id().get(),
+        next_track_id: movie.next_track_id()?.get(),
         ..Default::default()
     })
 }
@@ -276,10 +299,10 @@ fn build_stbl(table: &SampleTable, stsd: StsdBox, scale: &TickScale) -> Result<S
             sample_number = sample_number.checked_add(1).ok_or(ErrorKind::Overflow)?;
 
             let delta = sample_delta_ticks(sample.dts_ns, sample.duration(), scale)?;
-            let cto = i32::try_from(cto_ticks(
-                sample.composition_time_offset_ns().unwrap_or(0),
-                scale,
-            )?)?;
+            let cto = cto_ticks(sample.composition_time_offset_ns().unwrap_or(0), scale)
+                .and_then(|t| i32::try_from(t).ok())
+                .ok_or(Error::new(ErrorKind::Overflow)
+                    .with_message("Composition time offset exceeds i32 tick range"))?;
 
             stts.push(delta);
             stsz.push(sample.size);
@@ -295,7 +318,7 @@ fn build_stbl(table: &SampleTable, stsd: StsdBox, scale: &TickScale) -> Result<S
     // Omit ctts if all offsets are zero.
     let ctts = if has_nonzero_ctts { Some(ctts) } else { None };
     // Omit stss if every sample is a sync sample (ISO 14496-12 §8.6.2).
-    let stss = if stss.entries.len() == sample_number as usize {
+    let stss = if stss.entries.len() as u32 == sample_number {
         None
     } else {
         Some(stss)
@@ -349,11 +372,11 @@ fn build_elst(track: &Track, movie_timescale: NonZeroU32) -> Result<Option<ElstB
                 segment_duration: movie_scale
                     .from_duration(*duration)
                     .ok_or(ErrorKind::Overflow)?,
-                media_time: i64::try_from(
-                    media_scale
-                        .from_duration(*media_start)
-                        .ok_or(ErrorKind::Overflow)?,
-                )?,
+                media_time: media_scale
+                    .from_duration(*media_start)
+                    .and_then(|t| i64::try_from(t).ok())
+                    .ok_or(Error::new(ErrorKind::Overflow)
+                        .with_message("Edit list media_start exceeds i64 tick range"))?,
                 media_rate: I16F16::from_f32(*media_rate),
             },
             EditSegment::Dwell {
@@ -363,11 +386,11 @@ fn build_elst(track: &Track, movie_timescale: NonZeroU32) -> Result<Option<ElstB
                 segment_duration: movie_scale
                     .from_duration(*duration)
                     .ok_or(ErrorKind::Overflow)?,
-                media_time: i64::try_from(
-                    media_scale
-                        .from_duration(*media_time)
-                        .ok_or(ErrorKind::Overflow)?,
-                )?,
+                media_time: media_scale
+                    .from_duration(*media_time)
+                    .and_then(|t| i64::try_from(t).ok())
+                    .ok_or(Error::new(ErrorKind::Overflow)
+                        .with_message("Edit list media_time exceeds i64 tick range"))?,
                 media_rate: I16F16::from_f32(0.0),
             },
         };
@@ -399,19 +422,7 @@ fn build_traf(track: &Track) -> Result<TrafBox> {
     let scale = TickScale(track.timescale);
 
     // --- tfhd ---
-    let default_duration = track
-        .defaults
-        .sample_duration
-        .map(|d| {
-            scale
-                .from_duration(d)
-                .and_then(|t| u32::try_from(t).ok())
-                .ok_or(
-                    Error::new(ErrorKind::Overflow)
-                        .with_message("Default sample duration exceeds u32 range"),
-                )
-        })
-        .transpose()?;
+    let default_duration = default_duration_ticks(track.defaults.sample_duration, &scale)?;
 
     let mut flags = TfhdFlags::DEFAULT_BASE_IS_MOOF;
     if default_duration.is_some() {
@@ -462,10 +473,7 @@ fn build_truns(
 ) -> Result<Vec<TrunBox>> {
     let mut truns = Vec::with_capacity(table.chunks.len());
 
-    let default_duration = defaults
-        .sample_duration
-        .and_then(|d| scale.from_duration(d))
-        .and_then(|t| u32::try_from(t).ok());
+    let default_duration = default_duration_ticks(defaults.sample_duration, scale)?;
 
     let mut entries: Vec<TrunEntry> = Vec::new();
 
@@ -487,7 +495,8 @@ fn build_truns(
             } else {
                 SampleFlags::non_sync()
             };
-            let cto = cto_ticks(sample.composition_time_offset_ns().unwrap_or(0), scale)?;
+            let cto = cto_ticks(sample.composition_time_offset_ns().unwrap_or(0), scale)
+                .ok_or(Error::new(ErrorKind::Overflow).with_message("CTO exceeds tick range"))?;
             has_nonzero_cto |= cto != 0;
 
             if Some(duration) != default_duration {
@@ -520,7 +529,9 @@ fn build_truns(
         let use_first_sample_flags = rest_flags_default && !first_flags_matches;
 
         let mut trun = TrunBox::default();
-        trun.set_data_offset(i32::try_from(chunk.data_offset())?);
+        trun.set_data_offset(i32::try_from(chunk.data_offset()).map_err(|_| {
+            Error::new(ErrorKind::Overflow).with_message("data_offset exceeds i32 range")
+        })?);
 
         if use_first_sample_flags {
             trun.set_first_sample_flags(entries[0].flags.unwrap());
@@ -564,21 +575,8 @@ pub(super) fn build_mvex(movie: &Movie) -> Result<MvexBox> {
 
 fn build_trex(track: &Track) -> Result<TrexBox> {
     let scale = TickScale(track.timescale);
-    let default_sample_duration = track
-        .defaults
-        .sample_duration
-        .map(|d| {
-            let ticks = scale.from_duration(d).ok_or(
-                Error::new(ErrorKind::Overflow)
-                    .with_message("Default sample duration exceeds tick range"),
-            )?;
-            u32::try_from(ticks).map_err(|_| {
-                Error::new(ErrorKind::Overflow)
-                    .with_message("Default sample duration exceeds u32 range")
-            })
-        })
-        .transpose()?
-        .unwrap_or(0);
+    let default_sample_duration =
+        default_duration_ticks(track.defaults.sample_duration, &scale)?.unwrap_or(0);
 
     Ok(TrexBox {
         track_id: track.id.get(),
