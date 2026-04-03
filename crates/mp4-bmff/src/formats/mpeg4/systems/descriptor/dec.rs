@@ -212,6 +212,42 @@ mod owned {
         pub extentions: Vec<RawDescriptorOwned>,
     }
 
+    impl DecoderConfigDescriptor {
+        /// Creates a new `DecoderConfigDescriptor` for an MPEG-4 Visual stream with the given decoder-specific information.
+        pub fn mp4v(dec_specific_info: &[u8]) -> Self {
+            Self {
+                object_type_indication: ObjectTypeIndication::MPEG4_VISUAL,
+                stream_type: StreamType::VISUAL_STREAM,
+                up_stream: false,
+                buffer_size_db: [0x00, 0x00, 0x00],
+                max_bitrate: 0,
+                avg_bitrate: 0,
+                dec_specific_info: Some(RawDescriptorOwned::new(
+                    Tag::DECODER_SPECIFIC_INFO_TAG,
+                    dec_specific_info.to_vec(),
+                )),
+                extentions: Vec::new(),
+            }
+        }
+
+        /// Creates a new `DecoderConfigDescriptor` for an MPEG-4 Audio stream with the given decoder-specific information.
+        pub fn mp4a(dec_specific_info: &[u8]) -> Self {
+            Self {
+                object_type_indication: ObjectTypeIndication::MPEG4_AUDIO,
+                stream_type: StreamType::AUDIO_STREAM,
+                up_stream: false,
+                buffer_size_db: [0x00, 0x00, 0x00],
+                max_bitrate: 0,
+                avg_bitrate: 0,
+                dec_specific_info: Some(RawDescriptorOwned::new(
+                    Tag::DECODER_SPECIFIC_INFO_TAG,
+                    dec_specific_info.to_vec(),
+                )),
+                extentions: Vec::new(),
+            }
+        }
+    }
+
     impl TryFrom<&DecoderConfigDescriptorView<'_>> for DecoderConfigDescriptor {
         type Error = Error;
 

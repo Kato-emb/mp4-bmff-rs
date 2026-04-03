@@ -208,6 +208,25 @@ mod owned {
         pub descriptors: Vec<RawDescriptorOwned>,
     }
 
+    impl EsDescriptor {
+        /// Creates a new `EsDescriptor` with the given ES ID and Decoder Config Descriptor.
+        pub fn new(es_id: u16, dec_config: DecoderConfigDescriptor) -> Self {
+            Self {
+                es_id,
+                stream_dependence_flag: false,
+                url_flag: false,
+                ocr_stream_flag: false,
+                stream_priority: 0,
+                depends_on_es_id: None,
+                url_string: None,
+                ocr_es_id: None,
+                dec_config_descr: dec_config,
+                sl_config_descr: RawDescriptorOwned::new(Tag::SL_CONFIG_DESCR_TAG, vec![0x02]),
+                descriptors: Vec::new(),
+            }
+        }
+    }
+
     impl TryFrom<&EsDescriptorView<'_>> for EsDescriptor {
         type Error = Error;
 

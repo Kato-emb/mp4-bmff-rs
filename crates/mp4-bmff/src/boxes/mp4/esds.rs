@@ -106,6 +106,17 @@ mod owned {
         pub esd: EsDescriptor,
     }
 
+    impl EsdsBox {
+        /// Creates a new `EsdsBox` with the given ES Descriptor.
+        pub fn new(esd: EsDescriptor) -> Self {
+            Self {
+                version: 0,
+                flags: EsdsFlags::default(),
+                esd,
+            }
+        }
+    }
+
     impl TryFrom<&EsdsBoxView<'_>> for EsdsBox {
         type Error = Error;
 
