@@ -21,6 +21,8 @@ pub enum ErrorKind {
     InvalidInput,
     /// A specified track was not found in the movie when attempting to add a sample or perform an operation on it.
     TrackNotFound(TrackId),
+    /// An unsupported media type or configuration was encountered that cannot be processed by the muxer.
+    Unsupported,
     /// An error occurred while encoding a box.
     BoxEncode,
     /// An error occurred while decoding a box.
@@ -35,6 +37,7 @@ impl fmt::Display for ErrorKind {
             ErrorKind::TrackNotFound(track_id) => {
                 write!(f, "Track with ID {} not found", track_id.get())
             }
+            ErrorKind::Unsupported => write!(f, "Unsupported media type or configuration"),
             ErrorKind::BoxEncode => write!(f, "Box encoding error"),
             ErrorKind::BoxDecode => write!(f, "Box decoding error"),
         }

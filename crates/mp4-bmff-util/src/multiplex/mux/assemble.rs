@@ -54,6 +54,12 @@ impl TickScale {
             .checked_add(sub_nanos * ts / 1_000_000_000)
     }
 
+    /// Converts a signed nanosecond value to signed ticks.
+    fn signed_from_nanos(&self, nanos: i64) -> Option<i64> {
+        let ticks = i64::try_from(self.from_nanos(nanos.unsigned_abs())?).ok()?;
+        Some(if nanos < 0 { -ticks } else { ticks })
+    }
+
     /// Converts a `Duration` to ticks.
     fn from_duration(&self, duration: Duration) -> Option<u64> {
         let ts = u64::from(self.0.get());
@@ -70,33 +76,26 @@ impl TickScale {
         self.from_nanos(end_ns)?
             .checked_sub(self.from_nanos(start_ns)?)
     }
-
-    /// Converts a signed nanosecond value to signed ticks.
-    fn signed_from_nanos(&self, nanos: i64) -> Option<i64> {
-        let ticks = i64::try_from(self.from_nanos(nanos.unsigned_abs())?).ok()?;
-        Some(if nanos < 0 { -ticks } else { ticks })
-    }
 }
 
 // ---------------------------------------------------------------------------
 // Domain helpers — bridge between domain types and TickScale
 // ---------------------------------------------------------------------------
 
-/// Computes `ticks(ns + duration) − ticks(base_ns)` safely,
-/// bridging the `Duration` (`u128` nanos) → `u64` boundary.
-fn delta_duration(scale: &TickScale, base_ns: u64, ns: u64, duration: Duration) -> Option<u64> {
-    let end_ns = ns.checked_add(u64::try_from(duration.as_nanos()).ok()?)?;
-    scale.delta(base_ns, end_ns)
-}
-
 /// Computes the total media duration in ticks via the telescoping sum.
 fn media_duration(table: &SampleTable, scale: &TickScale) -> Result<u64> {
-    let Some(last) = table.chunks.last().map(|c| c.last()) else {
+    let Some(last) = table.chunks.last().and_then(|c| c.samples.last()) else {
         return Ok(0);
     };
-    let first_ns = table.first_sample_dts().unwrap_or(0);
-    delta_duration(scale, first_ns, last.dts_ns, last.duration())
-        .ok_or(Error::new(ErrorKind::Overflow).with_message("Media duration exceeds tick range"))
+    let start_ns = table.first_sample_dts().unwrap_or(0);
+    let end_ns = u64::try_from(last.duration.as_nanos())
+        .ok()
+        .and_then(|d| last.dts_ns.checked_add(d))
+        .ok_or(Error::new(ErrorKind::Overflow).with_message("Media duration exceeds u64 range"))?;
+
+    scale.delta(start_ns, end_ns).ok_or(
+        Error::new(ErrorKind::Overflow).with_message("Media duration in ticks exceeds u64 range"),
+    )
 }
 
 /// Computes a track's effective duration in ticks.
@@ -113,14 +112,50 @@ fn track_duration(track: &Track, scale: &TickScale) -> Result<u64> {
 
 /// Computes a sample's duration in `u32` ticks via the telescoping sum.
 fn sample_delta_ticks(dts_ns: u64, duration: Duration, scale: &TickScale) -> Result<u32> {
-    delta_duration(scale, dts_ns, dts_ns, duration)
-        .and_then(|t| u32::try_from(t).ok())
-        .ok_or(Error::new(ErrorKind::Overflow).with_message("Sample delta exceeds u32 tick range"))
+    let start_ns = dts_ns;
+    let end_ns = u64::try_from(duration.as_nanos())
+        .ok()
+        .and_then(|d| dts_ns.checked_add(d))
+        .ok_or(Error::new(ErrorKind::Overflow).with_message("Sample end time exceeds u64 range"))?;
+
+    scale
+        .delta(start_ns, end_ns)
+        .and_then(|d| u32::try_from(d).ok())
+        .ok_or(
+            Error::new(ErrorKind::Overflow)
+                .with_message("Sample duration in ticks exceeds u32 range"),
+        )
 }
 
 /// Converts a composition time offset (nanoseconds) to ticks.
-fn cto_ticks(cto_ns: i64, scale: &TickScale) -> Option<i64> {
-    scale.signed_from_nanos(cto_ns)
+fn sample_cto_ticks(dts_ns: u64, pts_ns: Option<i64>, scale: &TickScale) -> Result<i64> {
+    let Some(pts_ns) = pts_ns else {
+        return Ok(0);
+    };
+
+    let cto_ns = if pts_ns >= 0 {
+        let pts_uns = pts_ns as u64;
+        if pts_uns >= dts_ns {
+            i64::try_from(pts_uns - dts_ns).ok()
+        } else {
+            i64::try_from(dts_ns - pts_uns).ok().map(|v| -v)
+        }
+    } else {
+        let abs_pts_ns = pts_ns.unsigned_abs();
+        dts_ns
+            .checked_add(abs_pts_ns)
+            .and_then(|v| i64::try_from(v).ok())
+            .map(|v| -v)
+    }
+    .ok_or_else(|| {
+        Error::new(ErrorKind::Overflow)
+            .with_message("Composition time offset (PTS - DTS) exceeds i64 range")
+    })?;
+
+    scale.signed_from_nanos(cto_ns).ok_or_else(|| {
+        Error::new(ErrorKind::Overflow)
+            .with_message("Composition time offset in ticks exceeds i64 range")
+    })
 }
 
 /// Converts an optional default sample duration to `u32` ticks.
@@ -252,7 +287,96 @@ fn build_stsd(track: &Track) -> Result<StsdBox> {
 }
 
 fn build_sample_entry(media: &MediaDefinition) -> Result<RawBoxOwned> {
-    todo!()
+    match media {
+        MediaDefinition::Video {
+            width,
+            height,
+            codec,
+        } => build_visual_sample_entry(*width, *height, codec),
+        MediaDefinition::Audio {
+            channel_count,
+            sample_rate,
+            codec,
+        } => build_audio_sample_entry(*channel_count, *sample_rate, codec),
+        _ => Err(Error::new(ErrorKind::Unsupported)
+            .with_message("Unsupported media definition for sample entry construction")),
+    }
+}
+
+fn build_visual_sample_entry(
+    width: u16,
+    height: u16,
+    codec: &VisualSampleDescription,
+) -> Result<RawBoxOwned> {
+    let base = VisualSampleEntry {
+        width,
+        height,
+        ..Default::default()
+    };
+
+    match codec {
+        VisualSampleDescription::Avc1(avc_config) => {
+            use mp4_bmff::boxes::avc::Avc1SampleEntry;
+            use mp4_bmff::boxes::avc::AvcCBox;
+            let avcc = AvcCBox {
+                avc_config: avc_config.clone(),
+            };
+
+            let avc1 = Avc1SampleEntry::new(base, avcc, None, None);
+            RawBoxOwned::from_boxed(&avc1).map_err(|e| Error::box_encode(e))
+        }
+        VisualSampleDescription::Avc3(avc_config) => {
+            use mp4_bmff::boxes::avc::Avc3SampleEntry;
+            use mp4_bmff::boxes::avc::AvcCBox;
+            let avcc = AvcCBox {
+                avc_config: avc_config.clone(),
+            };
+
+            let avc3 = Avc3SampleEntry::new(base, avcc, None, None);
+            RawBoxOwned::from_boxed(&avc3).map_err(|e| Error::box_encode(e))
+        }
+        VisualSampleDescription::Mp4v(dec_specific_info) => {
+            use mp4_bmff::formats::mpeg4::systems::descriptor::DecoderConfigDescriptor;
+            use mp4_bmff::formats::mpeg4::systems::descriptor::EsDescriptor;
+            let dec_config = DecoderConfigDescriptor::mp4v(dec_specific_info);
+            // TODO: MP4仕様（ISO 14496-14）では、esds box内の es_id は track_id と一致させるか、0 にすることが推奨されている
+            let esd = EsDescriptor::new(0, dec_config);
+
+            use mp4_bmff::boxes::mp4::EsdsBox;
+            use mp4_bmff::boxes::mp4::Mp4vSampleEntry;
+            let esds = EsdsBox::new(esd);
+            let mp4v = Mp4vSampleEntry { base, esds };
+            RawBoxOwned::from_boxed(&mp4v).map_err(|e| Error::box_encode(e))
+        }
+    }
+}
+
+fn build_audio_sample_entry(
+    channel_count: u16,
+    sample_rate: u16,
+    codec: &AudioSampleDescription,
+) -> Result<RawBoxOwned> {
+    let base = AudioSampleEntry {
+        channelcount: channel_count,
+        samplerate: U16F16::from_integer(i128::from(sample_rate)),
+        ..Default::default()
+    };
+
+    match codec {
+        AudioSampleDescription::Mp4a(dec_specific_info) => {
+            use mp4_bmff::formats::mpeg4::systems::descriptor::DecoderConfigDescriptor;
+            use mp4_bmff::formats::mpeg4::systems::descriptor::EsDescriptor;
+            let dec_config = DecoderConfigDescriptor::mp4a(dec_specific_info);
+
+            let esd = EsDescriptor::new(0, dec_config);
+
+            use mp4_bmff::boxes::mp4::EsdsBox;
+            use mp4_bmff::boxes::mp4::Mp4aSampleEntry;
+            let esds = EsdsBox::new(esd);
+            let mp4a = Mp4aSampleEntry { base, esds };
+            RawBoxOwned::from_boxed(&mp4a).map_err(|e| Error::box_encode(e))
+        }
+    }
 }
 
 fn build_stbl(table: &SampleTable, stsd: StsdBox, scale: &TickScale) -> Result<StblBox> {
@@ -269,23 +393,23 @@ fn build_stbl(table: &SampleTable, stsd: StsdBox, scale: &TickScale) -> Result<S
 
     for chunk in table.chunks.iter() {
         chunk_number = chunk_number.checked_add(1).ok_or(ErrorKind::Overflow)?;
-        let samples_per_chunk = u32::try_from(chunk.sample_count()).map_err(|_| {
+        let samples_per_chunk = u32::try_from(chunk.samples.len()).map_err(|_| {
             Error::new(ErrorKind::Overflow)
                 .with_message("Number of samples per chunk exceeds u32 range")
         })?;
         stsc.push(chunk_number, samples_per_chunk, 1);
-        chunk_offset.push(chunk.data_offset());
+        chunk_offset.push(chunk.data_offset);
 
-        for sample in chunk.samples() {
+        for sample in &chunk.samples {
             sample_number = sample_number.checked_add(1).ok_or(ErrorKind::Overflow)?;
 
-            let delta = sample_delta_ticks(sample.dts_ns, sample.duration(), scale)?;
-            let cto = cto_ticks(sample.composition_time_offset_ns().unwrap_or(0), scale)
-                .and_then(|t| i32::try_from(t).ok())
-                .ok_or(
+            let delta = sample_delta_ticks(sample.dts_ns, sample.duration, scale)?;
+            let cto = sample_cto_ticks(sample.dts_ns, sample.pts_ns, scale).and_then(|cto| {
+                i32::try_from(cto).map_err(|_| {
                     Error::new(ErrorKind::Overflow)
-                        .with_message("Composition time offset exceeds i32 tick range"),
-                )?;
+                        .with_message("Composition time offset exceeds i32 tick range")
+                })
+            })?;
 
             stts.push(delta);
             stsz.push(sample.size);
@@ -465,7 +589,7 @@ fn build_truns(
     let mut entries: Vec<TrunEntry> = Vec::new();
 
     for chunk in &table.chunks {
-        entries.reserve(chunk.sample_count());
+        entries.reserve(chunk.samples.len());
 
         // Phase 1: collect entries and track which fields can be omitted
         let mut all_duration_default = true;
@@ -474,16 +598,15 @@ fn build_truns(
         let mut rest_flags_default = true;
         let mut has_nonzero_cto = false;
 
-        for (i, sample) in chunk.samples().enumerate() {
-            let duration = sample_delta_ticks(sample.dts_ns, sample.duration(), scale)?;
+        for (i, sample) in chunk.samples.iter().enumerate() {
+            let duration = sample_delta_ticks(sample.dts_ns, sample.duration, scale)?;
             let size = sample.size;
             let flags = if sample.is_sync {
                 SampleFlags::sync()
             } else {
                 SampleFlags::non_sync()
             };
-            let cto = cto_ticks(sample.composition_time_offset_ns().unwrap_or(0), scale)
-                .ok_or(Error::new(ErrorKind::Overflow).with_message("CTO exceeds tick range"))?;
+            let cto = sample_cto_ticks(sample.dts_ns, sample.pts_ns, scale)?;
             has_nonzero_cto |= cto != 0;
 
             if Some(duration) != default_duration {
@@ -516,7 +639,7 @@ fn build_truns(
         let use_first_sample_flags = rest_flags_default && !first_flags_matches;
 
         let mut trun = TrunBox::default();
-        trun.set_data_offset(i32::try_from(chunk.data_offset()).map_err(|_| {
+        trun.set_data_offset(i32::try_from(chunk.data_offset).map_err(|_| {
             Error::new(ErrorKind::Overflow).with_message("data_offset exceeds i32 range")
         })?);
 
@@ -595,7 +718,6 @@ mod tests {
         duration_ms: u64,
         is_sync: bool,
         size: u32,
-        data_offset: u64,
     ) -> Sample {
         Sample::new(
             dts_ns,
@@ -603,8 +725,14 @@ mod tests {
             Duration::from_millis(duration_ms),
             is_sync,
             size,
-            data_offset,
         )
+    }
+
+    fn make_chunk(data_offset: u64, samples: Vec<Sample>) -> Chunk {
+        Chunk {
+            data_offset,
+            samples,
+        }
     }
 
     fn make_sample_table(chunks: Vec<Chunk>) -> SampleTable {
@@ -667,8 +795,13 @@ mod tests {
             sample_flags: Some(SampleFlags::sync()),
         };
 
-        let mut chunk = Chunk::new(make_sample(0, None, 33, true, 1000, 0));
-        chunk.try_push(make_sample(33_000_000, None, 33, true, 1000, 1000));
+        let chunk = make_chunk(
+            0,
+            vec![
+                make_sample(0, None, 33, true, 1000),
+                make_sample(33_000_000, None, 33, true, 1000),
+            ],
+        );
 
         let table = make_sample_table(vec![chunk]);
         let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
@@ -689,8 +822,13 @@ mod tests {
     fn build_truns_no_defaults() {
         let defaults = TrackDefaults::default();
 
-        let mut chunk = Chunk::new(make_sample(0, None, 33, true, 1000, 0));
-        chunk.try_push(make_sample(33_000_000, None, 33, true, 2000, 1000));
+        let chunk = make_chunk(
+            0,
+            vec![
+                make_sample(0, None, 33, true, 1000),
+                make_sample(33_000_000, None, 33, true, 2000),
+            ],
+        );
 
         let table = make_sample_table(vec![chunk]);
         let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
@@ -711,9 +849,14 @@ mod tests {
             sample_flags: Some(SampleFlags::non_sync()),
         };
 
-        let mut chunk = Chunk::new(make_sample(0, None, 33, true, 1000, 0));
-        chunk.try_push(make_sample(33_000_000, None, 33, false, 1000, 1000));
-        chunk.try_push(make_sample(66_000_000, None, 33, false, 1000, 2000));
+        let chunk = make_chunk(
+            0,
+            vec![
+                make_sample(0, None, 33, true, 1000),
+                make_sample(33_000_000, None, 33, false, 1000),
+                make_sample(66_000_000, None, 33, false, 1000),
+            ],
+        );
 
         let table = make_sample_table(vec![chunk]);
         let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
@@ -733,9 +876,14 @@ mod tests {
             sample_flags: Some(SampleFlags::non_sync()),
         };
 
-        let mut chunk = Chunk::new(make_sample(0, None, 33, true, 1000, 0));
-        chunk.try_push(make_sample(33_000_000, None, 33, false, 1000, 1000));
-        chunk.try_push(make_sample(66_000_000, None, 33, true, 1000, 2000));
+        let chunk = make_chunk(
+            0,
+            vec![
+                make_sample(0, None, 33, true, 1000),
+                make_sample(33_000_000, None, 33, false, 1000),
+                make_sample(66_000_000, None, 33, true, 1000),
+            ],
+        );
 
         let table = make_sample_table(vec![chunk]);
         let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
@@ -750,7 +898,7 @@ mod tests {
     #[test]
     fn build_truns_with_cto() {
         let defaults = TrackDefaults::default();
-        let chunk = Chunk::new(make_sample(0, Some(66_000_000), 33, true, 1000, 0));
+        let chunk = make_chunk(0, vec![make_sample(0, Some(66_000_000), 33, true, 1000)]);
         let table = make_sample_table(vec![chunk]);
         let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
 
@@ -761,7 +909,7 @@ mod tests {
     #[test]
     fn build_truns_zero_cto_omitted() {
         let defaults = TrackDefaults::default();
-        let chunk = Chunk::new(make_sample(0, Some(0), 33, true, 1000, 0));
+        let chunk = make_chunk(0, vec![make_sample(0, Some(0), 33, true, 1000)]);
         let table = make_sample_table(vec![chunk]);
         let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
 
@@ -771,8 +919,8 @@ mod tests {
     #[test]
     fn build_truns_multiple_chunks() {
         let defaults = TrackDefaults::default();
-        let chunk1 = Chunk::new(make_sample(0, None, 33, true, 1000, 0));
-        let chunk2 = Chunk::new(make_sample(33_000_000, None, 33, true, 2000, 5000));
+        let chunk1 = make_chunk(0, vec![make_sample(0, None, 33, true, 1000)]);
+        let chunk2 = make_chunk(5000, vec![make_sample(33_000_000, None, 33, true, 2000)]);
 
         let table = make_sample_table(vec![chunk1, chunk2]);
         let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
@@ -785,7 +933,7 @@ mod tests {
     #[test]
     fn build_truns_data_offset_set() {
         let defaults = TrackDefaults::default();
-        let chunk = Chunk::new(make_sample(0, None, 33, true, 1000, 256));
+        let chunk = make_chunk(256, vec![make_sample(0, None, 33, true, 1000)]);
         let table = make_sample_table(vec![chunk]);
         let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
 
@@ -795,7 +943,7 @@ mod tests {
     #[test]
     fn build_truns_duration_ticks_conversion() {
         let defaults = TrackDefaults::default();
-        let chunk = Chunk::new(make_sample(0, None, 33, true, 1000, 0));
+        let chunk = make_chunk(0, vec![make_sample(0, None, 33, true, 1000)]);
         let table = make_sample_table(vec![chunk]);
         let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
 
@@ -821,18 +969,18 @@ mod tests {
             .map(|i| {
                 let dts = ticks_to_nanos(i * delta_ticks, timescale);
                 let next = ticks_to_nanos((i + 1) * delta_ticks, timescale);
-                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100, 0)
+                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100)
             })
             .collect();
 
         let total: u64 = samples
             .iter()
-            .map(|s| u64::from(sample_delta_ticks(s.dts_ns, s.duration(), &scale).unwrap()))
+            .map(|s| u64::from(sample_delta_ticks(s.dts_ns, s.duration, &scale).unwrap()))
             .sum();
 
         let start_ns = samples.first().unwrap().dts_ns;
         let last = samples.last().unwrap();
-        let end_ns = last.dts_ns + last.duration().as_nanos() as u64;
+        let end_ns = last.dts_ns + last.duration.as_nanos() as u64;
         let expected = scale.from_nanos(end_ns).unwrap() - scale.from_nanos(start_ns).unwrap();
 
         assert_eq!(total, expected);
@@ -855,19 +1003,18 @@ mod tests {
                 Duration::from_nanos(next - dts),
                 true,
                 100,
-                0,
             ));
             dts_ticks += dt;
         }
 
         let total: u64 = samples
             .iter()
-            .map(|s| u64::from(sample_delta_ticks(s.dts_ns, s.duration(), &scale).unwrap()))
+            .map(|s| u64::from(sample_delta_ticks(s.dts_ns, s.duration, &scale).unwrap()))
             .sum();
 
         let start_ns = samples.first().unwrap().dts_ns;
         let last = samples.last().unwrap();
-        let end_ns = last.dts_ns + last.duration().as_nanos() as u64;
+        let end_ns = last.dts_ns + last.duration.as_nanos() as u64;
         let expected = scale.from_nanos(end_ns).unwrap() - scale.from_nanos(start_ns).unwrap();
 
         assert_eq!(total, expected);
@@ -880,38 +1027,21 @@ mod tests {
         let num_samples: u64 = 100;
         let scale = TickScale(nz(timescale as u32));
 
-        let mut chunk = {
-            let dts = ticks_to_nanos(0, timescale);
-            let next = ticks_to_nanos(delta_ticks, timescale);
-            Chunk::new(Sample::new(
-                dts,
-                None,
-                Duration::from_nanos(next - dts),
-                true,
-                100,
-                0,
-            ))
-        };
-        for i in 1..num_samples {
-            let dts = ticks_to_nanos(i * delta_ticks, timescale);
-            let next = ticks_to_nanos((i + 1) * delta_ticks, timescale);
-            chunk.try_push(Sample::new(
-                dts,
-                None,
-                Duration::from_nanos(next - dts),
-                true,
-                100,
-                i * 100,
-            ));
-        }
+        let samples: Vec<_> = (0..num_samples)
+            .map(|i| {
+                let dts = ticks_to_nanos(i * delta_ticks, timescale);
+                let next = ticks_to_nanos((i + 1) * delta_ticks, timescale);
+                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100)
+            })
+            .collect();
 
-        let table = make_sample_table(vec![chunk]);
+        let table = make_sample_table(vec![make_chunk(0, samples)]);
         let duration = media_duration(&table, &scale).unwrap();
         let sum_deltas: u64 = table
             .chunks
             .iter()
-            .flat_map(|c| c.samples())
-            .map(|s| u64::from(sample_delta_ticks(s.dts_ns, s.duration(), &scale).unwrap()))
+            .flat_map(|c| c.samples.iter())
+            .map(|s| u64::from(sample_delta_ticks(s.dts_ns, s.duration, &scale).unwrap()))
             .sum();
 
         assert_eq!(duration, sum_deltas);
@@ -927,13 +1057,13 @@ mod tests {
             .map(|i| {
                 let dts = ticks_to_nanos(i * delta_ticks, timescale);
                 let next = ticks_to_nanos((i + 1) * delta_ticks, timescale);
-                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100, 0)
+                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100)
             })
             .collect();
 
         for sample in &samples {
             assert_eq!(
-                u64::from(sample_delta_ticks(sample.dts_ns, sample.duration(), &scale).unwrap()),
+                u64::from(sample_delta_ticks(sample.dts_ns, sample.duration, &scale).unwrap()),
                 delta_ticks
             );
         }
@@ -945,32 +1075,15 @@ mod tests {
         let movie_ts: u64 = 1000;
         let delta_ticks: u64 = 512;
 
-        let mut chunk = {
-            let dts = ticks_to_nanos(0, media_ts);
-            let next = ticks_to_nanos(delta_ticks, media_ts);
-            Chunk::new(Sample::new(
-                dts,
-                None,
-                Duration::from_nanos(next - dts),
-                true,
-                100,
-                0,
-            ))
-        };
-        for i in 1..3u64 {
-            let dts = ticks_to_nanos(i * delta_ticks, media_ts);
-            let next = ticks_to_nanos((i + 1) * delta_ticks, media_ts);
-            chunk.try_push(Sample::new(
-                dts,
-                None,
-                Duration::from_nanos(next - dts),
-                true,
-                100,
-                i * 100,
-            ));
-        }
+        let samples: Vec<_> = (0..3u64)
+            .map(|i| {
+                let dts = ticks_to_nanos(i * delta_ticks, media_ts);
+                let next = ticks_to_nanos((i + 1) * delta_ticks, media_ts);
+                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100)
+            })
+            .collect();
 
-        let table = make_sample_table(vec![chunk]);
+        let table = make_sample_table(vec![make_chunk(0, samples)]);
         let movie_dur = media_duration(&table, &TickScale(nz(movie_ts as u32))).unwrap();
         assert_eq!(movie_dur, 100);
     }

@@ -160,9 +160,14 @@ impl Muxer {
         Builder::new(timescale)
     }
 
+    /// Begins a new chunk for the specified track, associating it with the given data offset in the `mdat` box.
+    pub fn begin_chunk(&mut self, track_id: TrackId, data_offset: u64) -> Result<()> {
+        self.movie.begin_chunk(track_id, data_offset)
+    }
+
     /// Adds a sample to the specified track in the movie, associating it with the given data offset in the `mdat` box.
     pub fn add_sample(&mut self, track_id: TrackId, sample: Sample) -> Result<()> {
-        self.movie.add_sample(track_id, sample)
+        self.movie.push_sample(track_id, sample)
     }
 
     /// Finalizes the muxer and produces the `moov` box.
@@ -195,9 +200,14 @@ impl FragmentedMuxer {
         Builder::new(timescale)
     }
 
+    /// Begins a new chunk for the specified track, associating it with the given data offset in the `mdat` box.
+    pub fn begin_chunk(&mut self, track_id: TrackId, data_offset: u64) -> Result<()> {
+        self.movie.begin_chunk(track_id, data_offset)
+    }
+
     /// Adds a sample to the specified track in the movie, associating it with the given data offset in the `mdat` box.
     pub fn add_sample(&mut self, track_id: TrackId, sample: Sample) -> Result<()> {
-        self.movie.add_sample(track_id, sample)
+        self.movie.push_sample(track_id, sample)
     }
 
     /// Flushes the accumulated samples into a `moof` box and resets the fragment state.

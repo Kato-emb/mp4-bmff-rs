@@ -54,7 +54,6 @@ pub struct Sample {
     duration: Duration,
     is_sync: bool,
     size: u32,
-    data_offset: u64,
 }
 
 impl Sample {
@@ -65,7 +64,6 @@ impl Sample {
         duration: Duration,
         is_sync: bool,
         size: u32,
-        data_offset: u64,
     ) -> Self {
         Self {
             dts_ns,
@@ -73,19 +71,7 @@ impl Sample {
             duration,
             is_sync,
             size,
-            data_offset,
         }
-    }
-
-    /// Returns the sample duration as a `Duration` type.
-    pub fn duration(&self) -> Duration {
-        self.duration
-    }
-
-    /// Returns the composition time offset in nanoseconds, calculated as `pts - dts`.
-    pub fn composition_time_offset_ns(&self) -> Option<i64> {
-        self.pts_ns
-            .and_then(|pts| pts.checked_sub(i64::try_from(self.dts_ns).ok()?))
     }
 }
 
@@ -100,7 +86,7 @@ pub enum VisualSampleDescription {
     Avc3(mp4_bmff::formats::mpeg4::codecs::avc::AVCDecoderConfigurationRecord),
     /// MPEG-4 Visual sample entry using the `mp4v` box.
     #[cfg(feature = "mp4")]
-    Mp4v(mp4_bmff::formats::mpeg4::systems::descriptor::RawDescriptorOwned),
+    Mp4v(Vec<u8>),
 }
 
 /// Description of an audio sample entry.
@@ -108,7 +94,7 @@ pub enum VisualSampleDescription {
 pub enum AudioSampleDescription {
     /// MPEG-4 Audio sample entry using the `mp4a` box.
     #[cfg(feature = "mp4")]
-    Mp4a(mp4_bmff::formats::mpeg4::systems::descriptor::RawDescriptorOwned),
+    Mp4a(Vec<u8>),
 }
 
 /// Description of a metadata sample entry (placeholder).
@@ -148,7 +134,7 @@ pub enum MediaDefinition {
         /// Number of audio channels (e.g., 2 for stereo).
         channel_count: u16,
         /// Sample rate in Hz (e.g., 44100 for CD-quality audio).
-        sample_rate: u32,
+        sample_rate: u16,
         /// Codec-specific description of the audio samples.
         codec: AudioSampleDescription,
     },
