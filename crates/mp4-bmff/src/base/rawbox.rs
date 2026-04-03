@@ -37,6 +37,8 @@ use crate::BoxType;
 use crate::error::*;
 
 #[cfg(feature = "alloc")]
+use crate::{BoxCodec, BoxEncode};
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 /// A raw BMFF box with header and uninterpreted payload.
@@ -278,6 +280,13 @@ impl<'a> RawBox<&'a [u8]> {
 
 #[cfg(feature = "alloc")]
 impl RawBox<Vec<u8>> {
+    /// Creates a `RawBoxOwned` from a concrete box type by encoding it.
+    pub fn from_boxed<B: BoxCodec + BoxEncode>(value: &B) -> Result<Self> {
+        let payload = value.encode_to_vec()?;
+        let header = BoxHeader::new(value.boxtype(), payload.len() as u64);
+        Ok(Self { header, payload })
+    }
+
     /// Decodes the box payload into a concrete box type.
     ///
     /// # Errors
