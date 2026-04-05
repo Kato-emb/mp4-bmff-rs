@@ -34,11 +34,16 @@ struct SampleInfo {
     duration: Duration,
     is_sync: bool,
     size: u32,
+    chunk_idx: usize,
+}
+
+/// Per-chunk information extracted from the original MP4's sample table.
+struct ChunkInfo {
     data_offset: u64,
 }
 
-/// Extracts per-sample information from a decoded StblBox.
-fn extract_samples(stbl: &StblBox, timescale: u32) -> Vec<SampleInfo> {
+/// Extracts per-sample and per-chunk information from a decoded StblBox.
+fn extract_samples(stbl: &StblBox, timescale: u32) -> (Vec<ChunkInfo>, Vec<SampleInfo>) {
     // Expand stts run-length into per-sample durations
     let durations: Vec<u32> = stbl
         .stts
@@ -89,7 +94,7 @@ fn extract_samples(stbl: &StblBox, timescale: u32) -> Vec<SampleInfo> {
         ChunkOffset::Co64(co64) => co64.entries.iter().map(|e| e.chunk_offset).collect(),
     };
 
-    // Expand stsc into per-sample chunk assignments and compute data offsets
+    // Expand stsc into per-sample chunk assignments
     let num_chunks = chunk_offsets.len();
     let mut sample_chunk_map: Vec<usize> = Vec::with_capacity(sample_count);
     for (i, entry) in stbl.stsc.entries.iter().enumerate() {
@@ -105,18 +110,11 @@ fn extract_samples(stbl: &StblBox, timescale: u32) -> Vec<SampleInfo> {
         }
     }
 
-    // Compute data offset for each sample
-    let mut data_offsets: Vec<u64> = Vec::with_capacity(sample_count);
-    let mut current_chunk: usize = usize::MAX;
-    let mut offset_in_chunk: u64 = 0;
-    for (i, &chunk_idx) in sample_chunk_map.iter().enumerate() {
-        if chunk_idx != current_chunk {
-            current_chunk = chunk_idx;
-            offset_in_chunk = chunk_offsets[chunk_idx];
-        }
-        data_offsets.push(offset_in_chunk);
-        offset_in_chunk += u64::from(sizes[i]);
-    }
+    // Build chunk info
+    let chunks: Vec<ChunkInfo> = chunk_offsets
+        .iter()
+        .map(|&data_offset| ChunkInfo { data_offset })
+        .collect();
 
     // Compute DTS and PTS for each sample using cumulative ticks
     // to avoid rounding error accumulation (telescoping sum).
@@ -146,13 +144,13 @@ fn extract_samples(stbl: &StblBox, timescale: u32) -> Vec<SampleInfo> {
             duration,
             is_sync,
             size: sizes[i],
-            data_offset: data_offsets[i],
+            chunk_idx: sample_chunk_map[i],
         });
 
         dts_ticks += duration_ticks;
     }
 
-    samples
+    (chunks, samples)
 }
 
 /// Finds and decodes the moov box from raw MP4 data.
@@ -185,7 +183,7 @@ fn mux_roundtrip_video() {
     };
 
     // 3. Extract sample info from original
-    let samples = extract_samples(&original_trak.mdia.minf.stbl, timescale);
+    let (chunks, samples) = extract_samples(&original_trak.mdia.minf.stbl, timescale);
     assert_eq!(samples.len(), 3, "Expected 3 frames in sample.mp4");
 
     // 4. Re-mux using Muxer API
@@ -193,18 +191,18 @@ fn mux_roundtrip_video() {
     let track_id = builder.add_track(timescale, media).unwrap().build();
     let mut muxer = builder.build().unwrap();
 
+    let mut current_chunk: Option<usize> = None;
     for s in &samples {
+        if current_chunk != Some(s.chunk_idx) {
+            muxer
+                .begin_chunk(track_id, chunks[s.chunk_idx].data_offset)
+                .unwrap();
+            current_chunk = Some(s.chunk_idx);
+        }
         muxer
             .add_sample(
                 track_id,
-                Sample::new(
-                    s.dts_ns,
-                    s.pts_ns,
-                    s.duration,
-                    s.is_sync,
-                    s.size,
-                    s.data_offset,
-                ),
+                Sample::new(s.dts_ns, s.pts_ns, s.duration, s.is_sync, s.size),
             )
             .unwrap();
     }
@@ -349,35 +347,30 @@ fn mux_multiple_tracks() {
     let tid2 = builder.add_track(90000, media2).unwrap().build();
     let mut muxer = builder.build().unwrap();
 
+    muxer.begin_chunk(tid1, 0).unwrap();
     muxer
         .add_sample(
             tid1,
-            Sample::new(0, None, Duration::from_millis(33), true, 1000, 0),
+            Sample::new(0, None, Duration::from_millis(33), true, 1000),
         )
         .unwrap();
     muxer
         .add_sample(
             tid1,
-            Sample::new(
-                33_000_000,
-                None,
-                Duration::from_millis(33),
-                false,
-                800,
-                1000,
-            ),
+            Sample::new(33_000_000, None, Duration::from_millis(33), false, 800),
+        )
+        .unwrap();
+    muxer.begin_chunk(tid2, 2000).unwrap();
+    muxer
+        .add_sample(
+            tid2,
+            Sample::new(0, None, Duration::from_millis(33), true, 500),
         )
         .unwrap();
     muxer
         .add_sample(
             tid2,
-            Sample::new(0, None, Duration::from_millis(33), true, 500, 2000),
-        )
-        .unwrap();
-    muxer
-        .add_sample(
-            tid2,
-            Sample::new(33_000_000, None, Duration::from_millis(33), true, 500, 2500),
+            Sample::new(33_000_000, None, Duration::from_millis(33), true, 500),
         )
         .unwrap();
 
