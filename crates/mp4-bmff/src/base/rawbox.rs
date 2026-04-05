@@ -168,24 +168,6 @@ impl<T: AsRef<[u8]>> RawBox<T> {
     pub fn payload(&self) -> &[u8] {
         self.payload.as_ref()
     }
-}
-
-impl<T: AsMut<[u8]>> RawBox<T> {
-    /// Returns the mutable box payload.
-    pub fn payload_mut(&mut self) -> &mut [u8] {
-        self.payload.as_mut()
-    }
-}
-
-impl<'a> RawBox<&'a [u8]> {
-    /// Converts the `RawBoxRef` into an owned `RawBox` with a `Vec<u8>` payload.
-    #[cfg(feature = "alloc")]
-    pub fn to_owned(&self) -> RawBox<Vec<u8>> {
-        RawBox {
-            header: self.header,
-            payload: self.payload.to_vec(),
-        }
-    }
 
     /// Decodes the box payload into a concrete box type.
     ///
@@ -211,8 +193,26 @@ impl<'a> RawBox<&'a [u8]> {
     ///
     /// assert_eq!(ftyp.major_brand.as_bytes(), b"isom");
     /// ```
-    pub fn decode<B: BoxDecode<'a>>(&self) -> Result<B> {
-        B::decode(self.payload)
+    pub fn decode<'a, B: BoxDecode<'a>>(&'a self) -> Result<B> {
+        B::decode(self.payload())
+    }
+}
+
+impl<T: AsMut<[u8]>> RawBox<T> {
+    /// Returns the mutable box payload.
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        self.payload.as_mut()
+    }
+}
+
+impl<'a> RawBox<&'a [u8]> {
+    /// Converts the `RawBoxRef` into an owned `RawBox` with a `Vec<u8>` payload.
+    #[cfg(feature = "alloc")]
+    pub fn to_owned(&self) -> RawBox<Vec<u8>> {
+        RawBox {
+            header: self.header,
+            payload: self.payload.to_vec(),
+        }
     }
 
     /// Parses a `RawBoxRef` from the given byte slice.
@@ -285,36 +285,6 @@ impl RawBox<Vec<u8>> {
         let payload = value.encode_to_vec()?;
         let header = BoxHeader::new(value.boxtype(), payload.len() as u64);
         Ok(Self { header, payload })
-    }
-
-    /// Decodes the box payload into a concrete box type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the payload cannot be decoded into the target type.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use mp4_bmff::base::rawbox::RawBoxRef;
-    /// use mp4_bmff::boxes::bmff::MfroBox;
-    ///
-    /// let data = [
-    ///     0x00, 0x00, 0x00, 0x10, // size = 16
-    ///     b'm', b'f', b'r', b'o', // type = "mfro"
-    ///     0x00,                   // version = 0
-    ///     0x00, 0x00, 0x00,       // flags = 0
-    ///     0x00, 0x00, 0x10, 0x00, // size = 4096
-    /// ];
-    ///
-    /// let raw_ref = RawBoxRef::parse(&data).unwrap();
-    /// let raw_owned = raw_ref.to_owned();
-    /// let mfro: MfroBox = raw_owned.decode().unwrap();
-    ///
-    /// assert_eq!(mfro.size, 4096);
-    /// ```
-    pub fn decode<'a, B: BoxDecode<'a>>(&'a self) -> Result<B> {
-        B::decode(&self.payload)
     }
 }
 
