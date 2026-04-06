@@ -14,19 +14,19 @@ use super::TrackId;
 #[derive(Debug)]
 pub(super) struct Movie {
     pub timescale: NonZeroU32,
-    pub tracks: Vec<TrackEntry>,
+    pub track_entries: Vec<TrackEntry>,
 }
 
 impl Movie {
     pub(super) fn new(timescale: NonZeroU32) -> Self {
         Self {
             timescale,
-            tracks: Vec::new(),
+            track_entries: Vec::new(),
         }
     }
 
     pub(super) fn next_track_id(&self) -> Result<TrackId> {
-        let next_id = match self.tracks.iter().map(|s| s.info.id).max() {
+        let next_id = match self.track_entries.iter().map(|s| s.info.id).max() {
             Some(max_id) => max_id.get().checked_add(1),
             None => Some(1),
         };
@@ -38,7 +38,9 @@ impl Movie {
     }
 
     pub(super) fn get_track_entry_mut(&mut self, track_id: TrackId) -> Option<&mut TrackEntry> {
-        self.tracks.iter_mut().find(|s| s.info.id == track_id)
+        self.track_entries
+            .iter_mut()
+            .find(|s| s.info.id == track_id)
     }
 }
 
@@ -95,7 +97,7 @@ mod tests {
     fn movie_next_track_id_increments() {
         let mut movie = Movie::new(nz(1000));
         let track = Track::new(TrackId::new(1).unwrap(), nz(1000), dummy_media());
-        movie.tracks.push(TrackEntry {
+        movie.track_entries.push(TrackEntry {
             info: track,
             defaults: TrackDefaults::default(),
             sample_table: SampleTable::default(),
@@ -103,7 +105,7 @@ mod tests {
         assert_eq!(movie.next_track_id().unwrap().get(), 2);
 
         let track = Track::new(TrackId::new(2).unwrap(), nz(1000), dummy_media());
-        movie.tracks.push(TrackEntry {
+        movie.track_entries.push(TrackEntry {
             info: track,
             defaults: TrackDefaults::default(),
             sample_table: SampleTable::default(),

@@ -183,7 +183,7 @@ fn default_duration_ticks(duration: Option<Duration>, scale: &TickScale) -> Resu
 pub(super) fn build_moov(movie: &Movie) -> Result<MoovBox> {
     let mvhd = build_mvhd(movie)?;
     let traks = movie
-        .tracks
+        .track_entries
         .iter()
         .map(|t| build_trak(t, movie.timescale))
         .collect::<Result<Vec<_>>>()?;
@@ -198,7 +198,7 @@ pub(super) fn build_moov(movie: &Movie) -> Result<MoovBox> {
 fn build_mvhd(movie: &Movie) -> Result<MvhdBox> {
     let scale = TickScale(movie.timescale);
     let duration = movie
-        .tracks
+        .track_entries
         .iter()
         .map(|t| track_duration(t, &scale))
         .collect::<Result<Vec<_>>>()?
@@ -523,7 +523,7 @@ fn build_elst(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<O
 
 pub(super) fn build_moof(movie: &Movie, sequence_number: u32) -> Result<MoofBox> {
     let trafs = movie
-        .tracks
+        .track_entries
         .iter()
         .filter(|t| !t.sample_table.chunks.is_empty())
         .map(build_traf)
@@ -681,7 +681,7 @@ fn build_truns(
 
 pub(super) fn build_mvex(movie: &Movie) -> Result<MvexBox> {
     let trexs = movie
-        .tracks
+        .track_entries
         .iter()
         .map(build_trex)
         .collect::<Result<Vec<_>>>()?;

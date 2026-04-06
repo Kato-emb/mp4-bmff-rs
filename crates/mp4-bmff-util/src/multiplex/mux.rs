@@ -147,7 +147,7 @@ impl TrackBuilder<'_> {
     /// Finalizes the track and adds it to the builder, returning the assigned track ID.
     pub fn build(self) -> TrackId {
         let track_id = self.track.id;
-        self.builder.movie.tracks.push(TrackEntry {
+        self.builder.movie.track_entries.push(TrackEntry {
             info: self.track,
             defaults: self.defaults,
             sample_table: SampleTable::default(),
@@ -177,7 +177,7 @@ impl Muxer {
     pub fn finalize(self) -> Result<MoovBox> {
         if self
             .movie
-            .tracks
+            .track_entries
             .iter()
             .any(|t| t.sample_table.chunks.is_empty())
         {
@@ -212,7 +212,7 @@ impl FragmentedMuxer {
     pub fn flush_fragment(&mut self) -> Result<MoofBox> {
         if self
             .movie
-            .tracks
+            .track_entries
             .iter()
             .all(|t| t.sample_table.chunks.is_empty())
         {
@@ -232,7 +232,7 @@ impl FragmentedMuxer {
     }
 
     fn clear(&mut self) {
-        for track in self.movie.tracks.iter_mut() {
+        for track in self.movie.track_entries.iter_mut() {
             track.sample_table.chunks.clear();
         }
     }
