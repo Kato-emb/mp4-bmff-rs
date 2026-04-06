@@ -15,22 +15,23 @@ use alloc::vec::Vec;
 use mp4_bmff::boxes::bmff::*;
 use mp4_bmff::types::*;
 
-use super::Sample;
-use super::TrackId;
-
 use super::Result;
 use super::error::*;
 
-use super::AudioSampleDescription;
+use super::Chunk;
 use super::EditSegment;
 use super::MediaDefinition;
-use super::VisualSampleDescription;
-
-use assemble::{build_moof, build_moov, build_mvex};
-use types::{Movie, Track};
+use super::Track;
+use super::TrackId;
 
 mod assemble;
 mod types;
+
+use assemble::{build_moof, build_moov, build_mvex};
+use types::Movie;
+use types::SampleTable;
+use types::TrackDefaults;
+use types::TrackEntry;
 
 /// A builder for configuring and constructing a [`Muxer`] or [`FragmentedMuxer`].
 #[derive(Debug)]
@@ -62,10 +63,12 @@ impl Builder {
             Error::new(ErrorKind::InvalidInput).with_message("Timescale must be non-zero"),
         )?;
         let track = Track::new(track_id, timescale, media);
+        let defaults = TrackDefaults::default();
 
         Ok(TrackBuilder {
             builder: self,
             track,
+            defaults,
         })
     }
 
@@ -95,6 +98,7 @@ impl Builder {
 pub struct TrackBuilder<'a> {
     builder: &'a mut Builder,
     track: Track,
+    defaults: TrackDefaults,
 }
 
 impl TrackBuilder<'_> {
@@ -124,26 +128,30 @@ impl TrackBuilder<'_> {
 
     /// Sets the default sample duration for the track and returns the updated `TrackBuilder`.
     pub fn sample_default_duration(mut self, duration: Duration) -> Self {
-        self.track.defaults.sample_duration = Some(duration);
+        self.defaults.sample_duration = Some(duration);
         self
     }
 
     /// Sets the default sample size for the track and returns the updated `TrackBuilder`.
     pub fn sample_default_size(mut self, size: u32) -> Self {
-        self.track.defaults.sample_size = Some(size);
+        self.defaults.sample_size = Some(size);
         self
     }
 
     /// Sets the default sample flags for the track and returns the updated `TrackBuilder`.
     pub fn sample_default_flags(mut self, flags: SampleFlags) -> Self {
-        self.track.defaults.sample_flags = Some(flags);
+        self.defaults.sample_flags = Some(flags);
         self
     }
 
     /// Finalizes the track and adds it to the builder, returning the assigned track ID.
     pub fn build(self) -> TrackId {
         let track_id = self.track.id;
-        self.builder.movie.tracks.push(self.track);
+        self.builder.movie.tracks.push(TrackEntry {
+            info: self.track,
+            defaults: self.defaults,
+            sample_table: SampleTable::default(),
+        });
         track_id
     }
 }
@@ -160,14 +168,9 @@ impl Muxer {
         Builder::new(timescale)
     }
 
-    /// Begins a new chunk for the specified track, associating it with the given data offset in the `mdat` box.
-    pub fn begin_chunk(&mut self, track_id: TrackId, data_offset: u64) -> Result<()> {
-        self.movie.begin_chunk(track_id, data_offset)
-    }
-
-    /// Adds a sample to the specified track in the movie, associating it with the given data offset in the `mdat` box.
-    pub fn add_sample(&mut self, track_id: TrackId, sample: Sample) -> Result<()> {
-        self.movie.push_sample(track_id, sample)
+    /// Adds a chunk of samples to the specified track in the current fragment.
+    pub fn add_chunk(&mut self, track_id: TrackId, chunk: Chunk) -> Result<()> {
+        push_chunk(&mut self.movie, track_id, chunk)
     }
 
     /// Finalizes the muxer and produces the `moov` box.
@@ -200,14 +203,9 @@ impl FragmentedMuxer {
         Builder::new(timescale)
     }
 
-    /// Begins a new chunk for the specified track, associating it with the given data offset in the `mdat` box.
-    pub fn begin_chunk(&mut self, track_id: TrackId, data_offset: u64) -> Result<()> {
-        self.movie.begin_chunk(track_id, data_offset)
-    }
-
-    /// Adds a sample to the specified track in the movie, associating it with the given data offset in the `mdat` box.
-    pub fn add_sample(&mut self, track_id: TrackId, sample: Sample) -> Result<()> {
-        self.movie.push_sample(track_id, sample)
+    /// Adds a chunk of samples to the specified track in the current fragment.
+    pub fn add_chunk(&mut self, track_id: TrackId, chunk: Chunk) -> Result<()> {
+        push_chunk(&mut self.movie, track_id, chunk)
     }
 
     /// Flushes the accumulated samples into a `moof` box and resets the fragment state.
@@ -238,4 +236,21 @@ impl FragmentedMuxer {
             track.sample_table.chunks.clear();
         }
     }
+}
+
+fn push_chunk(movie: &mut Movie, track_id: TrackId, chunk: Chunk) -> Result<()> {
+    let entry = movie
+        .get_track_entry_mut(track_id)
+        .ok_or(ErrorKind::TrackNotFound(track_id))?;
+
+    if let Some(last_chunk) = entry.sample_table.chunks.last() {
+        if chunk.first_sample().dts_ns() < last_chunk.last_sample().dts_ns() {
+            return Err(Error::new(ErrorKind::InvalidInput).with_message(
+                "Chunk's first sample DTS must not precede the previous chunk's last sample DTS",
+            ));
+        }
+    }
+
+    entry.sample_table.chunks.push(chunk);
+    Ok(())
 }

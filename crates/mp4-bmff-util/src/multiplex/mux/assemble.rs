@@ -5,21 +5,20 @@ use mp4_bmff::boxes::bmff::*;
 use mp4_bmff::prelude::*;
 use mp4_bmff::types::*;
 
-use super::{
+use super::{Error, ErrorKind, Result};
+
+use crate::multiplex::{
     AudioSampleDescription, //
     EditSegment,
-    Error,
-    ErrorKind,
     MediaDefinition,
-    Result,
     VisualSampleDescription,
 };
 
 use super::types::{
     Movie, //
     SampleTable,
-    Track,
     TrackDefaults,
+    TrackEntry,
 };
 
 // ---------------------------------------------------------------------------
@@ -84,7 +83,7 @@ impl TickScale {
 
 /// Computes the total media duration in ticks via the telescoping sum.
 fn media_duration(table: &SampleTable, scale: &TickScale) -> Result<u64> {
-    let Some(last) = table.chunks.last().and_then(|c| c.samples.last()) else {
+    let Some(last) = table.chunks.last().map(|c| c.last_sample()) else {
         return Ok(0);
     };
     let start_ns = table.first_sample_dts().unwrap_or(0);
@@ -100,13 +99,13 @@ fn media_duration(table: &SampleTable, scale: &TickScale) -> Result<u64> {
 
 /// Computes a track's effective duration in ticks.
 /// Uses edit list duration if present, otherwise media duration.
-fn track_duration(track: &Track, scale: &TickScale) -> Result<u64> {
-    if let Some(edit_dur) = track.edit_duration() {
+fn track_duration(track_entry: &TrackEntry, scale: &TickScale) -> Result<u64> {
+    if let Some(edit_dur) = track_entry.info.edit_duration() {
         scale
             .from_duration(edit_dur)
             .ok_or(Error::new(ErrorKind::Overflow).with_message("Edit list duration overflow"))
     } else {
-        media_duration(&track.sample_table, scale)
+        media_duration(&track_entry.sample_table, scale)
     }
 }
 
@@ -215,23 +214,23 @@ fn build_mvhd(movie: &Movie) -> Result<MvhdBox> {
     })
 }
 
-fn build_trak(track: &Track, movie_timescale: NonZeroU32) -> Result<TrakBox> {
+fn build_trak(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<TrakBox> {
     Ok(TrakBox {
-        tkhd: build_tkhd(track, movie_timescale)?,
-        mdia: build_mdia(track)?,
-        edts: build_edts(track, movie_timescale)?,
+        tkhd: build_tkhd(track_entry, movie_timescale)?,
+        mdia: build_mdia(track_entry)?,
+        edts: build_edts(track_entry, movie_timescale)?,
         tref: None,
         trgr: None,
     })
 }
 
-fn build_tkhd(track: &Track, movie_timescale: NonZeroU32) -> Result<TkhdBox> {
-    let duration = track_duration(track, &TickScale(movie_timescale))?;
-    let mut tkhd = TkhdBox::new(track.id.into_inner(), duration);
-    tkhd.alternate_group = track.alternate_group;
-    tkhd.matrix = track.matrix;
+fn build_tkhd(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<TkhdBox> {
+    let duration = track_duration(track_entry, &TickScale(movie_timescale))?;
+    let mut tkhd = TkhdBox::new(track_entry.info.id.into_inner(), duration);
+    tkhd.alternate_group = track_entry.info.alternate_group;
+    tkhd.matrix = track_entry.info.matrix;
 
-    match &track.media {
+    match &track_entry.info.media {
         MediaDefinition::Video { width, height, .. } => {
             tkhd.width = U16F16::from_integer(i128::from(*width));
             tkhd.height = U16F16::from_integer(i128::from(*height));
@@ -245,31 +244,38 @@ fn build_tkhd(track: &Track, movie_timescale: NonZeroU32) -> Result<TkhdBox> {
     Ok(tkhd)
 }
 
-fn build_mdia(track: &Track) -> Result<MdiaBox> {
+fn build_mdia(track_entry: &TrackEntry) -> Result<MdiaBox> {
     Ok(MdiaBox {
-        mdhd: build_mdhd(track)?,
-        hdlr: HdlrBox::new(track.media.handler_type()),
-        minf: build_minf(track)?,
+        mdhd: build_mdhd(track_entry)?,
+        hdlr: HdlrBox::new(track_entry.info.media.handler_type()),
+        minf: build_minf(track_entry)?,
         elng: None,
     })
 }
 
-fn build_mdhd(track: &Track) -> Result<MdhdBox> {
-    let duration = media_duration(&track.sample_table, &TickScale(track.timescale))?;
-    Ok(MdhdBox::new(track.timescale, duration, track.language))
+fn build_mdhd(track_entry: &TrackEntry) -> Result<MdhdBox> {
+    let duration = media_duration(
+        &track_entry.sample_table,
+        &TickScale(track_entry.info.timescale),
+    )?;
+    Ok(MdhdBox::new(
+        track_entry.info.timescale,
+        duration,
+        track_entry.info.language,
+    ))
 }
 
-fn build_minf(track: &Track) -> Result<MinfBox> {
-    let scale = TickScale(track.timescale);
+fn build_minf(track_entry: &TrackEntry) -> Result<MinfBox> {
+    let scale = TickScale(track_entry.info.timescale);
     Ok(MinfBox {
-        media_header: build_media_header(track),
-        stbl: build_stbl(&track.sample_table, build_stsd(track)?, &scale)?,
+        media_header: build_media_header(track_entry),
+        stbl: build_stbl(&track_entry.sample_table, build_stsd(track_entry)?, &scale)?,
         dinf: DinfBox::self_contained(),
     })
 }
 
-fn build_media_header(track: &Track) -> MediaHeaderBox {
-    match &track.media {
+fn build_media_header(track_entry: &TrackEntry) -> MediaHeaderBox {
+    match &track_entry.info.media {
         MediaDefinition::Video { .. } => MediaHeaderBox::Vmhd(VmhdBox::default()),
         MediaDefinition::Audio { .. } => MediaHeaderBox::Smhd(SmhdBox::default()),
         MediaDefinition::Hint { .. } => MediaHeaderBox::Hmhd(HmhdBox::default()),
@@ -277,11 +283,11 @@ fn build_media_header(track: &Track) -> MediaHeaderBox {
     }
 }
 
-fn build_stsd(track: &Track) -> Result<StsdBox> {
-    let entry = build_sample_entry(&track.media)?;
+fn build_stsd(track_entry: &TrackEntry) -> Result<StsdBox> {
+    let sample_entry = build_sample_entry(&track_entry.info.media)?;
 
     Ok(StsdBox {
-        entries: alloc::vec![entry],
+        entries: alloc::vec![sample_entry],
         ..Default::default()
     })
 }
@@ -393,14 +399,14 @@ fn build_stbl(table: &SampleTable, stsd: StsdBox, scale: &TickScale) -> Result<S
 
     for chunk in table.chunks.iter() {
         chunk_number = chunk_number.checked_add(1).ok_or(ErrorKind::Overflow)?;
-        let samples_per_chunk = u32::try_from(chunk.samples.len()).map_err(|_| {
+        let samples_per_chunk = u32::try_from(chunk.sample_count()).map_err(|_| {
             Error::new(ErrorKind::Overflow)
                 .with_message("Number of samples per chunk exceeds u32 range")
         })?;
         stsc.push(chunk_number, samples_per_chunk, 1);
         chunk_offset.push(chunk.data_offset);
 
-        for sample in &chunk.samples {
+        for sample in chunk.samples() {
             sample_number = sample_number.checked_add(1).ok_or(ErrorKind::Overflow)?;
 
             let delta = sample_delta_ticks(sample.dts_ns, sample.duration, scale)?;
@@ -448,17 +454,17 @@ fn build_stbl(table: &SampleTable, stsd: StsdBox, scale: &TickScale) -> Result<S
     })
 }
 
-fn build_edts(track: &Track, movie_timescale: NonZeroU32) -> Result<Option<EdtsBox>> {
-    build_elst(track, movie_timescale).map(|elst| elst.map(|e| EdtsBox { elst: Some(e) }))
+fn build_edts(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<Option<EdtsBox>> {
+    build_elst(track_entry, movie_timescale).map(|elst| elst.map(|e| EdtsBox { elst: Some(e) }))
 }
 
-fn build_elst(track: &Track, movie_timescale: NonZeroU32) -> Result<Option<ElstBox>> {
-    let Some(segments) = &track.edit_list else {
+fn build_elst(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<Option<ElstBox>> {
+    let Some(segments) = &track_entry.info.edit_list else {
         return Ok(None);
     };
 
     let movie_scale = TickScale(movie_timescale);
-    let media_scale = TickScale(track.timescale);
+    let media_scale = TickScale(track_entry.info.timescale);
 
     let mut entries = Vec::with_capacity(segments.len());
 
@@ -529,34 +535,34 @@ pub(super) fn build_moof(movie: &Movie, sequence_number: u32) -> Result<MoofBox>
     })
 }
 
-fn build_traf(track: &Track) -> Result<TrafBox> {
-    let scale = TickScale(track.timescale);
+fn build_traf(entry: &TrackEntry) -> Result<TrafBox> {
+    let scale = TickScale(entry.info.timescale);
 
     // --- tfhd ---
-    let default_duration = default_duration_ticks(track.defaults.sample_duration, &scale)?;
+    let default_duration = default_duration_ticks(entry.defaults.sample_duration, &scale)?;
 
     let mut flags = TfhdFlags::DEFAULT_BASE_IS_MOOF;
     if default_duration.is_some() {
         flags |= TfhdFlags::DEFAULT_SAMPLE_DURATION_PRESENT;
     }
-    if track.defaults.sample_size.is_some() {
+    if entry.defaults.sample_size.is_some() {
         flags |= TfhdFlags::DEFAULT_SAMPLE_SIZE_PRESENT;
     }
-    if track.defaults.sample_flags.is_some() {
+    if entry.defaults.sample_flags.is_some() {
         flags |= TfhdFlags::DEFAULT_SAMPLE_FLAGS_PRESENT;
     }
 
     let tfhd = TfhdBox {
         flags,
-        track_id: track.id.get(),
+        track_id: entry.info.id.get(),
         default_sample_duration: default_duration,
-        default_sample_size: track.defaults.sample_size,
-        default_sample_flags: track.defaults.sample_flags,
+        default_sample_size: entry.defaults.sample_size,
+        default_sample_flags: entry.defaults.sample_flags,
         ..Default::default()
     };
 
     // --- tfdt ---
-    let first_dts = track.sample_table.first_sample_dts().ok_or(
+    let first_dts = entry.sample_table.first_sample_dts().ok_or(
         Error::new(ErrorKind::InvalidInput)
             .with_message("Track must have at least one sample to build a traf box"),
     )?;
@@ -565,7 +571,7 @@ fn build_traf(track: &Track) -> Result<TrafBox> {
     )?);
 
     // --- truns ---
-    let truns = build_truns(&track.sample_table, &track.defaults, &scale)?;
+    let truns = build_truns(&entry.sample_table, &entry.defaults, &scale)?;
 
     Ok(TrafBox {
         tfhd,
@@ -589,7 +595,7 @@ fn build_truns(
     let mut entries: Vec<TrunEntry> = Vec::new();
 
     for chunk in &table.chunks {
-        entries.reserve(chunk.samples.len());
+        entries.reserve(chunk.sample_count());
 
         // Phase 1: collect entries and track which fields can be omitted
         let mut all_duration_default = true;
@@ -598,7 +604,7 @@ fn build_truns(
         let mut rest_flags_default = true;
         let mut has_nonzero_cto = false;
 
-        for (i, sample) in chunk.samples.iter().enumerate() {
+        for (i, sample) in chunk.samples().enumerate() {
             let duration = sample_delta_ticks(sample.dts_ns, sample.duration, scale)?;
             let size = sample.size;
             let flags = if sample.is_sync {
@@ -683,17 +689,17 @@ pub(super) fn build_mvex(movie: &Movie) -> Result<MvexBox> {
     Ok(MvexBox { mehd: None, trexs })
 }
 
-fn build_trex(track: &Track) -> Result<TrexBox> {
-    let scale = TickScale(track.timescale);
+fn build_trex(entry: &TrackEntry) -> Result<TrexBox> {
+    let scale = TickScale(entry.info.timescale);
     let default_sample_duration =
-        default_duration_ticks(track.defaults.sample_duration, &scale)?.unwrap_or(0);
+        default_duration_ticks(entry.defaults.sample_duration, &scale)?.unwrap_or(0);
 
     Ok(TrexBox {
-        track_id: track.id.get(),
+        track_id: entry.info.id.get(),
         default_sample_description_index: 1,
         default_sample_duration,
-        default_sample_size: track.defaults.sample_size.unwrap_or(0),
-        default_sample_flags: track.defaults.sample_flags.unwrap_or_default(),
+        default_sample_size: entry.defaults.sample_size.unwrap_or(0),
+        default_sample_flags: entry.defaults.sample_flags.unwrap_or_default(),
         ..Default::default()
     })
 }
@@ -704,9 +710,8 @@ fn build_trex(track: &Track) -> Result<TrexBox> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::Sample;
-    use super::super::types::Chunk;
     use super::*;
+    use crate::multiplex::{Chunk, Sample};
 
     fn nz(v: u32) -> NonZeroU32 {
         NonZeroU32::new(v).unwrap()
@@ -726,13 +731,11 @@ mod tests {
             is_sync,
             size,
         )
+        .unwrap()
     }
 
     fn make_chunk(data_offset: u64, samples: Vec<Sample>) -> Chunk {
-        Chunk {
-            data_offset,
-            samples,
-        }
+        Chunk::with_samples(data_offset, samples).unwrap()
     }
 
     fn make_sample_table(chunks: Vec<Chunk>) -> SampleTable {
@@ -969,7 +972,7 @@ mod tests {
             .map(|i| {
                 let dts = ticks_to_nanos(i * delta_ticks, timescale);
                 let next = ticks_to_nanos((i + 1) * delta_ticks, timescale);
-                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100)
+                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100).unwrap()
             })
             .collect();
 
@@ -978,9 +981,9 @@ mod tests {
             .map(|s| u64::from(sample_delta_ticks(s.dts_ns, s.duration, &scale).unwrap()))
             .sum();
 
-        let start_ns = samples.first().unwrap().dts_ns;
+        let start_ns = samples.first().unwrap().dts_ns();
         let last = samples.last().unwrap();
-        let end_ns = last.dts_ns + last.duration.as_nanos() as u64;
+        let end_ns = last.dts_ns() + last.duration().as_nanos() as u64;
         let expected = scale.from_nanos(end_ns).unwrap() - scale.from_nanos(start_ns).unwrap();
 
         assert_eq!(total, expected);
@@ -997,24 +1000,19 @@ mod tests {
         for &dt in deltas {
             let dts = ticks_to_nanos(dts_ticks, timescale);
             let next = ticks_to_nanos(dts_ticks + dt, timescale);
-            samples.push(Sample::new(
-                dts,
-                None,
-                Duration::from_nanos(next - dts),
-                true,
-                100,
-            ));
+            samples
+                .push(Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100).unwrap());
             dts_ticks += dt;
         }
 
         let total: u64 = samples
             .iter()
-            .map(|s| u64::from(sample_delta_ticks(s.dts_ns, s.duration, &scale).unwrap()))
+            .map(|s| u64::from(sample_delta_ticks(s.dts_ns(), s.duration(), &scale).unwrap()))
             .sum();
 
-        let start_ns = samples.first().unwrap().dts_ns;
+        let start_ns = samples.first().unwrap().dts_ns();
         let last = samples.last().unwrap();
-        let end_ns = last.dts_ns + last.duration.as_nanos() as u64;
+        let end_ns = last.dts_ns() + last.duration().as_nanos() as u64;
         let expected = scale.from_nanos(end_ns).unwrap() - scale.from_nanos(start_ns).unwrap();
 
         assert_eq!(total, expected);
@@ -1031,7 +1029,7 @@ mod tests {
             .map(|i| {
                 let dts = ticks_to_nanos(i * delta_ticks, timescale);
                 let next = ticks_to_nanos((i + 1) * delta_ticks, timescale);
-                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100)
+                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100).unwrap()
             })
             .collect();
 
@@ -1040,8 +1038,8 @@ mod tests {
         let sum_deltas: u64 = table
             .chunks
             .iter()
-            .flat_map(|c| c.samples.iter())
-            .map(|s| u64::from(sample_delta_ticks(s.dts_ns, s.duration, &scale).unwrap()))
+            .flat_map(|c| c.samples())
+            .map(|s| u64::from(sample_delta_ticks(s.dts_ns(), s.duration(), &scale).unwrap()))
             .sum();
 
         assert_eq!(duration, sum_deltas);
@@ -1057,7 +1055,7 @@ mod tests {
             .map(|i| {
                 let dts = ticks_to_nanos(i * delta_ticks, timescale);
                 let next = ticks_to_nanos((i + 1) * delta_ticks, timescale);
-                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100)
+                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100).unwrap()
             })
             .collect();
 
@@ -1079,7 +1077,7 @@ mod tests {
             .map(|i| {
                 let dts = ticks_to_nanos(i * delta_ticks, media_ts);
                 let next = ticks_to_nanos((i + 1) * delta_ticks, media_ts);
-                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100)
+                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100).unwrap()
             })
             .collect();
 

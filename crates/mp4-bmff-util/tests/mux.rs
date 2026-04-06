@@ -7,7 +7,7 @@ use mp4_bmff::boxes::bmff::*;
 use mp4_bmff::prelude::*;
 
 use mp4_bmff_util::multiplex::mux::Muxer;
-use mp4_bmff_util::multiplex::{MediaDefinition, Sample, VisualSampleDescription};
+use mp4_bmff_util::multiplex::{Chunk, MediaDefinition, Sample, VisualSampleDescription};
 
 const SAMPLE_MP4: &[u8] = include_bytes!("samples/sample.mp4");
 
@@ -191,20 +191,26 @@ fn mux_roundtrip_video() {
     let track_id = builder.add_track(timescale, media).unwrap().build();
     let mut muxer = builder.build().unwrap();
 
-    let mut current_chunk: Option<usize> = None;
+    let mut current_chunk_idx: Option<usize> = None;
+    let mut current_chunk: Option<Chunk> = None;
     for s in &samples {
-        if current_chunk != Some(s.chunk_idx) {
-            muxer
-                .begin_chunk(track_id, chunks[s.chunk_idx].data_offset)
+        let sample = Sample::new(s.dts_ns, s.pts_ns, s.duration, s.is_sync, s.size).unwrap();
+        if current_chunk_idx != Some(s.chunk_idx) {
+            if let Some(chunk) = current_chunk.take() {
+                muxer.add_chunk(track_id, chunk).unwrap();
+            }
+            current_chunk = Some(Chunk::new(chunks[s.chunk_idx].data_offset, sample));
+            current_chunk_idx = Some(s.chunk_idx);
+        } else {
+            current_chunk
+                .as_mut()
+                .unwrap()
+                .try_push_sample(sample)
                 .unwrap();
-            current_chunk = Some(s.chunk_idx);
         }
-        muxer
-            .add_sample(
-                track_id,
-                Sample::new(s.dts_ns, s.pts_ns, s.duration, s.is_sync, s.size),
-            )
-            .unwrap();
+    }
+    if let Some(chunk) = current_chunk.take() {
+        muxer.add_chunk(track_id, chunk).unwrap();
     }
 
     let result_moov = muxer.finalize().unwrap();
@@ -347,32 +353,27 @@ fn mux_multiple_tracks() {
     let tid2 = builder.add_track(90000, media2).unwrap().build();
     let mut muxer = builder.build().unwrap();
 
-    muxer.begin_chunk(tid1, 0).unwrap();
-    muxer
-        .add_sample(
-            tid1,
-            Sample::new(0, None, Duration::from_millis(33), true, 1000),
+    let mut chunk1 = Chunk::new(
+        0,
+        Sample::new(0, None, Duration::from_millis(33), true, 1000).unwrap(),
+    );
+    chunk1
+        .try_push_sample(
+            Sample::new(33_000_000, None, Duration::from_millis(33), false, 800).unwrap(),
         )
         .unwrap();
-    muxer
-        .add_sample(
-            tid1,
-            Sample::new(33_000_000, None, Duration::from_millis(33), false, 800),
+    muxer.add_chunk(tid1, chunk1).unwrap();
+
+    let mut chunk2 = Chunk::new(
+        2000,
+        Sample::new(0, None, Duration::from_millis(33), true, 500).unwrap(),
+    );
+    chunk2
+        .try_push_sample(
+            Sample::new(33_000_000, None, Duration::from_millis(33), true, 500).unwrap(),
         )
         .unwrap();
-    muxer.begin_chunk(tid2, 2000).unwrap();
-    muxer
-        .add_sample(
-            tid2,
-            Sample::new(0, None, Duration::from_millis(33), true, 500),
-        )
-        .unwrap();
-    muxer
-        .add_sample(
-            tid2,
-            Sample::new(33_000_000, None, Duration::from_millis(33), true, 500),
-        )
-        .unwrap();
+    muxer.add_chunk(tid2, chunk2).unwrap();
 
     let moov = muxer.finalize().unwrap();
 
