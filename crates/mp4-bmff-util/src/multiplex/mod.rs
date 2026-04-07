@@ -15,6 +15,7 @@ use core::time::Duration;
 use mp4_bmff::types::{FourCC, LanguageCode, Matrix};
 
 mod error;
+mod repr;
 
 #[cfg(feature = "mux")]
 pub mod mux;
@@ -114,39 +115,10 @@ impl Sample {
 #[derive(Debug, Clone)]
 pub struct Chunk {
     data_offset: u64,
-    head: Sample,
-    tail: Vec<Sample>,
+    samples: Vec<Sample>,
 }
 
 impl Chunk {
-    /// Creates a new `Chunk` with the given data offset and the first sample. The chunk must contain at least one sample.
-    pub fn new(data_offset: u64, first: Sample) -> Self {
-        Self {
-            data_offset,
-            head: first,
-            tail: Vec::new(),
-        }
-    }
-
-    /// Creates a new `Chunk` with the given data offset and a list of samples. The chunk must contain at least one sample.
-    pub fn with_samples(data_offset: u64, samples: Vec<Sample>) -> Result<Self> {
-        if samples.is_empty() {
-            return Err(MuxError::new(error::ErrorKind::InvalidInput)
-                .with_message("Chunk must contain at least one sample"));
-        }
-
-        if samples.windows(2).any(|w| w[1].dts_ns < w[0].dts_ns) {
-            return Err(MuxError::new(error::ErrorKind::InvalidInput)
-                .with_message("Samples within a chunk must be in non-decreasing DTS order"));
-        }
-
-        Ok(Self {
-            data_offset,
-            head: samples[0],
-            tail: samples[1..].to_vec(),
-        })
-    }
-
     /// Returns the byte offset in the file where the sample data for this chunk starts.
     pub fn data_offset(&self) -> u64 {
         self.data_offset
@@ -154,22 +126,22 @@ impl Chunk {
 
     /// Returns the number of samples in this chunk.
     pub fn sample_count(&self) -> usize {
-        1 + self.tail.len()
+        self.samples.len()
     }
 
     /// Returns a reference to the first sample in the chunk.
     pub fn first_sample(&self) -> &Sample {
-        &self.head
+        self.samples.first().unwrap()
     }
 
     /// Returns a reference to the last sample in the chunk. If the chunk contains only one sample, this will return the same sample as `first_sample()`.
     pub fn last_sample(&self) -> &Sample {
-        self.tail.last().unwrap_or(&self.head)
+        self.samples.last().unwrap()
     }
 
-    /// Returns an iterator over all samples in the chunk, starting with the first sample and followed by any additional samples in the tail.
-    pub fn samples(&self) -> impl Iterator<Item = &Sample> {
-        core::iter::once(&self.head).chain(self.tail.iter())
+    /// Returns a reference to all samples in the chunk.
+    pub fn samples(&self) -> &[Sample] {
+        &self.samples
     }
 
     /// Attempts to add a new sample to the end of the chunk. The new sample's DTS must be greater than or equal to the last sample's DTS to maintain non-decreasing order.
@@ -181,7 +153,7 @@ impl Chunk {
             )));
         }
 
-        self.tail.push(sample);
+        self.samples.push(sample);
         Ok(())
     }
 }
@@ -247,8 +219,7 @@ impl Track {
     }
 
     pub(super) fn edit_duration(&self) -> Option<Duration> {
-        self.edit_list
-            .as_ref()
+        self.edit_list()
             .map(|segments| segments.iter().map(|s| s.duration()).sum())
     }
 }

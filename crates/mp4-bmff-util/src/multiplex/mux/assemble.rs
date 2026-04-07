@@ -1,50 +1,27 @@
 use core::num::NonZeroU32;
 use core::time::Duration;
 
+use mp4_bmff::RawBoxOwned;
 use mp4_bmff::boxes::bmff::*;
-use mp4_bmff::prelude::*;
-use mp4_bmff::types::*;
+use mp4_bmff::types::{I16F16, U8F8, U16F16};
 
-use super::{Error, ErrorKind, Result};
+use crate::multiplex::Result;
+use crate::multiplex::error::*;
+use crate::multiplex::repr::*;
 
+use crate::multiplex::Chunk;
+use crate::multiplex::EditSegment;
+use crate::multiplex::Sample;
+use crate::multiplex::Track;
 use crate::multiplex::{
     AudioSampleDescription, //
-    EditSegment,
     MediaDefinition,
     VisualSampleDescription,
 };
 
-use super::types::{
-    Movie, //
-    SampleTable,
-    TrackDefaults,
-    TrackEntry,
-};
-
-// ---------------------------------------------------------------------------
-// TickScale — timescale-bound converter
-// ---------------------------------------------------------------------------
-
-/// Timescale-bound converter for nanosecond ↔ tick transformations.
-///
-/// All conversion methods share a single [`from_nanos`](Self::from_nanos)
-/// base, which guarantees the telescoping-sum property: the sum of
-/// per-sample deltas produced by [`delta`](Self::delta) equals the total
-/// span computed from the first and last timestamps.
-///
-/// This type only accepts primitive / std types (`u64`, `i64`, `Duration`) as
-/// input, keeping it independent of domain types like `Sample` or `Track`.
-struct TickScale(NonZeroU32);
-
 impl TickScale {
     /// Converts nanoseconds to ticks.
-    ///
-    /// The sub-second term `sub_nanos * ts / 1_000_000_000` uses integer
-    /// division and therefore truncates. This truncation is intentional:
-    /// because [`delta`](Self::delta) computes `from_nanos(end) − from_nanos(start)`,
-    /// the rounding errors cancel out (telescoping sum), so the sum of
-    /// per-sample deltas always equals the total span exactly.
-    fn from_nanos(&self, nanos: u64) -> Option<u64> {
+    pub(super) fn nanos_to_ticks(&self, nanos: u64) -> Option<u64> {
         let ts = u64::from(self.0.get());
         let secs = nanos / 1_000_000_000;
         let sub_nanos = nanos % 1_000_000_000;
@@ -53,14 +30,8 @@ impl TickScale {
             .checked_add(sub_nanos * ts / 1_000_000_000)
     }
 
-    /// Converts a signed nanosecond value to signed ticks.
-    fn signed_from_nanos(&self, nanos: i64) -> Option<i64> {
-        let ticks = i64::try_from(self.from_nanos(nanos.unsigned_abs())?).ok()?;
-        Some(if nanos < 0 { -ticks } else { ticks })
-    }
-
     /// Converts a `Duration` to ticks.
-    fn from_duration(&self, duration: Duration) -> Option<u64> {
+    pub(super) fn duration_to_ticks(&self, duration: Duration) -> Option<u64> {
         let ts = u64::from(self.0.get());
         let secs = duration.as_secs();
         let sub_nanos = u64::from(duration.subsec_nanos());
@@ -68,112 +39,66 @@ impl TickScale {
         secs.checked_mul(ts)?
             .checked_add(sub_nanos * ts / 1_000_000_000)
     }
-
-    /// Computes the tick difference between two nanosecond timestamps:
-    /// `ticks(end_ns) − ticks(start_ns)`.
-    fn delta(&self, start_ns: u64, end_ns: u64) -> Option<u64> {
-        self.from_nanos(end_ns)?
-            .checked_sub(self.from_nanos(start_ns)?)
-    }
 }
 
 // ---------------------------------------------------------------------------
 // Domain helpers — bridge between domain types and TickScale
 // ---------------------------------------------------------------------------
-
-/// Computes the total media duration in ticks via the telescoping sum.
-fn media_duration(table: &SampleTable, scale: &TickScale) -> Result<u64> {
-    let Some(last) = table.chunks.last().map(|c| c.last_sample()) else {
-        return Ok(0);
+fn media_duration_ticks(chunks: &[Chunk], scale: &TickScale) -> Option<u64> {
+    let Some(start_ns) = chunks.first().map(|c| c.first_sample().dts_ns()) else {
+        return Some(0);
     };
-    let start_ns = table.first_sample_dts().unwrap_or(0);
-    let end_ns = u64::try_from(last.duration.as_nanos())
-        .ok()
-        .and_then(|d| last.dts_ns.checked_add(d))
-        .ok_or(Error::new(ErrorKind::Overflow).with_message("Media duration exceeds u64 range"))?;
 
-    scale.delta(start_ns, end_ns).ok_or(
-        Error::new(ErrorKind::Overflow).with_message("Media duration in ticks exceeds u64 range"),
-    )
-}
+    let Some(last_sample) = chunks.last().map(|c| c.last_sample()) else {
+        return Some(0);
+    };
 
-/// Computes a track's effective duration in ticks.
-/// Uses edit list duration if present, otherwise media duration.
-fn track_duration(track_entry: &TrackEntry, scale: &TickScale) -> Result<u64> {
-    if let Some(edit_dur) = track_entry.info.edit_duration() {
-        scale
-            .from_duration(edit_dur)
-            .ok_or(Error::new(ErrorKind::Overflow).with_message("Edit list duration overflow"))
-    } else {
-        media_duration(&track_entry.sample_table, scale)
-    }
-}
-
-/// Computes a sample's duration in `u32` ticks via the telescoping sum.
-fn sample_delta_ticks(dts_ns: u64, duration: Duration, scale: &TickScale) -> Result<u32> {
-    let start_ns = dts_ns;
-    let end_ns = u64::try_from(duration.as_nanos())
-        .ok()
-        .and_then(|d| dts_ns.checked_add(d))
-        .ok_or(Error::new(ErrorKind::Overflow).with_message("Sample end time exceeds u64 range"))?;
+    let end_ns = last_sample.dts_ns() + u64::try_from(last_sample.duration().as_nanos()).ok()?;
 
     scale
-        .delta(start_ns, end_ns)
-        .and_then(|d| u32::try_from(d).ok())
-        .ok_or(
-            Error::new(ErrorKind::Overflow)
-                .with_message("Sample duration in ticks exceeds u32 range"),
-        )
+        .nanos_to_ticks(end_ns)?
+        .checked_sub(scale.nanos_to_ticks(start_ns)?)
 }
 
-/// Converts a composition time offset (nanoseconds) to ticks.
-fn sample_cto_ticks(dts_ns: u64, pts_ns: Option<i64>, scale: &TickScale) -> Result<i64> {
-    let Some(pts_ns) = pts_ns else {
-        return Ok(0);
+fn track_duration_ticks(track_repr: &TrackRepr, scale: &TickScale) -> Option<u64> {
+    if let Some(edit_duration) = track_repr.track.edit_duration() {
+        scale.duration_to_ticks(edit_duration)
+    } else {
+        media_duration_ticks(&track_repr.chunks, scale)
+    }
+}
+
+fn sample_delta_ticks(sample: &Sample, scale: &TickScale) -> Option<u32> {
+    let start_ns = sample.dts_ns();
+    let end_ns = u64::try_from(sample.duration().as_nanos())
+        .ok()?
+        .checked_add(start_ns)?;
+
+    scale
+        .nanos_to_ticks(end_ns)?
+        .checked_sub(scale.nanos_to_ticks(start_ns)?)
+        .and_then(|ticks| u32::try_from(ticks).ok())
+}
+
+fn sample_cto_ticks(sample: &Sample, scale: &TickScale) -> Option<i64> {
+    let dts_ns = sample.dts_ns();
+    let Some(pts_ns) = sample.pts_ns() else {
+        return Some(0);
     };
 
-    let cto_ns = if pts_ns >= 0 {
+    let (abs_cto_ns, negative) = if pts_ns >= 0 {
         let pts_uns = pts_ns as u64;
         if pts_uns >= dts_ns {
-            i64::try_from(pts_uns - dts_ns).ok()
+            (pts_uns - dts_ns, false)
         } else {
-            i64::try_from(dts_ns - pts_uns).ok().map(|v| -v)
+            (dts_ns - pts_uns, true)
         }
     } else {
-        let abs_pts_ns = pts_ns.unsigned_abs();
-        dts_ns
-            .checked_add(abs_pts_ns)
-            .and_then(|v| i64::try_from(v).ok())
-            .map(|v| -v)
-    }
-    .ok_or_else(|| {
-        Error::new(ErrorKind::Overflow)
-            .with_message("Composition time offset (PTS - DTS) exceeds i64 range")
-    })?;
+        (dts_ns.checked_add(pts_ns.unsigned_abs())?, true)
+    };
 
-    scale.signed_from_nanos(cto_ns).ok_or_else(|| {
-        Error::new(ErrorKind::Overflow)
-            .with_message("Composition time offset in ticks exceeds i64 range")
-    })
-}
-
-/// Converts an optional default sample duration to `u32` ticks.
-///
-/// Returns an error if the duration is set but overflows the tick range,
-/// rather than silently discarding it.
-fn default_duration_ticks(duration: Option<Duration>, scale: &TickScale) -> Result<Option<u32>> {
-    duration
-        .map(|d| {
-            let ticks = scale.from_duration(d).ok_or(
-                Error::new(ErrorKind::Overflow)
-                    .with_message("Default sample duration exceeds tick range"),
-            )?;
-            u32::try_from(ticks).map_err(|_| {
-                Error::new(ErrorKind::Overflow)
-                    .with_message("Default sample duration exceeds u32 range")
-            })
-        })
-        .transpose()
+    let ticks = i64::try_from(scale.nanos_to_ticks(abs_cto_ns)?).ok()?;
+    Some(if negative { -ticks } else { ticks })
 }
 
 // ---------------------------------------------------------------------------
@@ -182,10 +107,11 @@ fn default_duration_ticks(duration: Option<Duration>, scale: &TickScale) -> Resu
 
 pub(super) fn build_moov(movie: &Movie) -> Result<MoovBox> {
     let mvhd = build_mvhd(movie)?;
+
     let traks = movie
-        .track_entries
+        .tracks
         .iter()
-        .map(|t| build_trak(t, movie.timescale))
+        .map(|track_repr| build_trak(track_repr, movie.timescale))
         .collect::<Result<Vec<_>>>()?;
 
     Ok(MoovBox {
@@ -196,86 +122,89 @@ pub(super) fn build_moov(movie: &Movie) -> Result<MoovBox> {
 }
 
 fn build_mvhd(movie: &Movie) -> Result<MvhdBox> {
-    let scale = TickScale(movie.timescale);
+    let movie_scale = TickScale(movie.timescale);
     let duration = movie
-        .track_entries
+        .tracks
         .iter()
-        .map(|t| track_duration(t, &scale))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
+        .filter_map(|track_repr| track_duration_ticks(track_repr, &movie_scale))
         .max()
         .unwrap_or(0);
 
     Ok(MvhdBox {
         timescale: movie.timescale.get(),
         duration,
-        next_track_id: movie.next_track_id()?.get(),
+        next_track_id: movie.next_track_id,
         ..Default::default()
     })
 }
 
-fn build_trak(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<TrakBox> {
+fn build_trak(track_repr: &TrackRepr, movie_timescale: NonZeroU32) -> Result<TrakBox> {
     Ok(TrakBox {
-        tkhd: build_tkhd(track_entry, movie_timescale)?,
-        mdia: build_mdia(track_entry)?,
-        edts: build_edts(track_entry, movie_timescale)?,
+        tkhd: build_tkhd(track_repr, movie_timescale)?,
+        mdia: build_mdia(track_repr)?,
+        edts: build_edts(&track_repr.track, movie_timescale)?,
         tref: None,
         trgr: None,
     })
 }
 
-fn build_tkhd(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<TkhdBox> {
-    let duration = track_duration(track_entry, &TickScale(movie_timescale))?;
-    let mut tkhd = TkhdBox::new(track_entry.info.id.into_inner(), duration);
-    tkhd.alternate_group = track_entry.info.alternate_group;
-    tkhd.matrix = track_entry.info.matrix;
+fn build_tkhd(track_repr: &TrackRepr, movie_timescale: NonZeroU32) -> Result<TkhdBox> {
+    let movie_scale = TickScale(movie_timescale);
+    let track_duration = track_duration_ticks(track_repr, &movie_scale)
+        .ok_or(Error::new(ErrorKind::Overflow).with_message(
+            "Track duration exceeds maximum representable value in track timescale",
+        ))?;
+    let mut tkhd = TkhdBox::new(track_repr.track.id().into_inner(), track_duration);
+    tkhd.alternate_group = track_repr.track.alternate_group();
+    tkhd.matrix = track_repr.track.matrix();
 
-    match &track_entry.info.media {
+    match track_repr.track.media() {
         MediaDefinition::Video { width, height, .. } => {
             tkhd.width = U16F16::from_integer(i128::from(*width));
             tkhd.height = U16F16::from_integer(i128::from(*height));
         }
-        MediaDefinition::Audio { .. } => {
-            tkhd.volume = U8F8::from_f32(1.0);
-        }
-        _ => {} // Other media types use default tkhd values
+        MediaDefinition::Audio { .. } => tkhd.volume = U8F8::from_f32(1.0),
+        _ => {}
     }
 
     Ok(tkhd)
 }
 
-fn build_mdia(track_entry: &TrackEntry) -> Result<MdiaBox> {
+fn build_mdia(track_repr: &TrackRepr) -> Result<MdiaBox> {
     Ok(MdiaBox {
-        mdhd: build_mdhd(track_entry)?,
-        hdlr: HdlrBox::new(track_entry.info.media.handler_type()),
-        minf: build_minf(track_entry)?,
+        mdhd: build_mdhd(track_repr, track_repr.track.timescale)?,
+        hdlr: HdlrBox::new(track_repr.track.media().handler_type()),
+        minf: build_minf(track_repr)?,
         elng: None,
     })
 }
 
-fn build_mdhd(track_entry: &TrackEntry) -> Result<MdhdBox> {
-    let duration = media_duration(
-        &track_entry.sample_table,
-        &TickScale(track_entry.info.timescale),
-    )?;
+fn build_mdhd(track_repr: &TrackRepr, media_timescale: NonZeroU32) -> Result<MdhdBox> {
+    let media_scale = TickScale(media_timescale);
+    let media_duration = media_duration_ticks(&track_repr.chunks, &media_scale)
+        .ok_or(Error::new(ErrorKind::Overflow).with_message(
+            "Media duration exceeds maximum representable value in track timescale",
+        ))?;
+
     Ok(MdhdBox::new(
-        track_entry.info.timescale,
-        duration,
-        track_entry.info.language,
+        track_repr.track.timescale,
+        media_duration,
+        track_repr.track.language,
     ))
 }
 
-fn build_minf(track_entry: &TrackEntry) -> Result<MinfBox> {
-    let scale = TickScale(track_entry.info.timescale);
+fn build_minf(track_repr: &TrackRepr) -> Result<MinfBox> {
+    let stsd = build_stsd(&track_repr.track)?;
+
     Ok(MinfBox {
-        media_header: build_media_header(track_entry),
-        stbl: build_stbl(&track_entry.sample_table, build_stsd(track_entry)?, &scale)?,
+        media_header: build_media_header(&track_repr.track),
+        stbl: build_stbl(track_repr, stsd)?,
         dinf: DinfBox::self_contained(),
     })
 }
 
-fn build_media_header(track_entry: &TrackEntry) -> MediaHeaderBox {
-    match &track_entry.info.media {
+fn build_media_header(track: &Track) -> MediaHeaderBox {
+    match track.media() {
         MediaDefinition::Video { .. } => MediaHeaderBox::Vmhd(VmhdBox::default()),
         MediaDefinition::Audio { .. } => MediaHeaderBox::Smhd(SmhdBox::default()),
         MediaDefinition::Hint { .. } => MediaHeaderBox::Hmhd(HmhdBox::default()),
@@ -283,8 +212,8 @@ fn build_media_header(track_entry: &TrackEntry) -> MediaHeaderBox {
     }
 }
 
-fn build_stsd(track_entry: &TrackEntry) -> Result<StsdBox> {
-    let sample_entry = build_sample_entry(&track_entry.info.media)?;
+fn build_stsd(track: &Track) -> Result<StsdBox> {
+    let sample_entry = build_sample_entry(track.media())?;
 
     Ok(StsdBox {
         entries: alloc::vec![sample_entry],
@@ -321,6 +250,7 @@ fn build_visual_sample_entry(
     };
 
     match codec {
+        #[cfg(feature = "avc")]
         VisualSampleDescription::Avc1(avc_config) => {
             use mp4_bmff::boxes::avc::Avc1SampleEntry;
             use mp4_bmff::boxes::avc::AvcCBox;
@@ -331,6 +261,7 @@ fn build_visual_sample_entry(
             let avc1 = Avc1SampleEntry::new(base, avcc, None, None);
             RawBoxOwned::from_boxed(&avc1).map_err(|e| Error::box_encode(e))
         }
+        #[cfg(feature = "avc")]
         VisualSampleDescription::Avc3(avc_config) => {
             use mp4_bmff::boxes::avc::Avc3SampleEntry;
             use mp4_bmff::boxes::avc::AvcCBox;
@@ -341,6 +272,7 @@ fn build_visual_sample_entry(
             let avc3 = Avc3SampleEntry::new(base, avcc, None, None);
             RawBoxOwned::from_boxed(&avc3).map_err(|e| Error::box_encode(e))
         }
+        #[cfg(feature = "mp4")]
         VisualSampleDescription::Mp4v(dec_specific_info) => {
             use mp4_bmff::formats::mpeg4::systems::descriptor::DecoderConfigDescriptor;
             use mp4_bmff::formats::mpeg4::systems::descriptor::EsDescriptor;
@@ -369,6 +301,7 @@ fn build_audio_sample_entry(
     };
 
     match codec {
+        #[cfg(feature = "mp4")]
         AudioSampleDescription::Mp4a(dec_specific_info) => {
             use mp4_bmff::formats::mpeg4::systems::descriptor::DecoderConfigDescriptor;
             use mp4_bmff::formats::mpeg4::systems::descriptor::EsDescriptor;
@@ -385,7 +318,7 @@ fn build_audio_sample_entry(
     }
 }
 
-fn build_stbl(table: &SampleTable, stsd: StsdBox, scale: &TickScale) -> Result<StblBox> {
+fn build_stbl(track_repr: &TrackRepr, stsd: StsdBox) -> Result<StblBox> {
     let mut stts = SttsBox::default();
     let mut stsz = StszBox::default();
     let mut stsc = StscBox::default();
@@ -394,35 +327,33 @@ fn build_stbl(table: &SampleTable, stsd: StsdBox, scale: &TickScale) -> Result<S
     let mut chunk_offset = ChunkOffset::default();
 
     let mut has_nonzero_ctts = false;
-    let mut chunk_number: u32 = 0;
     let mut sample_number: u32 = 0;
 
-    for chunk in table.chunks.iter() {
-        chunk_number = chunk_number.checked_add(1).ok_or(ErrorKind::Overflow)?;
+    let media_scale = TickScale(track_repr.track.timescale);
+
+    for (chunk_index, chunk) in track_repr.chunks.iter().enumerate() {
         let samples_per_chunk = u32::try_from(chunk.sample_count()).map_err(|_| {
             Error::new(ErrorKind::Overflow)
-                .with_message("Number of samples per chunk exceeds u32 range")
+                .with_message("Number of samples in chunk exceeds u32 limit")
         })?;
-        stsc.push(chunk_number, samples_per_chunk, 1);
-        chunk_offset.push(chunk.data_offset);
+
+        stsc.push(chunk_index as u32 + 1, samples_per_chunk, 1);
+        chunk_offset.push(chunk.data_offset());
 
         for sample in chunk.samples() {
             sample_number = sample_number.checked_add(1).ok_or(ErrorKind::Overflow)?;
 
-            let delta = sample_delta_ticks(sample.dts_ns, sample.duration, scale)?;
-            let cto = sample_cto_ticks(sample.dts_ns, sample.pts_ns, scale).and_then(|cto| {
-                i32::try_from(cto).map_err(|_| {
-                    Error::new(ErrorKind::Overflow)
-                        .with_message("Composition time offset exceeds i32 tick range")
-                })
-            })?;
+            let delta = sample_delta_ticks(sample, &media_scale).ok_or(ErrorKind::Overflow)?;
+            let cto = sample_cto_ticks(sample, &media_scale).ok_or(ErrorKind::Overflow)?;
 
             stts.push(delta);
-            stsz.push(sample.size);
-            ctts.push(cto);
+            stsz.push(sample.size());
+            ctts.push(i32::try_from(cto).map_err(|_| {
+                Error::new(ErrorKind::Overflow)
+                    .with_message("Sample composition time offset exceeds i32 tick range")
+            })?);
             has_nonzero_ctts |= cto != 0;
-
-            if sample.is_sync {
+            if sample.is_sync() {
                 stss.push(sample_number);
             }
         }
@@ -454,17 +385,17 @@ fn build_stbl(table: &SampleTable, stsd: StsdBox, scale: &TickScale) -> Result<S
     })
 }
 
-fn build_edts(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<Option<EdtsBox>> {
-    build_elst(track_entry, movie_timescale).map(|elst| elst.map(|e| EdtsBox { elst: Some(e) }))
+fn build_edts(track: &Track, movie_timescale: NonZeroU32) -> Result<Option<EdtsBox>> {
+    build_elst(track, movie_timescale).map(|elst| elst.map(|e| EdtsBox { elst: Some(e) }))
 }
 
-fn build_elst(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<Option<ElstBox>> {
-    let Some(segments) = &track_entry.info.edit_list else {
+fn build_elst(track: &Track, movie_timescale: NonZeroU32) -> Result<Option<ElstBox>> {
+    let Some(segments) = track.edit_list() else {
         return Ok(None);
     };
 
     let movie_scale = TickScale(movie_timescale);
-    let media_scale = TickScale(track_entry.info.timescale);
+    let media_scale = TickScale(track.timescale);
 
     let mut entries = Vec::with_capacity(segments.len());
 
@@ -472,7 +403,7 @@ fn build_elst(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<O
         let entry = match seg {
             EditSegment::Empty { duration } => ElstEntry {
                 segment_duration: movie_scale
-                    .from_duration(*duration)
+                    .duration_to_ticks(*duration)
                     .ok_or(ErrorKind::Overflow)?,
                 media_time: -1,
                 media_rate: I16F16::from_f32(1.0),
@@ -483,10 +414,10 @@ fn build_elst(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<O
                 media_rate,
             } => ElstEntry {
                 segment_duration: movie_scale
-                    .from_duration(*duration)
+                    .duration_to_ticks(*duration)
                     .ok_or(ErrorKind::Overflow)?,
                 media_time: media_scale
-                    .from_duration(*media_start)
+                    .duration_to_ticks(*media_start)
                     .and_then(|t| i64::try_from(t).ok())
                     .ok_or(
                         Error::new(ErrorKind::Overflow)
@@ -499,10 +430,10 @@ fn build_elst(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<O
                 media_time,
             } => ElstEntry {
                 segment_duration: movie_scale
-                    .from_duration(*duration)
+                    .duration_to_ticks(*duration)
                     .ok_or(ErrorKind::Overflow)?,
                 media_time: media_scale
-                    .from_duration(*media_time)
+                    .duration_to_ticks(*media_time)
                     .and_then(|t| i64::try_from(t).ok())
                     .ok_or(
                         Error::new(ErrorKind::Overflow)
@@ -511,578 +442,9 @@ fn build_elst(track_entry: &TrackEntry, movie_timescale: NonZeroU32) -> Result<O
                 media_rate: I16F16::from_f32(0.0),
             },
         };
+
         entries.push(entry);
     }
 
     Ok(Some(ElstBox::new(entries)))
-}
-
-// ---------------------------------------------------------------------------
-// Fragmented: moof
-// ---------------------------------------------------------------------------
-
-pub(super) fn build_moof(movie: &Movie, sequence_number: u32) -> Result<MoofBox> {
-    let trafs = movie
-        .track_entries
-        .iter()
-        .filter(|t| !t.sample_table.chunks.is_empty())
-        .map(build_traf)
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(MoofBox {
-        mfhd: MfhdBox::new(sequence_number),
-        trafs,
-    })
-}
-
-fn build_traf(entry: &TrackEntry) -> Result<TrafBox> {
-    let scale = TickScale(entry.info.timescale);
-
-    // --- tfhd ---
-    let default_duration = default_duration_ticks(entry.defaults.sample_duration, &scale)?;
-
-    let mut flags = TfhdFlags::DEFAULT_BASE_IS_MOOF;
-    if default_duration.is_some() {
-        flags |= TfhdFlags::DEFAULT_SAMPLE_DURATION_PRESENT;
-    }
-    if entry.defaults.sample_size.is_some() {
-        flags |= TfhdFlags::DEFAULT_SAMPLE_SIZE_PRESENT;
-    }
-    if entry.defaults.sample_flags.is_some() {
-        flags |= TfhdFlags::DEFAULT_SAMPLE_FLAGS_PRESENT;
-    }
-
-    let tfhd = TfhdBox {
-        flags,
-        track_id: entry.info.id.get(),
-        default_sample_duration: default_duration,
-        default_sample_size: entry.defaults.sample_size,
-        default_sample_flags: entry.defaults.sample_flags,
-        ..Default::default()
-    };
-
-    // --- tfdt ---
-    let first_dts = entry.sample_table.first_sample_dts().ok_or(
-        Error::new(ErrorKind::InvalidInput)
-            .with_message("Track must have at least one sample to build a traf box"),
-    )?;
-    let tfdt = TfdtBox::new(scale.from_nanos(first_dts).ok_or(
-        Error::new(ErrorKind::Overflow).with_message("Base media decode time exceeds u64 range"),
-    )?);
-
-    // --- truns ---
-    let truns = build_truns(&entry.sample_table, &entry.defaults, &scale)?;
-
-    Ok(TrafBox {
-        tfhd,
-        tfdt: Some(tfdt),
-        truns,
-        sbgps: Vec::new(),
-        sgpds: Vec::new(),
-    })
-}
-
-/// Builds one `TrunBox` per chunk, omitting fields that match track defaults.
-fn build_truns(
-    table: &SampleTable,
-    defaults: &TrackDefaults,
-    scale: &TickScale,
-) -> Result<Vec<TrunBox>> {
-    let mut truns = Vec::with_capacity(table.chunks.len());
-
-    let default_duration = default_duration_ticks(defaults.sample_duration, scale)?;
-
-    let mut entries: Vec<TrunEntry> = Vec::new();
-
-    for chunk in &table.chunks {
-        entries.reserve(chunk.sample_count());
-
-        // Phase 1: collect entries and track which fields can be omitted
-        let mut all_duration_default = true;
-        let mut all_size_default = true;
-        let mut first_flags_matches = true;
-        let mut rest_flags_default = true;
-        let mut has_nonzero_cto = false;
-
-        for (i, sample) in chunk.samples().enumerate() {
-            let duration = sample_delta_ticks(sample.dts_ns, sample.duration, scale)?;
-            let size = sample.size;
-            let flags = if sample.is_sync {
-                SampleFlags::sync()
-            } else {
-                SampleFlags::non_sync()
-            };
-            let cto = sample_cto_ticks(sample.dts_ns, sample.pts_ns, scale)?;
-            has_nonzero_cto |= cto != 0;
-
-            if Some(duration) != default_duration {
-                all_duration_default = false;
-            }
-            if Some(size) != defaults.sample_size {
-                all_size_default = false;
-            }
-            if i == 0 {
-                first_flags_matches = Some(flags) == defaults.sample_flags;
-            } else if Some(flags) != defaults.sample_flags {
-                rest_flags_default = false;
-            }
-
-            entries.push(TrunEntry {
-                duration: Some(duration),
-                size: Some(size),
-                flags: Some(flags),
-                composition_time_offset: Some(cto),
-            });
-        }
-
-        // Phase 2: determine flags optimization strategy
-        //
-        // Three cases for sample_flags:
-        //   1. All match default          → omit per-sample flags entirely
-        //   2. Only first differs          → use first_sample_flags field
-        //   3. Mixed across rest           → keep per-sample flags
-        let omit_flags = rest_flags_default && first_flags_matches;
-        let use_first_sample_flags = rest_flags_default && !first_flags_matches;
-
-        let mut trun = TrunBox::default();
-        trun.set_data_offset(i32::try_from(chunk.data_offset).map_err(|_| {
-            Error::new(ErrorKind::Overflow).with_message("data_offset exceeds i32 range")
-        })?);
-
-        if use_first_sample_flags {
-            trun.set_first_sample_flags(entries[0].flags.unwrap());
-        }
-
-        for mut entry in entries.drain(..) {
-            if all_duration_default {
-                entry.duration = None;
-            }
-            if all_size_default {
-                entry.size = None;
-            }
-            if omit_flags || use_first_sample_flags {
-                entry.flags = None;
-            }
-            if !has_nonzero_cto {
-                entry.composition_time_offset = None;
-            }
-            trun.try_push_entry(entry).map_err(Error::box_encode)?;
-        }
-
-        truns.push(trun);
-    }
-
-    Ok(truns)
-}
-
-// ---------------------------------------------------------------------------
-// Fragmented: mvex (movie extends header)
-// ---------------------------------------------------------------------------
-
-pub(super) fn build_mvex(movie: &Movie) -> Result<MvexBox> {
-    let trexs = movie
-        .track_entries
-        .iter()
-        .map(build_trex)
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(MvexBox { mehd: None, trexs })
-}
-
-fn build_trex(entry: &TrackEntry) -> Result<TrexBox> {
-    let scale = TickScale(entry.info.timescale);
-    let default_sample_duration =
-        default_duration_ticks(entry.defaults.sample_duration, &scale)?.unwrap_or(0);
-
-    Ok(TrexBox {
-        track_id: entry.info.id.get(),
-        default_sample_description_index: 1,
-        default_sample_duration,
-        default_sample_size: entry.defaults.sample_size.unwrap_or(0),
-        default_sample_flags: entry.defaults.sample_flags.unwrap_or_default(),
-        ..Default::default()
-    })
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::multiplex::{Chunk, Sample};
-
-    fn nz(v: u32) -> NonZeroU32 {
-        NonZeroU32::new(v).unwrap()
-    }
-
-    fn make_sample(
-        dts_ns: u64,
-        pts_ns: Option<i64>,
-        duration_ms: u64,
-        is_sync: bool,
-        size: u32,
-    ) -> Sample {
-        Sample::new(
-            dts_ns,
-            pts_ns,
-            Duration::from_millis(duration_ms),
-            is_sync,
-            size,
-        )
-        .unwrap()
-    }
-
-    fn make_chunk(data_offset: u64, samples: Vec<Sample>) -> Chunk {
-        Chunk::with_samples(data_offset, samples).unwrap()
-    }
-
-    fn make_sample_table(chunks: Vec<Chunk>) -> SampleTable {
-        SampleTable { chunks }
-    }
-
-    // --- TickScale::from_nanos ---
-
-    #[test]
-    fn from_nanos_zero() {
-        assert_eq!(TickScale(nz(90000)).from_nanos(0), Some(0));
-    }
-
-    #[test]
-    fn from_nanos_one_second() {
-        assert_eq!(TickScale(nz(90000)).from_nanos(1_000_000_000), Some(90000));
-    }
-
-    #[test]
-    fn from_nanos_subsecond() {
-        assert_eq!(TickScale(nz(1000)).from_nanos(500_000_000), Some(500));
-    }
-
-    #[test]
-    fn from_nanos_overflow() {
-        let large_nanos = u64::MAX / 2;
-        assert!(TickScale(nz(u32::MAX)).from_nanos(large_nanos).is_none());
-    }
-
-    // --- TickScale::from_duration ---
-
-    #[test]
-    fn from_duration_one_second() {
-        assert_eq!(
-            TickScale(nz(44100)).from_duration(Duration::from_secs(1)),
-            Some(44100)
-        );
-    }
-
-    #[test]
-    fn from_duration_fractional() {
-        assert_eq!(
-            TickScale(nz(90000)).from_duration(Duration::from_millis(33)),
-            Some(2970)
-        );
-    }
-
-    #[test]
-    fn from_duration_zero() {
-        assert_eq!(TickScale(nz(90000)).from_duration(Duration::ZERO), Some(0));
-    }
-
-    // --- build_truns ---
-
-    #[test]
-    fn build_truns_all_defaults() {
-        let defaults = TrackDefaults {
-            sample_duration: Some(Duration::from_millis(33)),
-            sample_size: Some(1000),
-            sample_flags: Some(SampleFlags::sync()),
-        };
-
-        let chunk = make_chunk(
-            0,
-            vec![
-                make_sample(0, None, 33, true, 1000),
-                make_sample(33_000_000, None, 33, true, 1000),
-            ],
-        );
-
-        let table = make_sample_table(vec![chunk]);
-        let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
-
-        assert_eq!(truns.len(), 1);
-        let trun = &truns[0];
-        assert_eq!(trun.entries().len(), 2);
-
-        for entry in trun.entries() {
-            assert!(entry.duration.is_none());
-            assert!(entry.size.is_none());
-            assert!(entry.flags.is_none());
-            assert!(entry.composition_time_offset.is_none());
-        }
-    }
-
-    #[test]
-    fn build_truns_no_defaults() {
-        let defaults = TrackDefaults::default();
-
-        let chunk = make_chunk(
-            0,
-            vec![
-                make_sample(0, None, 33, true, 1000),
-                make_sample(33_000_000, None, 33, true, 2000),
-            ],
-        );
-
-        let table = make_sample_table(vec![chunk]);
-        let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
-
-        let trun = &truns[0];
-        for entry in trun.entries() {
-            assert!(entry.duration.is_some());
-            assert!(entry.size.is_some());
-            assert!(entry.flags.is_some());
-        }
-    }
-
-    #[test]
-    fn build_truns_first_sample_flags() {
-        let defaults = TrackDefaults {
-            sample_duration: Some(Duration::from_millis(33)),
-            sample_size: Some(1000),
-            sample_flags: Some(SampleFlags::non_sync()),
-        };
-
-        let chunk = make_chunk(
-            0,
-            vec![
-                make_sample(0, None, 33, true, 1000),
-                make_sample(33_000_000, None, 33, false, 1000),
-                make_sample(66_000_000, None, 33, false, 1000),
-            ],
-        );
-
-        let table = make_sample_table(vec![chunk]);
-        let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
-
-        let trun = &truns[0];
-        assert_eq!(trun.first_sample_flags(), Some(SampleFlags::sync()));
-        for entry in trun.entries() {
-            assert!(entry.flags.is_none());
-        }
-    }
-
-    #[test]
-    fn build_truns_per_sample_flags() {
-        let defaults = TrackDefaults {
-            sample_duration: Some(Duration::from_millis(33)),
-            sample_size: Some(1000),
-            sample_flags: Some(SampleFlags::non_sync()),
-        };
-
-        let chunk = make_chunk(
-            0,
-            vec![
-                make_sample(0, None, 33, true, 1000),
-                make_sample(33_000_000, None, 33, false, 1000),
-                make_sample(66_000_000, None, 33, true, 1000),
-            ],
-        );
-
-        let table = make_sample_table(vec![chunk]);
-        let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
-
-        let trun = &truns[0];
-        assert!(trun.first_sample_flags().is_none());
-        for entry in trun.entries() {
-            assert!(entry.flags.is_some());
-        }
-    }
-
-    #[test]
-    fn build_truns_with_cto() {
-        let defaults = TrackDefaults::default();
-        let chunk = make_chunk(0, vec![make_sample(0, Some(66_000_000), 33, true, 1000)]);
-        let table = make_sample_table(vec![chunk]);
-        let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
-
-        let entry = &truns[0].entries()[0];
-        assert_eq!(entry.composition_time_offset, Some(5940));
-    }
-
-    #[test]
-    fn build_truns_zero_cto_omitted() {
-        let defaults = TrackDefaults::default();
-        let chunk = make_chunk(0, vec![make_sample(0, Some(0), 33, true, 1000)]);
-        let table = make_sample_table(vec![chunk]);
-        let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
-
-        assert!(truns[0].entries()[0].composition_time_offset.is_none());
-    }
-
-    #[test]
-    fn build_truns_multiple_chunks() {
-        let defaults = TrackDefaults::default();
-        let chunk1 = make_chunk(0, vec![make_sample(0, None, 33, true, 1000)]);
-        let chunk2 = make_chunk(5000, vec![make_sample(33_000_000, None, 33, true, 2000)]);
-
-        let table = make_sample_table(vec![chunk1, chunk2]);
-        let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
-
-        assert_eq!(truns.len(), 2);
-        assert_eq!(truns[0].data_offset(), Some(0));
-        assert_eq!(truns[1].data_offset(), Some(5000));
-    }
-
-    #[test]
-    fn build_truns_data_offset_set() {
-        let defaults = TrackDefaults::default();
-        let chunk = make_chunk(256, vec![make_sample(0, None, 33, true, 1000)]);
-        let table = make_sample_table(vec![chunk]);
-        let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
-
-        assert_eq!(truns[0].data_offset(), Some(256));
-    }
-
-    #[test]
-    fn build_truns_duration_ticks_conversion() {
-        let defaults = TrackDefaults::default();
-        let chunk = make_chunk(0, vec![make_sample(0, None, 33, true, 1000)]);
-        let table = make_sample_table(vec![chunk]);
-        let truns = build_truns(&table, &defaults, &TickScale(nz(90000))).unwrap();
-
-        assert_eq!(truns[0].entries()[0].duration, Some(2970));
-    }
-
-    // --- telescoping sum roundtrip ---
-
-    fn ticks_to_nanos(ticks: u64, timescale: u64) -> u64 {
-        let secs = ticks / timescale;
-        let remainder = ticks % timescale;
-        secs * 1_000_000_000 + remainder * 1_000_000_000 / timescale
-    }
-
-    #[test]
-    fn telescoping_sum_consistency_uniform_delta() {
-        let timescale: u64 = 15360;
-        let delta_ticks: u64 = 512;
-        let num_samples: u64 = 10;
-        let scale = TickScale(nz(timescale as u32));
-
-        let samples: Vec<_> = (0..num_samples)
-            .map(|i| {
-                let dts = ticks_to_nanos(i * delta_ticks, timescale);
-                let next = ticks_to_nanos((i + 1) * delta_ticks, timescale);
-                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100).unwrap()
-            })
-            .collect();
-
-        let total: u64 = samples
-            .iter()
-            .map(|s| u64::from(sample_delta_ticks(s.dts_ns, s.duration, &scale).unwrap()))
-            .sum();
-
-        let start_ns = samples.first().unwrap().dts_ns();
-        let last = samples.last().unwrap();
-        let end_ns = last.dts_ns() + last.duration().as_nanos() as u64;
-        let expected = scale.from_nanos(end_ns).unwrap() - scale.from_nanos(start_ns).unwrap();
-
-        assert_eq!(total, expected);
-    }
-
-    #[test]
-    fn telescoping_sum_consistency_variable_delta() {
-        let timescale: u64 = 48000;
-        let deltas: &[u64] = &[1024, 1024, 960, 1024, 1024, 960, 1024];
-        let scale = TickScale(nz(timescale as u32));
-
-        let mut dts_ticks: u64 = 0;
-        let mut samples = Vec::with_capacity(deltas.len());
-        for &dt in deltas {
-            let dts = ticks_to_nanos(dts_ticks, timescale);
-            let next = ticks_to_nanos(dts_ticks + dt, timescale);
-            samples
-                .push(Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100).unwrap());
-            dts_ticks += dt;
-        }
-
-        let total: u64 = samples
-            .iter()
-            .map(|s| u64::from(sample_delta_ticks(s.dts_ns(), s.duration(), &scale).unwrap()))
-            .sum();
-
-        let start_ns = samples.first().unwrap().dts_ns();
-        let last = samples.last().unwrap();
-        let end_ns = last.dts_ns() + last.duration().as_nanos() as u64;
-        let expected = scale.from_nanos(end_ns).unwrap() - scale.from_nanos(start_ns).unwrap();
-
-        assert_eq!(total, expected);
-    }
-
-    #[test]
-    fn telescoping_sum_consistency_media_duration() {
-        let timescale: u64 = 15360;
-        let delta_ticks: u64 = 512;
-        let num_samples: u64 = 100;
-        let scale = TickScale(nz(timescale as u32));
-
-        let samples: Vec<_> = (0..num_samples)
-            .map(|i| {
-                let dts = ticks_to_nanos(i * delta_ticks, timescale);
-                let next = ticks_to_nanos((i + 1) * delta_ticks, timescale);
-                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100).unwrap()
-            })
-            .collect();
-
-        let table = make_sample_table(vec![make_chunk(0, samples)]);
-        let duration = media_duration(&table, &scale).unwrap();
-        let sum_deltas: u64 = table
-            .chunks
-            .iter()
-            .flat_map(|c| c.samples())
-            .map(|s| u64::from(sample_delta_ticks(s.dts_ns(), s.duration(), &scale).unwrap()))
-            .sum();
-
-        assert_eq!(duration, sum_deltas);
-    }
-
-    #[test]
-    fn telescoping_sum_exact_when_divisible() {
-        let timescale: u64 = 1000;
-        let delta_ticks: u64 = 33;
-        let scale = TickScale(nz(timescale as u32));
-
-        let samples: Vec<_> = (0..100u64)
-            .map(|i| {
-                let dts = ticks_to_nanos(i * delta_ticks, timescale);
-                let next = ticks_to_nanos((i + 1) * delta_ticks, timescale);
-                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100).unwrap()
-            })
-            .collect();
-
-        for sample in &samples {
-            assert_eq!(
-                u64::from(sample_delta_ticks(sample.dts_ns, sample.duration, &scale).unwrap()),
-                delta_ticks
-            );
-        }
-    }
-
-    #[test]
-    fn telescoping_sum_cross_timescale() {
-        let media_ts: u64 = 15360;
-        let movie_ts: u64 = 1000;
-        let delta_ticks: u64 = 512;
-
-        let samples: Vec<_> = (0..3u64)
-            .map(|i| {
-                let dts = ticks_to_nanos(i * delta_ticks, media_ts);
-                let next = ticks_to_nanos((i + 1) * delta_ticks, media_ts);
-                Sample::new(dts, None, Duration::from_nanos(next - dts), true, 100).unwrap()
-            })
-            .collect();
-
-        let table = make_sample_table(vec![make_chunk(0, samples)]);
-        let movie_dur = media_duration(&table, &TickScale(nz(movie_ts as u32))).unwrap();
-        assert_eq!(movie_dur, 100);
-    }
 }

@@ -59,7 +59,7 @@ fn demux_remux_real_file() {
         muxer.add_chunk(new_track_id, chunk.clone()).unwrap();
     }
 
-    let result_moov = muxer.finalize().unwrap();
+    let result_moov = muxer.finalize_in().unwrap();
 
     // Compare
     let original_trak = &original_moov.traks[0];
@@ -191,7 +191,7 @@ fn mux_then_demux() {
     chunk.try_push_sample(s3).unwrap();
     muxer.add_chunk(track_id, chunk).unwrap();
 
-    let moov = muxer.finalize().unwrap();
+    let moov = muxer.finalize_in().unwrap();
 
     // Demux
     let demuxer = Demuxer::new(&moov).unwrap();

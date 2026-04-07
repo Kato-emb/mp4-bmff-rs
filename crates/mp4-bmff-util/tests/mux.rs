@@ -28,7 +28,7 @@ fn mux_empty_track_rejected() {
     builder.add_track(1000, media).unwrap().build();
     let muxer = builder.build().unwrap();
 
-    let result = muxer.finalize();
+    let result = muxer.finalize_in();
     assert!(result.is_err());
 }
 
@@ -77,7 +77,7 @@ fn mux_multiple_tracks() {
         .unwrap();
     muxer.add_chunk(tid2, chunk2).unwrap();
 
-    let moov = muxer.finalize().unwrap();
+    let moov = muxer.finalize_in().unwrap();
 
     assert_eq!(moov.traks.len(), 2);
     assert_eq!(moov.mvhd.next_track_id, 3);

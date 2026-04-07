@@ -8,36 +8,28 @@
 //! corresponding box structures (`MoovBox`, `MoofBox`) ready for encoding.
 
 use core::num::NonZeroU32;
-use core::time::Duration;
 
 use alloc::vec::Vec;
 
-use mp4_bmff::boxes::bmff::*;
 use mp4_bmff::types::*;
 
 use super::Result;
 use super::error::*;
 
-use super::Chunk;
 use super::EditSegment;
 use super::MediaDefinition;
+use super::Sample;
 use super::Track;
 use super::TrackId;
 
 mod assemble;
-mod types;
-
-use assemble::{build_moof, build_moov, build_mvex};
-use types::Movie;
-use types::SampleTable;
-use types::TrackDefaults;
-use types::TrackEntry;
 
 /// A builder for configuring and constructing a [`Muxer`] or [`FragmentedMuxer`].
 #[derive(Debug)]
 #[must_use = "Builder is a builder for configuring the Muxer; call build() to finalize the Muxer"]
 pub struct Builder {
-    movie: Movie,
+    timescale: NonZeroU32,
+    tracks: Vec<Track>,
 }
 
 impl Builder {
@@ -48,7 +40,8 @@ impl Builder {
         )?;
 
         Ok(Self {
-            movie: Movie::new(timescale),
+            timescale,
+            tracks: Vec::new(),
         })
     }
 
@@ -58,37 +51,51 @@ impl Builder {
         timescale: u32,
         media: MediaDefinition,
     ) -> Result<TrackBuilder<'_>> {
-        let track_id = self.movie.next_track_id()?;
+        let track_id = self.next_track_id().ok_or(
+            Error::new(ErrorKind::Overflow)
+                .with_message("Exceeded maximum track ID limit of 2^32 - 1"),
+        )?;
         let timescale = NonZeroU32::new(timescale).ok_or(
             Error::new(ErrorKind::InvalidInput).with_message("Timescale must be non-zero"),
         )?;
         let track = Track::new(track_id, timescale, media);
-        let defaults = TrackDefaults::default();
 
         Ok(TrackBuilder {
             builder: self,
             track,
-            defaults,
         })
+    }
+
+    fn next_track_id(&self) -> Option<TrackId> {
+        let next_id = match self.tracks.iter().map(|s| s.id).max() {
+            Some(max_id) => max_id.get().checked_add(1),
+            None => Some(1),
+        };
+
+        next_id.and_then(TrackId::new)
     }
 
     /// Builds the `Muxer` from the current state of the `Builder`.
     pub fn build(self) -> Result<Muxer> {
-        Ok(Muxer { movie: self.movie })
-    }
+        let next_track_id = self.next_track_id().ok_or(
+            Error::new(ErrorKind::Overflow)
+                .with_message("Exceeded maximum track ID limit of 2^32 - 1"),
+        )?;
 
-    /// Builds a `FragmentedMuxer` along with the initial `MoovBox` for fragmented MP4 output.
-    pub fn build_fragmented(self) -> Result<(MoovBox, FragmentedMuxer)> {
-        let mut moov = build_moov(&self.movie)?;
-        moov.mvex = Some(build_mvex(&self.movie)?);
+        let tracks = self
+            .tracks
+            .into_iter()
+            .map(|t| MuxerTrack {
+                track: t,
+                pending_chunks: Vec::new(),
+            })
+            .collect();
 
-        Ok((
-            moov,
-            FragmentedMuxer {
-                movie: self.movie,
-                sequence_number: 0,
-            },
-        ))
+        Ok(Muxer {
+            timescale: self.timescale,
+            next_track_id,
+            tracks,
+        })
     }
 }
 
@@ -98,7 +105,6 @@ impl Builder {
 pub struct TrackBuilder<'a> {
     builder: &'a mut Builder,
     track: Track,
-    defaults: TrackDefaults,
 }
 
 impl TrackBuilder<'_> {
@@ -126,32 +132,10 @@ impl TrackBuilder<'_> {
         self
     }
 
-    /// Sets the default sample duration for the track and returns the updated `TrackBuilder`.
-    pub fn sample_default_duration(mut self, duration: Duration) -> Self {
-        self.defaults.sample_duration = Some(duration);
-        self
-    }
-
-    /// Sets the default sample size for the track and returns the updated `TrackBuilder`.
-    pub fn sample_default_size(mut self, size: u32) -> Self {
-        self.defaults.sample_size = Some(size);
-        self
-    }
-
-    /// Sets the default sample flags for the track and returns the updated `TrackBuilder`.
-    pub fn sample_default_flags(mut self, flags: SampleFlags) -> Self {
-        self.defaults.sample_flags = Some(flags);
-        self
-    }
-
     /// Finalizes the track and adds it to the builder, returning the assigned track ID.
     pub fn build(self) -> TrackId {
         let track_id = self.track.id;
-        self.builder.movie.track_entries.push(TrackEntry {
-            info: self.track,
-            defaults: self.defaults,
-            sample_table: SampleTable::default(),
-        });
+        self.builder.tracks.push(self.track);
         track_id
     }
 }
@@ -159,7 +143,9 @@ impl TrackBuilder<'_> {
 /// A muxer for producing non-fragmented MP4 files.
 #[derive(Debug)]
 pub struct Muxer {
-    movie: Movie,
+    timescale: NonZeroU32,
+    next_track_id: TrackId,
+    tracks: Vec<MuxerTrack>,
 }
 
 impl Muxer {
@@ -169,88 +155,36 @@ impl Muxer {
     }
 
     /// Adds a chunk of samples to the specified track in the current fragment.
-    pub fn add_chunk(&mut self, track_id: TrackId, chunk: Chunk) -> Result<()> {
-        push_chunk(&mut self.movie, track_id, chunk)
-    }
-
-    /// Finalizes the muxer and produces the `moov` box.
-    pub fn finalize(self) -> Result<MoovBox> {
-        if self
-            .movie
-            .track_entries
-            .iter()
-            .any(|t| t.sample_table.chunks.is_empty())
-        {
+    pub fn add_chunk(&mut self, track_id: TrackId, samples: Vec<Sample>) -> Result<()> {
+        if samples.is_empty() {
             return Err(Error::new(ErrorKind::InvalidInput).with_message(
-                "Non-fragmented muxer cannot have tracks with no samples; all tracks must have at least one sample",
+                "Chunk must contain at least one sample; empty chunks are not allowed",
             ));
         }
 
-        build_moov(&self.movie)
-    }
-}
+        let Some(track) = self.get_track_mut(track_id) else {
+            return Err(Error::new(ErrorKind::TrackNotFound(track_id)));
+        };
 
-/// A muxer for producing fragmented MP4 (fMP4) files.
-#[derive(Debug)]
-pub struct FragmentedMuxer {
-    movie: Movie,
-    sequence_number: u32,
-}
-
-impl FragmentedMuxer {
-    /// Creates a new [`Builder`] with the specified movie timescale.
-    pub fn builder(timescale: u32) -> Result<Builder> {
-        Builder::new(timescale)
-    }
-
-    /// Adds a chunk of samples to the specified track in the current fragment.
-    pub fn add_chunk(&mut self, track_id: TrackId, chunk: Chunk) -> Result<()> {
-        push_chunk(&mut self.movie, track_id, chunk)
-    }
-
-    /// Flushes the accumulated samples into a `moof` box and resets the fragment state.
-    pub fn flush_fragment(&mut self) -> Result<MoofBox> {
-        if self
-            .movie
-            .track_entries
-            .iter()
-            .all(|t| t.sample_table.chunks.is_empty())
-        {
-            return Err(Error::new(ErrorKind::InvalidInput)
-                .with_message("Cannot flush an empty fragment; add at least one sample first"));
-        }
-
-        self.sequence_number = self
-            .sequence_number
-            .checked_add(1)
-            .ok_or(ErrorKind::Overflow)?;
-
-        let moof = build_moof(&self.movie, self.sequence_number)?;
-
-        self.clear();
-        Ok(moof)
-    }
-
-    fn clear(&mut self) {
-        for track in self.movie.track_entries.iter_mut() {
-            track.sample_table.chunks.clear();
-        }
-    }
-}
-
-fn push_chunk(movie: &mut Movie, track_id: TrackId, chunk: Chunk) -> Result<()> {
-    let entry = movie
-        .get_track_entry_mut(track_id)
-        .ok_or(ErrorKind::TrackNotFound(track_id))?;
-
-    if let Some(last_chunk) = entry.sample_table.chunks.last() {
-        if chunk.first_sample().dts_ns() < last_chunk.last_sample().dts_ns() {
-            return Err(Error::new(ErrorKind::InvalidInput).with_message(
+        if let Some(last_chunk) = track.pending_chunks.last() {
+            if samples.first().unwrap().dts_ns() < last_chunk.last().unwrap().dts_ns() {
+                return Err(Error::new(ErrorKind::InvalidInput).with_message(
                 "Chunk's first sample DTS must not precede the previous chunk's last sample DTS",
             ));
+            }
         }
+
+        track.pending_chunks.push(samples);
+        Ok(())
     }
 
-    entry.sample_table.chunks.push(chunk);
-    Ok(())
+    fn get_track_mut(&mut self, track_id: TrackId) -> Option<&mut MuxerTrack> {
+        self.tracks.iter_mut().find(|t| t.track.id == track_id)
+    }
+}
+
+#[derive(Debug)]
+struct MuxerTrack {
+    track: Track,
+    pending_chunks: Vec<Vec<Sample>>,
 }
