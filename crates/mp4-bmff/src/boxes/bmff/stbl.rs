@@ -384,6 +384,15 @@ mod owned {
                 SampleSize::Stz2(stz2) => stz2.entries.len() as u32,
             }
         }
+
+        /// Returns the size of the sample at the given index, or `None` if the index is out of bounds. For `stsz`, if `sample_size` is non-zero, that value is returned for all samples; otherwise, the size is looked up in the `entries` vector. For `stz2`, the size is looked up in the `entries` vector and promoted to `u32`.
+        pub fn get(&self, index: usize) -> Option<u32> {
+            match self {
+                SampleSize::Stsz(stsz) if stsz.sample_size != 0 => Some(stsz.sample_size),
+                SampleSize::Stsz(stsz) => stsz.entries.get(index).map(|e| e.entry_size),
+                SampleSize::Stz2(stz2) => stz2.entries.get(index).map(|e| u32::from(e.entry_size)),
+            }
+        }
     }
 
     impl From<StszBox> for SampleSize {
@@ -414,6 +423,18 @@ mod owned {
                 ChunkOffset::Stco(stco) => stco.entries.len(),
                 ChunkOffset::Co64(co64) => co64.entries.len(),
             }
+        }
+
+        /// Returns an iterator over the chunk offsets stored in this `ChunkOffset`, yielding each offset as a `u64`. For `stco`, the 32-bit offsets are promoted to `u64` when returned.
+        pub fn iter(&self) -> impl Iterator<Item = u64> + '_ {
+            let (stco, co64) = match self {
+                ChunkOffset::Stco(s) => (Some(s.entries.iter()), None),
+                ChunkOffset::Co64(c) => (None, Some(c.entries.iter())),
+            };
+            stco.into_iter()
+                .flatten()
+                .map(|e| u64::from(e.chunk_offset))
+                .chain(co64.into_iter().flatten().map(|e| e.chunk_offset))
         }
 
         /// Adds a chunk offset. Starts as `stco` (32-bit) and automatically

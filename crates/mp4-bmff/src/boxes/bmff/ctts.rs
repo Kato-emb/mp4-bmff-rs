@@ -159,8 +159,11 @@ mod owned {
     }
 
     impl CttsBox {
-        fn has_negative_offsets(&self) -> bool {
-            self.entries.iter().any(|e| e.sample_offset.is_negative())
+        /// Returns an iterator over the composition time offsets for each sample, expanding the run-length encoding.
+        pub fn composition_time_offsets(&self) -> impl Iterator<Item = i32> + '_ {
+            self.entries
+                .iter()
+                .flat_map(|e| core::iter::repeat_n(e.sample_offset, e.sample_count as usize))
         }
 
         /// Adds a new entry to the `ctts` box. If the last entry has the same offset, it increments the sample count instead.
@@ -188,6 +191,10 @@ mod owned {
             }
 
             self.entries.push(entry);
+        }
+
+        fn has_negative_offsets(&self) -> bool {
+            self.entries.iter().any(|e| e.sample_offset.is_negative())
         }
     }
 

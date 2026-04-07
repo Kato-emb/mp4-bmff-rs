@@ -160,6 +160,25 @@ mod owned {
     }
 
     impl StscBox {
+        /// Returns an iterator over the number of samples in each chunk, based on the entries.
+        pub fn chunk_sample_counts(&self, num_chunks: usize) -> impl Iterator<Item = u32> + '_ {
+            self.entries.iter().enumerate().flat_map(move |(i, entry)| {
+                let end = if i + 1 < self.entries.len() {
+                    (self.entries[i + 1].first_chunk - 1) as usize
+                } else {
+                    num_chunks
+                };
+
+                let start = if i == 0 {
+                    0
+                } else {
+                    (entry.first_chunk - 1) as usize
+                };
+
+                core::iter::repeat_n(entry.samples_per_chunk, end - start)
+            })
+        }
+
         /// Adds a new entry to the Sample to Chunk Box (`stsc`).
         pub fn push(
             &mut self,

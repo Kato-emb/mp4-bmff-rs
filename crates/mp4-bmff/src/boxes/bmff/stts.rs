@@ -160,6 +160,13 @@ mod owned {
                 .sum()
         }
 
+        /// Returns an iterator over the sample durations, expanding the run-length encoding.
+        pub fn sample_deltas(&self) -> impl Iterator<Item = u32> + '_ {
+            self.entries
+                .iter()
+                .flat_map(|e| core::iter::repeat_n(e.sample_delta, e.sample_count as usize))
+        }
+
         /// Adds a sample with the given duration to the box, using run-length encoding.
         pub fn push(&mut self, sample_delta: u32) {
             if let Some(last) = self.entries.last_mut() {

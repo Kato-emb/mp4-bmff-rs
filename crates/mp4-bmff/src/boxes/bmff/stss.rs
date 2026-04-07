@@ -145,6 +145,13 @@ mod owned {
     }
 
     impl StssBox {
+        /// Checks if the specified sample number is a sync sample (keyframe).
+        pub fn contains(&self, sample_number: u32) -> bool {
+            self.entries
+                .binary_search_by_key(&sample_number, |e| e.sample_number)
+                .is_ok()
+        }
+
         /// Adds a new sync sample entry to the Sync Sample Box (`stss`).
         pub fn push(&mut self, sample_number: u32) {
             self.entries.push(StssEntry { sample_number });
