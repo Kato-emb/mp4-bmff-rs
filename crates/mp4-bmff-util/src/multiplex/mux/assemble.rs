@@ -15,7 +15,7 @@ use crate::multiplex::Sample;
 use crate::multiplex::Track;
 use crate::multiplex::{
     AudioSampleDescription, //
-    MediaDefinition,
+    SampleDescription,
     VisualSampleDescription,
 };
 
@@ -158,12 +158,12 @@ fn build_tkhd(track_repr: &TrackRepr, movie_timescale: NonZeroU32) -> Result<Tkh
     tkhd.alternate_group = track_repr.track.alternate_group();
     tkhd.matrix = track_repr.track.matrix();
 
-    match track_repr.track.media() {
-        MediaDefinition::Video { width, height, .. } => {
+    match track_repr.track.descriptions() {
+        SampleDescription::Video { width, height, .. } => {
             tkhd.width = U16F16::from_integer(i128::from(*width));
             tkhd.height = U16F16::from_integer(i128::from(*height));
         }
-        MediaDefinition::Audio { .. } => tkhd.volume = U8F8::from_f32(1.0),
+        SampleDescription::Audio { .. } => tkhd.volume = U8F8::from_f32(1.0),
         _ => {}
     }
 
@@ -173,7 +173,7 @@ fn build_tkhd(track_repr: &TrackRepr, movie_timescale: NonZeroU32) -> Result<Tkh
 fn build_mdia(track_repr: &TrackRepr) -> Result<MdiaBox> {
     Ok(MdiaBox {
         mdhd: build_mdhd(track_repr, track_repr.track.timescale)?,
-        hdlr: HdlrBox::new(track_repr.track.media().handler_type()),
+        hdlr: HdlrBox::new(track_repr.track.descriptions().handler_type()),
         minf: build_minf(track_repr)?,
         elng: None,
     })
@@ -204,16 +204,16 @@ fn build_minf(track_repr: &TrackRepr) -> Result<MinfBox> {
 }
 
 fn build_media_header(track: &Track) -> MediaHeaderBox {
-    match track.media() {
-        MediaDefinition::Video { .. } => MediaHeaderBox::Vmhd(VmhdBox::default()),
-        MediaDefinition::Audio { .. } => MediaHeaderBox::Smhd(SmhdBox::default()),
-        MediaDefinition::Hint { .. } => MediaHeaderBox::Hmhd(HmhdBox::default()),
+    match track.descriptions() {
+        SampleDescription::Video { .. } => MediaHeaderBox::Vmhd(VmhdBox::default()),
+        SampleDescription::Audio { .. } => MediaHeaderBox::Smhd(SmhdBox::default()),
+        SampleDescription::Hint { .. } => MediaHeaderBox::Hmhd(HmhdBox::default()),
         _ => MediaHeaderBox::Nmhd(NmhdBox::default()),
     }
 }
 
 fn build_stsd(track: &Track) -> Result<StsdBox> {
-    let sample_entry = build_sample_entry(track.media())?;
+    let sample_entry = build_sample_entry(track.descriptions())?;
 
     Ok(StsdBox {
         entries: alloc::vec![sample_entry],
@@ -221,14 +221,14 @@ fn build_stsd(track: &Track) -> Result<StsdBox> {
     })
 }
 
-fn build_sample_entry(media: &MediaDefinition) -> Result<RawBoxOwned> {
+fn build_sample_entry(media: &SampleDescription) -> Result<RawBoxOwned> {
     match media {
-        MediaDefinition::Video {
+        SampleDescription::Video {
             width,
             height,
             codec,
         } => build_visual_sample_entry(*width, *height, codec),
-        MediaDefinition::Audio {
+        SampleDescription::Audio {
             channel_count,
             sample_rate,
             codec,

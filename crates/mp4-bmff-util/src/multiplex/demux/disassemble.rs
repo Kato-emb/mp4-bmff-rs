@@ -10,7 +10,7 @@ use mp4_bmff::{BoxType, RawBoxOwned};
 
 use crate::multiplex::error::{Error, ErrorKind};
 use crate::multiplex::{
-    AudioSampleDescription, Chunk, EditSegment, MediaDefinition, Result, Sample,
+    AudioSampleDescription, Chunk, EditSegment, SampleDescription, Result, Sample,
     VisualSampleDescription,
 };
 
@@ -69,7 +69,7 @@ fn sample_pts_ns(decode_time_ticks: u64, cto_ticks: i32, scale: &TickScale) -> R
     Ok(Some(scale.signed_to_nanos(pts_ticks)))
 }
 
-fn parse_media_definition(stsd: &StsdBox, hdlr: &HdlrBox) -> Result<MediaDefinition> {
+fn parse_media_definition(stsd: &StsdBox, hdlr: &HdlrBox) -> Result<SampleDescription> {
     let entry = stsd.entries.first().ok_or(
         Error::new(ErrorKind::InvalidInput).with_message("stsd must contain at least one entry"),
     )?;
@@ -82,17 +82,17 @@ fn parse_media_definition(stsd: &StsdBox, hdlr: &HdlrBox) -> Result<MediaDefinit
     } else if hdlr.handler_type == soun {
         parse_audio_media(entry)
     } else {
-        Ok(MediaDefinition::Other(hdlr.handler_type))
+        Ok(SampleDescription::Other(hdlr.handler_type))
     }
 }
 
-fn parse_visual_media(entry: &RawBoxOwned) -> Result<MediaDefinition> {
+fn parse_visual_media(entry: &RawBoxOwned) -> Result<SampleDescription> {
     match entry.boxtype() {
         #[cfg(feature = "avc")]
         BoxType::AVC1 => {
             use mp4_bmff::boxes::avc::Avc1SampleEntry;
             let avc1 = Avc1SampleEntry::decode(entry.payload()).map_err(Error::box_decode)?;
-            Ok(MediaDefinition::Video {
+            Ok(SampleDescription::Video {
                 width: avc1.base.width,
                 height: avc1.base.height,
                 codec: VisualSampleDescription::Avc1(avc1.avcc.avc_config),
@@ -102,7 +102,7 @@ fn parse_visual_media(entry: &RawBoxOwned) -> Result<MediaDefinition> {
         BoxType::AVC3 => {
             use mp4_bmff::boxes::avc::Avc3SampleEntry;
             let avc3 = Avc3SampleEntry::decode(entry.payload()).map_err(Error::box_decode)?;
-            Ok(MediaDefinition::Video {
+            Ok(SampleDescription::Video {
                 width: avc3.base.width,
                 height: avc3.base.height,
                 codec: VisualSampleDescription::Avc3(avc3.avcc.avc_config),
@@ -119,7 +119,7 @@ fn parse_visual_media(entry: &RawBoxOwned) -> Result<MediaDefinition> {
                 .dec_specific_info
                 .map(|d| d.instance().to_vec())
                 .unwrap_or_default();
-            Ok(MediaDefinition::Video {
+            Ok(SampleDescription::Video {
                 width: mp4v.base.width,
                 height: mp4v.base.height,
                 codec: VisualSampleDescription::Mp4v(dec_specific_info),
@@ -132,7 +132,7 @@ fn parse_visual_media(entry: &RawBoxOwned) -> Result<MediaDefinition> {
     }
 }
 
-fn parse_audio_media(entry: &RawBoxOwned) -> Result<MediaDefinition> {
+fn parse_audio_media(entry: &RawBoxOwned) -> Result<SampleDescription> {
     match entry.boxtype() {
         #[cfg(feature = "mp4")]
         BoxType::MP4A => {
@@ -145,7 +145,7 @@ fn parse_audio_media(entry: &RawBoxOwned) -> Result<MediaDefinition> {
                 .dec_specific_info
                 .map(|d| d.instance().to_vec())
                 .unwrap_or_default();
-            Ok(MediaDefinition::Audio {
+            Ok(SampleDescription::Audio {
                 channel_count: mp4a.base.channelcount,
                 sample_rate: mp4a.base.samplerate.integer() as u16,
                 codec: AudioSampleDescription::Mp4a(dec_specific_info),

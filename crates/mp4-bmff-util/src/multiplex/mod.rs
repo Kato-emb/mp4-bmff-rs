@@ -51,26 +51,22 @@ impl TrackId {
 #[derive(Debug, Clone, Copy)]
 pub struct Sample {
     dts_ns: u64,
-    pts_ns: Option<i64>,
+    pts_ns: i64,
     duration: Duration,
     is_sync: bool,
     size: u32,
+    description_index: NonZeroU32,
 }
 
 impl Sample {
     /// Creates a new `Sample` with the given parameters.
     pub fn new(
         dts_ns: u64,
-        pts_ns: Option<i64>,
+        pts_ns: i64,
         duration: Duration,
         is_sync: bool,
         size: u32,
     ) -> Result<Self> {
-        if size == 0 {
-            return Err(MuxError::new(error::ErrorKind::InvalidInput)
-                .with_message("Sample size must be greater than zero"));
-        }
-
         if duration.is_zero() {
             return Err(MuxError::new(error::ErrorKind::InvalidInput)
                 .with_message("Sample duration must be greater than zero"));
@@ -82,7 +78,18 @@ impl Sample {
             duration,
             is_sync,
             size,
+            description_index: NonZeroU32::new(1).unwrap(), // Default to 1-based index for the first sample description
         })
+    }
+
+    /// Sets the sample description index for this sample, which indicates which sample description entry in the track's sample description box applies to this sample. The index is 1-based, meaning that a value of 1 refers to the first entry in the sample description box.
+    pub fn with_description_index(mut self, index: u32) -> Result<Self> {
+        self.description_index = NonZeroU32::new(index).ok_or(
+            MuxError::new(error::ErrorKind::InvalidInput)
+                .with_message("Description index must be non-zero"),
+        )?;
+
+        Ok(self)
     }
 
     /// Returns the decoding timestamp (DTS) of the sample in nanoseconds.
@@ -90,8 +97,8 @@ impl Sample {
         self.dts_ns
     }
 
-    /// Returns the presentation timestamp (PTS) of the sample in nanoseconds, if available.
-    pub fn pts_ns(&self) -> Option<i64> {
+    /// Returns the presentation timestamp (PTS) of the sample in nanoseconds.
+    pub fn pts_ns(&self) -> i64 {
         self.pts_ns
     }
 
@@ -108,6 +115,10 @@ impl Sample {
     /// Returns the size of the sample in bytes.
     pub fn size(&self) -> u32 {
         self.size
+    }
+
+    pub fn description_index(&self) -> u32 {
+        self.description_index.get()
     }
 }
 
@@ -166,19 +177,25 @@ pub struct Track {
     language: LanguageCode,
     matrix: Matrix,
     alternate_group: i16,
-    media: MediaDefinition,
+    descriptions: Vec<SampleDescription>,
+    samples: Vec<Sample>,
     edit_list: Option<Vec<EditSegment>>,
 }
 
 impl Track {
-    pub(super) fn new(id: TrackId, timescale: NonZeroU32, media: MediaDefinition) -> Self {
+    pub(super) fn new(
+        id: TrackId,
+        timescale: NonZeroU32,
+        descriptions: Vec<SampleDescription>,
+    ) -> Self {
         Self {
             id,
             timescale,
             language: LanguageCode::default(),
             matrix: Matrix::default(),
             alternate_group: 0,
-            media,
+            descriptions,
+            samples: Vec::new(),
             edit_list: None,
         }
     }
@@ -209,8 +226,9 @@ impl Track {
     }
 
     /// Returns the media definition for this track, which describes the type of media (e.g., video, audio) and codec-specific information needed to decode the samples.
-    pub fn media(&self) -> &MediaDefinition {
-        &self.media
+    pub fn description(&self, index: usize) -> Option<&SampleDescription> {
+        let index = index.checked_sub(1)?; // Convert from 1-based to 0-based index
+        self.descriptions.get(index)
     }
 
     /// Returns the edit list for this track, if present. The edit list defines how the media samples should be presented in the timeline, allowing for operations like inserting gaps, repeating frames, or changing playback speed.
@@ -268,7 +286,7 @@ pub enum FontSampleDescription {}
 
 /// Defines the media type and codec-specific description for a track.
 #[derive(Debug, Clone)]
-pub enum MediaDefinition {
+pub enum SampleDescription {
     /// Video track with a visual sample description.
     Video {
         /// Width of the video frames in pixels.
@@ -301,18 +319,18 @@ pub enum MediaDefinition {
     Other(FourCC),
 }
 
-impl MediaDefinition {
+impl SampleDescription {
     /// Returns the handler type FourCC code corresponding to this media definition.
     pub fn handler_type(&self) -> FourCC {
         match self {
-            MediaDefinition::Video { .. } => FourCC::new(*b"vide"),
-            MediaDefinition::Audio { .. } => FourCC::new(*b"soun"),
-            MediaDefinition::Metadata(_) => FourCC::new(*b"meta"),
-            MediaDefinition::Hint(_) => FourCC::new(*b"hint"),
-            MediaDefinition::Text(_) => FourCC::new(*b"text"),
-            MediaDefinition::Subtitle(_) => FourCC::new(*b"subt"),
-            MediaDefinition::Font(_) => FourCC::new(*b"fdsm"),
-            MediaDefinition::Other(fourcc) => *fourcc,
+            SampleDescription::Video { .. } => FourCC::new(*b"vide"),
+            SampleDescription::Audio { .. } => FourCC::new(*b"soun"),
+            SampleDescription::Metadata(_) => FourCC::new(*b"meta"),
+            SampleDescription::Hint(_) => FourCC::new(*b"hint"),
+            SampleDescription::Text(_) => FourCC::new(*b"text"),
+            SampleDescription::Subtitle(_) => FourCC::new(*b"subt"),
+            SampleDescription::Font(_) => FourCC::new(*b"fdsm"),
+            SampleDescription::Other(fourcc) => *fourcc,
         }
     }
 }

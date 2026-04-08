@@ -7,7 +7,7 @@ use mp4_bmff::boxes::bmff::*;
 use mp4_bmff::prelude::*;
 
 use mp4_bmff_util::multiplex::mux::Muxer;
-use mp4_bmff_util::multiplex::{Chunk, MediaDefinition, Sample, VisualSampleDescription};
+use mp4_bmff_util::multiplex::{Chunk, SampleDescription, Sample, VisualSampleDescription};
 
 const SAMPLE_MP4: &[u8] = include_bytes!("samples/sample.mp4");
 
@@ -23,7 +23,7 @@ fn decode_moov(data: &[u8]) -> MoovBox {
 
 #[test]
 fn mux_empty_track_rejected() {
-    let media = MediaDefinition::Other(mp4_bmff::types::FourCC::new(*b"test"));
+    let media = SampleDescription::Other(mp4_bmff::types::FourCC::new(*b"test"));
     let mut builder = Muxer::builder(1000).unwrap();
     builder.add_track(1000, media).unwrap().build();
     let muxer = builder.build().unwrap();
@@ -39,12 +39,12 @@ fn mux_multiple_tracks() {
     let avc1_1 = Avc1SampleEntry::decode(stsd_entry.payload()).unwrap();
     let avc1_2 = Avc1SampleEntry::decode(stsd_entry.payload()).unwrap();
 
-    let media1 = MediaDefinition::Video {
+    let media1 = SampleDescription::Video {
         width: avc1_1.base.width,
         height: avc1_1.base.height,
         codec: VisualSampleDescription::Avc1(avc1_1.avcc.avc_config),
     };
-    let media2 = MediaDefinition::Video {
+    let media2 = SampleDescription::Video {
         width: avc1_2.base.width,
         height: avc1_2.base.height,
         codec: VisualSampleDescription::Avc1(avc1_2.avcc.avc_config),

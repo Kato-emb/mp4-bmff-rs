@@ -17,8 +17,8 @@ use super::Result;
 use super::error::*;
 
 use super::EditSegment;
-use super::MediaDefinition;
 use super::Sample;
+use super::SampleDescription;
 use super::Track;
 use super::TrackId;
 
@@ -49,7 +49,7 @@ impl Builder {
     pub fn add_track(
         &mut self,
         timescale: u32,
-        media: MediaDefinition,
+        media: SampleDescription,
     ) -> Result<TrackBuilder<'_>> {
         let track_id = self.next_track_id().ok_or(
             Error::new(ErrorKind::Overflow)

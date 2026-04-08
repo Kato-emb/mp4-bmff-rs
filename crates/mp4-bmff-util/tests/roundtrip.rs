@@ -8,7 +8,7 @@ use mp4_bmff::prelude::*;
 
 use mp4_bmff_util::multiplex::demux::{Demuxer, FragmentedDemuxer};
 use mp4_bmff_util::multiplex::mux::{FragmentedMuxer, Muxer};
-use mp4_bmff_util::multiplex::{Chunk, MediaDefinition, Sample, VisualSampleDescription};
+use mp4_bmff_util::multiplex::{Chunk, SampleDescription, Sample, VisualSampleDescription};
 
 const SAMPLE_MP4: &[u8] = include_bytes!("samples/sample.mp4");
 
@@ -22,10 +22,10 @@ fn decode_moov(data: &[u8]) -> MoovBox {
     panic!("No moov box found");
 }
 
-fn decode_avc1_media(moov: &MoovBox) -> MediaDefinition {
+fn decode_avc1_media(moov: &MoovBox) -> SampleDescription {
     let stsd_entry = &moov.traks[0].mdia.minf.stbl.stsd.entries[0];
     let avc1 = Avc1SampleEntry::decode(stsd_entry.payload()).unwrap();
-    MediaDefinition::Video {
+    SampleDescription::Video {
         width: avc1.base.width,
         height: avc1.base.height,
         codec: VisualSampleDescription::Avc1(avc1.avcc.avc_config),
@@ -281,12 +281,12 @@ fn fragmented_partial_tracks() {
     let avc1_1 = Avc1SampleEntry::decode(stsd_entry.payload()).unwrap();
     let avc1_2 = Avc1SampleEntry::decode(stsd_entry.payload()).unwrap();
 
-    let media1 = MediaDefinition::Video {
+    let media1 = SampleDescription::Video {
         width: avc1_1.base.width,
         height: avc1_1.base.height,
         codec: VisualSampleDescription::Avc1(avc1_1.avcc.avc_config),
     };
-    let media2 = MediaDefinition::Video {
+    let media2 = SampleDescription::Video {
         width: avc1_2.base.width,
         height: avc1_2.base.height,
         codec: VisualSampleDescription::Avc1(avc1_2.avcc.avc_config),
