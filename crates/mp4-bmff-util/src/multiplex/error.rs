@@ -10,36 +10,24 @@ use core::fmt;
 use alloc::boxed::Box;
 use alloc::string::String;
 
-use super::TrackId;
-
 /// Errors that can occur during multiplexing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ErrorKind {
-    /// An arithmetic overflow occurred during calculations, such as when converting durations to ticks or calculating composition time offsets.
-    Overflow,
     /// An invalid input was provided. This can occur when the input data does not meet the expected format or constraints, such as when a sample's data length exceeds the maximum allowed size for a u32.
     InvalidInput,
-    /// A specified track was not found in the movie when attempting to add a sample or perform an operation on it.
-    TrackNotFound(TrackId),
-    /// An unsupported media type or configuration was encountered that cannot be processed by the muxer.
-    Unsupported,
-    /// An error occurred while encoding a box.
-    BoxEncode,
-    /// An error occurred while decoding a box.
-    BoxDecode,
+    /// An arithmetic overflow occurred during calculations, such as when converting durations to ticks or calculating composition time offsets.
+    Overflow,
+    /// Unknown error kind, used as a fallback for non-exhaustive matching. This variant should not be constructed directly and is intended to allow for future expansion of error kinds without breaking existing code.
+    __Unknown,
 }
 
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ErrorKind::Overflow => write!(f, "Overflow error"),
             ErrorKind::InvalidInput => write!(f, "Invalid input error"),
-            ErrorKind::TrackNotFound(track_id) => {
-                write!(f, "Track with ID {} not found", track_id.get())
-            }
-            ErrorKind::Unsupported => write!(f, "Unsupported media type or configuration"),
-            ErrorKind::BoxEncode => write!(f, "Box encoding error"),
-            ErrorKind::BoxDecode => write!(f, "Box decoding error"),
+            ErrorKind::Overflow => write!(f, "Overflow error"),
+            _ => write!(f, "Unknown error"),
         }
     }
 }
@@ -77,16 +65,6 @@ impl Error {
         self
     }
 
-    /// Creates a new `Error` with the specified `ErrorKind` and a source error for more context.
-    pub fn box_decode(source: mp4_bmff::Error) -> Self {
-        Error::new(ErrorKind::BoxDecode).with_source(source)
-    }
-
-    /// Creates a new `Error` with the specified `ErrorKind` and a source error for more context.
-    pub fn box_encode(source: mp4_bmff::Error) -> Self {
-        Error::new(ErrorKind::BoxEncode).with_source(source)
-    }
-
     /// Returns the `ErrorKind` of this error.
     #[inline]
     pub fn kind(&self) -> ErrorKind {
@@ -113,21 +91,5 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         self.source.as_ref().map(|e| e.as_ref() as _)
-    }
-}
-
-impl From<ErrorKind> for Error {
-    fn from(kind: ErrorKind) -> Self {
-        Error::new(kind)
-    }
-}
-
-impl From<core::num::TryFromIntError> for Error {
-    fn from(value: core::num::TryFromIntError) -> Self {
-        Error {
-            kind: ErrorKind::Overflow,
-            message: None,
-            source: Some(Box::new(value)),
-        }
     }
 }
