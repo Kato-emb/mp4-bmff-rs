@@ -85,6 +85,12 @@ impl<'a> CttsBoxView<'a> {
     pub fn entries(&self) -> CttsEntryIter<'a> {
         CttsEntryIter::new(self.entries)
     }
+
+    /// Returns an iterator over the composition time offsets for each sample, expanding the run-length encoding.
+    pub fn composition_time_offsets(&self) -> impl Iterator<Item = i32> + '_ {
+        self.entries()
+            .flat_map(|e| core::iter::repeat_n(e.sample_offset, e.sample_count as usize))
+    }
 }
 
 impl BoxCodec for CttsBoxView<'_> {

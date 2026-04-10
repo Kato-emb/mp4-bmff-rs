@@ -1,6 +1,7 @@
 use core::num::NonZeroU32;
 use core::time::Duration;
 
+use mp4_bmff::boxes::bmff::SampleFlags;
 use mp4_bmff::types::*;
 
 use super::TrackId;
@@ -17,7 +18,7 @@ use super::repr::*;
 /// optionally [`set_edit_list`](Self::set_edit_list) to adjust playback timing.
 #[derive(Debug)]
 pub struct Context {
-    movie: Movie,
+    pub(super) movie: Movie,
 }
 
 impl Context {
@@ -123,15 +124,6 @@ impl Context {
         Ok(())
     }
 
-    fn next_track_id(&self) -> Option<TrackId> {
-        let next_id = match self.movie.tracks.iter().map(|t| t.id).max() {
-            Some(max_id) => max_id.as_u32().checked_add(1),
-            None => Some(1),
-        };
-
-        next_id.and_then(TrackId::new)
-    }
-
     fn get_track_mut(&mut self, track_id: TrackId) -> Result<&mut Track> {
         self.movie
             .tracks
@@ -194,7 +186,7 @@ impl TrackBuilder<'_> {
     /// Returns an error if the timescale is zero, sample descriptions have
     /// mismatched handler types, or the maximum track count is exceeded.
     pub fn finish(self) -> Result<TrackId> {
-        let Some(track_id) = self.context.next_track_id() else {
+        let Some(track_id) = self.context.movie.next_track_id() else {
             return Err(Error::new(ErrorKind::Overflow)
                 .with_message("Exceeded maximum number of tracks (2^32 - 1)"));
         };
@@ -356,6 +348,59 @@ pub enum SubtitleSampleDescription {}
 /// Description of a font sample entry (placeholder).
 #[derive(Debug, Clone)]
 pub enum FontSampleDescription {}
+
+/// Default sample flags to apply to all samples in a fragment when using `trun` boxes
+/// with sample flags set to 0x00010000 (indicating that the sample flags are present in the `tfhd` defaults).
+#[derive(Debug, Clone, Copy)]
+pub struct FragmentDefaults {
+    track_id: TrackId,
+    sample_description_index: u32,
+    sample_duration: u32,
+    sample_size: u32,
+    sample_flags: SampleFlags,
+}
+
+impl FragmentDefaults {
+    /// Creates a new `FragmentDefaults` with the specified track ID and default values for other fields.
+    pub fn new(track_id: TrackId) -> Self {
+        FragmentDefaults {
+            track_id,
+            sample_description_index: 1,
+            sample_duration: 0,
+            sample_size: 0,
+            sample_flags: SampleFlags::default(),
+        }
+    }
+
+    /// Returns the track ID associated with these fragment defaults.
+    pub fn track_id(&self) -> TrackId {
+        self.track_id
+    }
+
+    /// Sets the sample description index for the fragment defaults.
+    pub fn with_sample_description_index(mut self, index: u32) -> Self {
+        self.sample_description_index = index;
+        self
+    }
+
+    /// Sets the sample duration for the fragment defaults.
+    pub fn with_sample_duration(mut self, duration: u32) -> Self {
+        self.sample_duration = duration;
+        self
+    }
+
+    /// Sets the sample size for the fragment defaults.
+    pub fn with_sample_size(mut self, size: u32) -> Self {
+        self.sample_size = size;
+        self
+    }
+
+    /// Sets the sample flags for the fragment defaults.
+    pub fn with_sample_flags(mut self, flags: SampleFlags) -> Self {
+        self.sample_flags = flags;
+        self
+    }
+}
 
 fn sample_delta(dts_ns: u64, duration: Duration, timescale: Timescale) -> Option<u32> {
     let start_ns = dts_ns;

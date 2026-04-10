@@ -7,11 +7,11 @@ use super::error::*;
 /// Physical data layout of an MP4 file, describing how sample data is
 /// organized into chunks across tracks.
 #[derive(Debug, Clone, Default)]
-pub struct Layout {
+pub struct DataLayout {
     chunks: Vec<Chunk>,
 }
 
-impl Layout {
+impl DataLayout {
     /// Creates a new empty layout.
     pub fn new() -> Self {
         Self::default()
@@ -44,11 +44,6 @@ impl Layout {
         });
 
         Ok(())
-    }
-
-    /// Returns a slice of all chunks in insertion order.
-    pub fn chunks(&self) -> &[Chunk] {
-        &self.chunks
     }
 
     /// Returns an iterator over chunks belonging to the given track.
@@ -84,6 +79,11 @@ impl Chunk {
         &self.sizes
     }
 
+    /// Returns the number of samples in this chunk.
+    pub fn num_samples(&self) -> usize {
+        self.sizes.len()
+    }
+
     /// Returns an iterator over the byte offset of each sample in this chunk,
     /// computed by accumulating sizes from `base_offset`.
     pub fn offsets(&self) -> impl Iterator<Item = u64> + '_ {
@@ -106,17 +106,18 @@ mod tests {
 
     #[test]
     fn new_layout_is_empty() {
-        let layout = Layout::new();
-        assert!(layout.chunks().is_empty());
+        let layout = DataLayout::new();
+        assert!(layout.chunks_for_track(track(1)).next().is_none());
     }
 
     #[test]
     fn add_chunk_single() {
-        let mut layout = Layout::new();
+        let mut layout = DataLayout::new();
         layout.add_chunk(track(1), 0, vec![100, 200, 300]).unwrap();
 
-        assert_eq!(layout.chunks().len(), 1);
-        let chunk = &layout.chunks()[0];
+        let chunks: Vec<_> = layout.chunks_for_track(track(1)).collect();
+        assert_eq!(chunks.len(), 1);
+        let chunk = chunks[0];
         assert_eq!(chunk.track_id(), track(1));
         assert_eq!(chunk.base_offset(), 0);
         assert_eq!(chunk.sizes(), &[100, 200, 300]);
@@ -124,16 +125,16 @@ mod tests {
 
     #[test]
     fn add_chunk_empty_sizes_returns_error() {
-        let mut layout = Layout::new();
+        let mut layout = DataLayout::new();
         assert!(layout.add_chunk(track(1), 0, vec![]).is_err());
-        assert!(layout.chunks().is_empty());
+        assert!(layout.chunks_for_track(track(1)).next().is_none());
     }
 
     #[test]
     fn offsets_computes_cumulative_offset() {
-        let mut layout = Layout::new();
+        let mut layout = DataLayout::new();
         layout.add_chunk(track(1), 1000, vec![50, 60, 70]).unwrap();
-        let chunk = &layout.chunks()[0];
+        let chunk = layout.chunks_for_track(track(1)).next().unwrap();
 
         let offsets: Vec<_> = chunk.offsets().collect();
         assert_eq!(offsets, vec![1000, 1050, 1110]);
@@ -141,13 +142,16 @@ mod tests {
 
     #[test]
     fn interleaved_tracks() {
-        let mut layout = Layout::new();
+        let mut layout = DataLayout::new();
         layout.add_chunk(track(1), 0, vec![100]).unwrap();
         layout.add_chunk(track(2), 100, vec![200]).unwrap();
         layout.add_chunk(track(1), 300, vec![150]).unwrap();
         layout.add_chunk(track(2), 450, vec![250]).unwrap();
 
-        assert_eq!(layout.chunks().len(), 4);
+        assert_eq!(
+            layout.chunks_for_track(track(1)).count() + layout.chunks_for_track(track(2)).count(),
+            4
+        );
 
         let t1: Vec<_> = layout.chunks_for_track(track(1)).collect();
         assert_eq!(t1.len(), 2);
@@ -162,7 +166,7 @@ mod tests {
 
     #[test]
     fn chunks_for_nonexistent_track() {
-        let mut layout = Layout::new();
+        let mut layout = DataLayout::new();
         layout.add_chunk(track(1), 0, vec![100]).unwrap();
 
         let chunks: Vec<_> = layout.chunks_for_track(track(99)).collect();
@@ -171,9 +175,9 @@ mod tests {
 
     #[test]
     fn single_sample_chunk() {
-        let mut layout = Layout::new();
+        let mut layout = DataLayout::new();
         layout.add_chunk(track(1), 500, vec![42]).unwrap();
-        let chunk = &layout.chunks()[0];
+        let chunk = layout.chunks_for_track(track(1)).next().unwrap();
 
         let offsets: Vec<_> = chunk.offsets().collect();
         assert_eq!(offsets, vec![500]);

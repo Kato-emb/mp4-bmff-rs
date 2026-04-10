@@ -9,15 +9,18 @@ mod repr;
 mod context;
 mod layout;
 
+pub use context::{
+    AudioSampleDescription, Context, EditSegment, FontSampleDescription, FragmentDefaults,
+    HintSampleDescription, MetadataSampleDescription, SampleDescription, SubtitleSampleDescription,
+    TextSampleDescription, TrackBuilder, VisualSampleDescription,
+};
+pub use layout::{Chunk, DataLayout};
+
 mod compose;
 mod decompose;
 
-pub use context::{
-    AudioSampleDescription, Context, EditSegment, FontSampleDescription, HintSampleDescription,
-    MetadataSampleDescription, SampleDescription, SubtitleSampleDescription, TextSampleDescription,
-    TrackBuilder, VisualSampleDescription,
-};
-pub use layout::{Chunk, Layout};
+pub use compose::build_moov;
+pub use decompose::parse_moov;
 
 /// A type alias for the result type used in multiplexing operations, where the error type is `MuxError`.
 pub type MuxError = error::Error;
@@ -35,5 +38,9 @@ impl TrackId {
 
     pub(super) fn as_u32(&self) -> u32 {
         self.0.get()
+    }
+
+    pub(super) fn as_nonzero(&self) -> NonZeroU32 {
+        self.0
     }
 }

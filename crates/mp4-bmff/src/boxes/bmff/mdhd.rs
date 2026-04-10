@@ -60,18 +60,17 @@ impl MdhdBox {
     /// `unsigned int(16) pre_defined = 0`
     const PRE_DEFINED: usize = 2;
 
-    /// Creates a new `MdhdBox` with the specified timescale, duration, and language.
+    /// Creates a new `MdhdBox` with the specified timescale and duration.
     ///
     /// The `version` field is automatically set based on the duration:
     /// if the duration exceeds the maximum value for 32 bits, version 1 is used to allow 64-bit duration.
-    pub fn new(timescale: NonZeroU32, duration: u64, language: LanguageCode) -> Self {
+    pub fn new(timescale: NonZeroU32, duration: u64) -> Self {
         let version = if duration > u64::from(u32::MAX) { 1 } else { 0 };
 
         MdhdBox {
             version,
             timescale: timescale.get(),
             duration,
-            language,
             ..Default::default()
         }
     }

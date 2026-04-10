@@ -16,8 +16,18 @@ use alloc::string::String;
 pub enum ErrorKind {
     /// An invalid input was provided. This can occur when the input data does not meet the expected format or constraints, such as when a sample's data length exceeds the maximum allowed size for a u32.
     InvalidInput,
+    /// The input data is in an invalid format. This can occur when the muxer encounters data that cannot be parsed or does not conform to the expected structure, such as when a sample description is missing required fields or contains unsupported values.
+    InvalidFormat,
     /// An arithmetic overflow occurred during calculations, such as when converting durations to ticks or calculating composition time offsets.
     Overflow,
+    /// An unsupported operation was attempted. This can occur when the muxer encounters a feature or format that it does not support.
+    Unsupported,
+    /// An error occurred during encoding. This can occur when the muxer fails to encode a sample or box.
+    Encode,
+    /// An error occurred during decoding. This can occur when the muxer fails to decode a sample or box.
+    Decode,
+    /// An error occurred in the BMFF (ISO Base Media File Format) processing. This can occur when the muxer encounters an issue specific to BMFF structures.
+    Bmff,
     /// Unknown error kind, used as a fallback for non-exhaustive matching. This variant should not be constructed directly and is intended to allow for future expansion of error kinds without breaking existing code.
     __Unknown,
 }
@@ -26,7 +36,12 @@ impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ErrorKind::InvalidInput => write!(f, "Invalid input error"),
+            ErrorKind::InvalidFormat => write!(f, "Invalid format error"),
             ErrorKind::Overflow => write!(f, "Overflow error"),
+            ErrorKind::Unsupported => write!(f, "Unsupported operation error"),
+            ErrorKind::Encode => write!(f, "Encoding error"),
+            ErrorKind::Decode => write!(f, "Decoding error"),
+            ErrorKind::Bmff => write!(f, "BMFF processing error"),
             _ => write!(f, "Unknown error"),
         }
     }
@@ -91,5 +106,11 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         self.source.as_ref().map(|e| e.as_ref() as _)
+    }
+}
+
+impl From<mp4_bmff::Error> for Error {
+    fn from(value: mp4_bmff::Error) -> Self {
+        Self::new(ErrorKind::Bmff).with_source(value)
     }
 }

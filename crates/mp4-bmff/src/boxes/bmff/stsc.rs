@@ -90,6 +90,51 @@ impl<'a> StscBoxView<'a> {
     pub fn entries(&self) -> StscEntryIter<'a> {
         StscEntryIter::new(self.entries)
     }
+
+    /// Returns the entry at the given index (0-based), or `None` if out of bounds.
+    pub fn get_entry(&self, index: usize) -> Option<StscEntry> {
+        if index >= self.entry_count as usize {
+            return None;
+        }
+        let offset = index * StscEntry::ENTRY_SIZE;
+        let bytes: &[u8; 12] = self.entries[offset..offset + 12].try_into().ok()?;
+        Some(StscEntry::from_bytes(bytes))
+    }
+
+    /// Returns an iterator over the number of samples in each chunk,
+    /// expanding the run-length encoded entries.
+    pub fn chunk_sample_counts(&self, num_chunks: usize) -> impl Iterator<Item = u32> + 'a {
+        let entries = self.entries;
+        let entry_count = self.entry_count as usize;
+        let mut entry_idx = 0usize;
+        let mut chunk_idx = 0usize;
+
+        core::iter::from_fn(move || {
+            if chunk_idx >= num_chunks || entry_idx >= entry_count {
+                return None;
+            }
+
+            let offset = entry_idx * StscEntry::ENTRY_SIZE;
+            let entry = StscEntry::from_bytes(entries[offset..offset + 12].try_into().ok()?);
+
+            chunk_idx += 1;
+
+            let run_end = if entry_idx + 1 < entry_count {
+                let next_offset = (entry_idx + 1) * StscEntry::ENTRY_SIZE;
+                let next =
+                    StscEntry::from_bytes(entries[next_offset..next_offset + 12].try_into().ok()?);
+                (next.first_chunk - 1) as usize
+            } else {
+                num_chunks
+            };
+
+            if chunk_idx >= run_end {
+                entry_idx += 1;
+            }
+
+            Some(entry.samples_per_chunk)
+        })
+    }
 }
 
 impl BoxCodec for StscBoxView<'_> {

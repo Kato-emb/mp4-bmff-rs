@@ -15,6 +15,17 @@ pub(super) struct Movie {
     pub tracks: Vec<Track>,
 }
 
+impl Movie {
+    pub(super) fn next_track_id(&self) -> Option<TrackId> {
+        let next_id = match self.tracks.iter().map(|t| t.id).max() {
+            Some(max_id) => max_id.as_u32().checked_add(1),
+            None => Some(1),
+        };
+
+        next_id.and_then(TrackId::new)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct Track {
     pub id: TrackId,
@@ -25,6 +36,22 @@ pub(super) struct Track {
     pub descriptions: Vec<SampleDescription>,
     pub samples: Vec<Sample>,
     pub edit_list: Option<Vec<Edit>>,
+}
+
+impl Track {
+    pub(super) fn media_duration(&self) -> u64 {
+        self.samples.iter().map(|s| u64::from(s.delta)).sum()
+    }
+
+    pub(super) fn edit_duration(&self) -> Option<u64> {
+        self.edit_list
+            .as_ref()
+            .map(|edits| edits.iter().map(|e| e.segment_duration).sum())
+    }
+
+    pub(super) fn primary_description(&self) -> Option<&SampleDescription> {
+        self.descriptions.get(0)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -42,10 +69,13 @@ pub(super) struct Edit {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Timescale(pub NonZeroU32);
+pub(super) struct Timescale(pub(super) NonZeroU32);
 
 impl Timescale {
-    #[cfg(feature = "mux")]
+    pub(super) fn new(timescale: u32) -> Option<Self> {
+        NonZeroU32::new(timescale).map(Self)
+    }
+
     pub(super) fn nanos_to_ticks(&self, nanos: u64) -> Option<u64> {
         let ts = self.as_u64();
         let secs = nanos.checked_div(1_000_000_000)?;
@@ -55,7 +85,6 @@ impl Timescale {
             .checked_add(sub_nanos.checked_mul(ts)?.checked_div(1_000_000_000)?)
     }
 
-    #[cfg(feature = "mux")]
     pub(super) fn duration_to_ticks(&self, duration: Duration) -> Option<u64> {
         let ts = self.as_u64();
         let secs = duration.as_secs();
@@ -63,6 +92,17 @@ impl Timescale {
 
         secs.checked_mul(ts)?
             .checked_add(sub_nanos.checked_mul(ts)?.checked_div(1_000_000_000)?)
+    }
+
+    pub(super) fn rescale_ticks(&self, ticks: u64, target: Timescale) -> Option<u64> {
+        let source_ts = u128::from(self.as_u64());
+        let target_ts = u128::from(target.as_u64());
+
+        let result = u128::from(ticks)
+            .checked_mul(target_ts)?
+            .checked_div(source_ts)?;
+
+        u64::try_from(result).ok()
     }
 
     pub(super) fn as_u32(&self) -> u32 {
