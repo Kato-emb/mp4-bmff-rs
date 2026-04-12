@@ -22,10 +22,6 @@ pub enum ErrorKind {
     Overflow,
     /// An unsupported operation was attempted. This can occur when the muxer encounters a feature or format that it does not support.
     Unsupported,
-    /// An error occurred during encoding. This can occur when the muxer fails to encode a sample or box.
-    Encode,
-    /// An error occurred during decoding. This can occur when the muxer fails to decode a sample or box.
-    Decode,
     /// An error occurred in the BMFF (ISO Base Media File Format) processing. This can occur when the muxer encounters an issue specific to BMFF structures.
     Bmff,
     /// Unknown error kind, used as a fallback for non-exhaustive matching. This variant should not be constructed directly and is intended to allow for future expansion of error kinds without breaking existing code.
@@ -39,8 +35,6 @@ impl fmt::Display for ErrorKind {
             ErrorKind::InvalidFormat => write!(f, "Invalid format error"),
             ErrorKind::Overflow => write!(f, "Overflow error"),
             ErrorKind::Unsupported => write!(f, "Unsupported operation error"),
-            ErrorKind::Encode => write!(f, "Encoding error"),
-            ErrorKind::Decode => write!(f, "Decoding error"),
             ErrorKind::Bmff => write!(f, "BMFF processing error"),
             _ => write!(f, "Unknown error"),
         }

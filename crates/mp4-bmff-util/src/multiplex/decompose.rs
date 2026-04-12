@@ -2,97 +2,95 @@ use mp4_bmff::BoxType;
 use mp4_bmff::boxes::bmff::*;
 use mp4_bmff::types::FourCC;
 
-use crate::multiplex::AudioSampleDescription;
-use crate::multiplex::SampleDescription;
-use crate::multiplex::TrackId;
-use crate::multiplex::VisualSampleDescription;
-
-use super::Context;
-use super::DataLayout;
-use super::FragmentDefaults;
-
 use super::Result;
-use super::error::*;
-use super::repr::*;
+use crate::multiplex::error::{Error, ErrorKind};
 
-/// Parses the given `moov` box and constructs the corresponding `Context` and `Layout`.
-pub fn parse_moov(moov: &MoovBoxView<'_>) -> Result<(Context, DataLayout, Vec<FragmentDefaults>)> {
+use crate::multiplex::container::{
+    AudioSampleDescription, DataLayout, Movie, SampleDescription, Timeline, Timescale, Track,
+    TrackId, VisualSampleDescription,
+};
+
+pub fn parse_movie(moov: &MoovBoxView<'_>) -> Result<Movie> {
     let mvhd = moov.mvhd()?;
+    let timescale = Timescale::new(mvhd.timescale).ok_or(
+        Error::new(ErrorKind::InvalidFormat)
+            .with_message("Movie timescale must be a non-zero value"),
+    )?;
 
-    let mut context = Context::new(mvhd.timescale)?;
-    let mut layout = DataLayout::new();
+    let mvex = moov.mvex()?;
 
-    for trak in moov.traks() {
-        let trak = trak?;
+    let tracks = moov
+        .traks()
+        .map(|trak| {
+            let trak = trak?;
+            let track_id = trak.tkhd()?.track_id;
 
-        // tkhd
-        let tkhd = trak.tkhd()?;
-        let track_id = TrackId::new(tkhd.track_id).ok_or(
-            Error::new(ErrorKind::InvalidFormat)
-                .with_message(format!("Invalid track ID in tkhd box: {}", tkhd.track_id)),
-        )?;
+            let trex = mvex.as_ref().and_then(|mvex| {
+                mvex.trexs().find_map(|trex| {
+                    if trex.as_ref().is_ok_and(|trex| trex.track_id == track_id) {
+                        trex.ok()
+                    } else {
+                        None
+                    }
+                })
+            });
 
-        // mdia → mdhd, hdlr, minf → stbl
-        let mdia = trak.mdia()?;
-        let mdhd = mdia.mdhd()?;
+            parse_track(&trak, trex.as_ref())
+        })
+        .collect::<Result<Vec<Track>>>()?;
 
-        let timescale = Timescale::new(mdhd.timescale).ok_or(
-            Error::new(ErrorKind::InvalidFormat).with_message(format!(
-                "Invalid timescale value in mdhd box: {}",
-                mdhd.timescale
-            )),
-        )?;
+    Ok(Movie { timescale, tracks })
+}
 
-        let hdlr = mdia.hdlr()?;
-        let minf = mdia.minf()?;
-        let stbl = minf.stbl()?;
+fn parse_track(trak: &TrakBoxView<'_>, trex: Option<&TrexBox>) -> Result<Track> {
+    let tkhd = trak.tkhd()?;
+    let track_id = TrackId::new(tkhd.track_id)
+        .ok_or(Error::new(ErrorKind::InvalidFormat).with_message("Invalid track ID"))?;
 
-        // stbl の子ボックスを一度だけ取得
-        let stsd = stbl.stsd()?;
+    let mdia = trak.mdia()?;
+    let mdhd = mdia.mdhd()?;
+    let timescale = Timescale::new(mdhd.timescale).ok_or(
+        Error::new(ErrorKind::InvalidFormat)
+            .with_message("Track timescale must be a non-zero value"),
+    )?;
+    let minf = mdia.minf()?;
+    let hdlr = mdia.hdlr()?;
+    let stbl = minf.stbl()?;
 
-        // descriptions (stsd + hdlr)
-        let descriptions = parse_sample_descriptions(hdlr.handler_type, &stsd)?;
+    let stsd = stbl.stsd()?;
+    let descriptions = parse_sample_descriptions(hdlr.handler_type, &stsd)?;
 
-        // edit list (edts/elst)
-        let edit_list = match trak.edts()? {
-            Some(edts) => parse_edit_list(&edts)?,
-            None => None,
-        };
+    let timeline = parse_timeline(&stbl)?;
 
-        // samples (stts + ctts + stss)
-        let samples = parse_samples(&stbl)?;
-
-        extend_layout(&mut layout, track_id, &stbl)?;
-
-        context.movie.tracks.push(Track {
-            id: track_id,
-            timescale,
-            language: mdhd.language,
-            matrix: tkhd.matrix,
-            alternate_group: tkhd.alternate_group,
-            descriptions,
-            samples,
-            edit_list,
-        });
-    }
-
-    let defaults = if let Some(mvex) = moov.mvex()? {
-        mvex.trexs()
-            .map(|trex| parse_sample_defaults(&trex?))
-            .collect::<Result<Vec<_>>>()?
+    let data_layouts = if trex.is_none() {
+        alloc::vec![parse_data_layout(&stbl)?]
     } else {
         Vec::new()
     };
 
-    Ok((context, layout, defaults))
-}
+    let edit_list = match trak.edts()? {
+        Some(edts) => {
+            if let Some(elst) = edts.elst()? {
+                let entries = elst.entries()?;
+                Some(entries.collect())
+            } else {
+                None
+            }
+        }
+        None => None,
+    };
 
-pub fn parse_moof(
-    moof: &MoofBoxView<'_>,
-    moof_offset: u64,
-    defaults: &[FragmentDefaults],
-) -> Result<(Vec<Sample>, DataLayout)> {
-    todo!()
+    Ok(Track {
+        track_id,
+        timescale,
+        language: mdhd.language,
+        matrix: tkhd.matrix,
+        alternate_group: tkhd.alternate_group,
+        descriptions,
+        timeline,
+        data_layouts,
+        edit_list,
+    })
 }
 
 fn parse_sample_descriptions(
@@ -203,117 +201,231 @@ fn parse_audio_descriptions(stsd: &StsdBoxView<'_>) -> Result<Vec<SampleDescript
     Ok(descriptions)
 }
 
-fn parse_samples(stbl: &StblBoxView<'_>) -> Result<Vec<Sample>> {
-    let stts = stbl.stts()?;
-    let ctts = stbl.ctts()?;
-    let stss = stbl.stss()?;
+fn parse_timeline(stbl: &StblBoxView<'_>) -> Result<Timeline> {
+    let stts_entries = stbl.stts()?.entries().collect();
+    let ctts_entries = stbl.ctts()?.map(|ctts| ctts.entries().collect());
+    let stss_entries = stbl.stss()?.map(|stss| stss.entries().collect());
+    let sdtp_entries = stbl.sdtp()?.map(|sdtp| sdtp.entries().collect());
 
-    let all_sync = stss.is_none();
-    let mut sync_iter = stss.into_iter().flat_map(|s| s.entries()).peekable();
-    let mut ctts_entries = ctts.as_ref().map(|ctts| ctts.composition_time_offsets());
-
-    let mut samples = Vec::new();
-    for (i, delta) in stts.sample_deltas().enumerate() {
-        let sample_number = i as u32 + 1;
-        let cto = ctts_entries
-            .as_mut()
-            .map(|e| e.next().unwrap_or(0))
-            .unwrap_or(0);
-
-        // stss は昇順なので、カーソルを進めるだけで判定できる
-        let is_sync = if all_sync {
-            true
-        } else {
-            if sync_iter.peek().map(|e| e.sample_number) == Some(sample_number) {
-                sync_iter.next();
-                true
-            } else {
-                false
-            }
-        };
-
-        samples.push(Sample {
-            delta,
-            is_sync,
-            composition_time_offset: i64::from(cto),
-        });
-    }
-
-    Ok(samples)
+    Ok(Timeline {
+        stts_entries,
+        ctts_entries,
+        stss_entries,
+        sdtp_entries,
+    })
 }
 
-fn parse_edit_list(edts: &EdtsBoxView<'_>) -> Result<Option<Vec<Edit>>> {
-    let Some(elst) = edts.elst()? else {
-        return Ok(None);
+fn parse_data_layout(stbl: &StblBoxView<'_>) -> Result<DataLayout> {
+    let sample_sizes = if let Some(stsz) = stbl.stsz()? {
+        stsz.entries().map(|e| e.entry_size).collect()
+    } else if let Some(stz2) = stbl.stz2()? {
+        stz2.entries().map(|e| u32::from(e.entry_size)).collect()
+    } else {
+        return Err(Error::new(ErrorKind::InvalidFormat)
+            .with_message("Track must contain either stsz or stz2 box for sample sizes"));
     };
 
-    let edits = elst
-        .entries()?
-        .map(|e| Edit {
-            segment_duration: e.segment_duration,
-            media_time: e.media_time,
-            media_rate: e.media_rate,
-        })
-        .collect();
+    let stsc_entries = stbl.stsc()?.entries().collect();
 
-    Ok(Some(edits))
-}
-
-fn parse_chunk_offsets(stbl: &StblBoxView<'_>) -> Result<Vec<u64>> {
-    if let Some(stco) = stbl.stco()? {
-        Ok(stco.entries().map(|e| u64::from(e.chunk_offset)).collect())
+    let chunk_offsets = if let Some(stco) = stbl.stco()? {
+        stco.entries().map(|e| u64::from(e.chunk_offset)).collect()
     } else if let Some(co64) = stbl.co64()? {
-        Ok(co64.entries().map(|e| e.chunk_offset).collect())
+        co64.entries().map(|e| e.chunk_offset).collect()
     } else {
-        Err(Error::new(ErrorKind::InvalidFormat).with_message("Missing stco or co64 box"))
-    }
+        return Err(Error::new(ErrorKind::InvalidFormat)
+            .with_message("Track must contain either stco or co64 box for chunk offsets"));
+    };
+
+    Ok(DataLayout {
+        sample_sizes,
+        stsc_entries,
+        chunk_offsets,
+    })
 }
 
-fn parse_sample_sizes(stbl: &StblBoxView<'_>) -> Result<Vec<u32>> {
-    if let Some(stsz) = stbl.stsz()? {
-        if stsz.sample_size != 0 {
-            Ok(alloc::vec![stsz.sample_size; stsz.sample_count as usize])
+fn parse_fragment(
+    traf: &TrafBoxView<'_>,
+    moof_offset: u64,
+    trexs: &[TrexBox],
+) -> Result<(TrackId, Timeline, DataLayout)> {
+    let tfhd = traf.tfhd()?;
+
+    let track_id = TrackId::new(tfhd.track_id)
+        .ok_or(Error::new(ErrorKind::InvalidFormat).with_message("Invalid track ID in tfhd"))?;
+
+    let trex = trexs
+        .iter()
+        .find(|trex| trex.track_id == tfhd.track_id)
+        .ok_or(Error::new(ErrorKind::InvalidFormat).with_message(format!(
+            "No matching trex box found for track ID {}",
+            tfhd.track_id
+        )))?;
+
+    let tfdt = traf.tfdt()?;
+
+    let _base_media_decode_time = tfdt
+        .as_ref()
+        .map(|tfdt| tfdt.base_media_decode_time)
+        .unwrap_or(0);
+
+    let base_data_offset = if tfhd.flags.contains(TfhdFlags::DEFAULT_BASE_IS_MOOF) {
+        moof_offset
+    } else {
+        tfhd.base_data_offset
+            .ok_or(Error::new(ErrorKind::InvalidFormat).with_message(
+                "tfhd must contain base_data_offset if default_base_is_moof flag is not set",
+            ))?
+    };
+
+    let mut all_stts: Vec<SttsEntry> = Vec::new();
+    let mut all_ctts: Option<Vec<CttsEntry>> = None;
+    let mut all_stss: Option<Vec<StssEntry>> = None;
+    // let mut all_sdtp: Option<Vec<SdtpEntry>> = None;
+
+    let mut sample_sizes = Vec::new();
+    let mut stsc_entries = Vec::new();
+    let mut chunk_offsets = Vec::new();
+
+    let mut sample_index_base: u32 = 0;
+    let mut running_data_offset = base_data_offset;
+    let mut has_any_non_sync = false;
+
+    for trun in traf.truns() {
+        let trun = trun?;
+
+        let trun_data_offset = if let Some(offset) = trun.data_offset {
+            (base_data_offset as i64).saturating_add(offset as i64) as u64
         } else {
-            Ok(stsz.entries().map(|e| e.entry_size).collect())
+            running_data_offset
+        };
+
+        chunk_offsets.push(trun_data_offset);
+        stsc_entries.push(StscEntry {
+            first_chunk: chunk_offsets.len() as u32,
+            samples_per_chunk: trun.sample_count,
+            sample_description_index: tfhd
+                .sample_description_index
+                .unwrap_or(trex.default_sample_description_index),
+        });
+
+        let mut chunk_byte_size: u64 = 0;
+
+        for (i, entry) in trun.entries().enumerate() {
+            let entry = entry?;
+
+            let duration = entry
+                .duration
+                .or(tfhd.default_sample_duration)
+                .unwrap_or(trex.default_sample_duration);
+
+            let sample_size = entry
+                .size
+                .or(tfhd.default_sample_size)
+                .unwrap_or(trex.default_sample_size);
+
+            let flags = entry
+                .flags
+                .or_else(|| {
+                    if i == 0 {
+                        trun.first_sample_flags
+                    } else {
+                        None
+                    }
+                })
+                .or(tfhd.default_sample_flags)
+                .unwrap_or(trex.default_sample_flags);
+            let cts_offset = entry.composition_time_offset;
+
+            accumulate_stts(&mut all_stts, duration);
+
+            if let Some(offset) = cts_offset {
+                let ctts = all_ctts.get_or_insert_with(|| {
+                    // 初めてcttsが必要になった時点で、
+                    // 先行サンプル分（sample_index_base + i個）をoffset=0で埋める
+                    let preceding = sample_index_base as usize + i;
+                    if preceding > 0 {
+                        vec![CttsEntry {
+                            sample_count: preceding as u32,
+                            sample_offset: 0,
+                        }]
+                    } else {
+                        Vec::new()
+                    }
+                });
+                ctts.push(CttsEntry {
+                    sample_count: 1,
+                    sample_offset: i32::try_from(offset)
+                        .map_err(|e| Error::new(ErrorKind::Overflow).with_source(e))?,
+                });
+            } else if all_ctts.is_some() {
+                // cttsが既に存在するなら、offset=0で埋める
+                all_ctts.as_mut().unwrap().push(CttsEntry {
+                    sample_count: 1,
+                    sample_offset: 0,
+                });
+            }
+
+            let is_sync = flags.is_sync();
+
+            if !is_sync {
+                has_any_non_sync = true;
+            }
+
+            if is_sync {
+                let global_index = sample_index_base + i as u32 + 1; // stss is 1-based
+                all_stss.get_or_insert_with(Vec::new).push(StssEntry {
+                    sample_number: global_index,
+                });
+            }
+
+            // TODO: sdtp flags parsing
+
+            sample_sizes.push(sample_size);
+            chunk_byte_size = chunk_byte_size.checked_add(u64::from(sample_size)).ok_or(
+                Error::new(ErrorKind::Overflow).with_message("Chunk byte size exceeds u64 maximum"),
+            )?;
         }
-    } else if let Some(stz2) = stbl.stz2()? {
-        Ok(stz2.entries().map(|e| u32::from(e.entry_size)).collect())
+
+        running_data_offset = running_data_offset.checked_add(chunk_byte_size).ok_or(
+            Error::new(ErrorKind::Overflow).with_message(
+                "Running data offset exceeds u64 maximum after adding chunk byte size",
+            ),
+        )?;
+        sample_index_base = sample_index_base.checked_add(trun.sample_count).ok_or(
+            Error::new(ErrorKind::Overflow).with_message(
+                "Sample index base exceeds u32 maximum after adding trun sample count",
+            ),
+        )?;
+    }
+
+    if !has_any_non_sync {
+        // If all samples in the chunk are sync samples, we can omit stss entries for this chunk
+        all_stss = None;
+    }
+
+    let timeline = Timeline {
+        stts_entries: all_stts,
+        ctts_entries: all_ctts,
+        stss_entries: all_stss,
+        sdtp_entries: None, // TODO
+    };
+
+    let data_layout = DataLayout {
+        sample_sizes,
+        stsc_entries,
+        chunk_offsets,
+    };
+
+    Ok((track_id, timeline, data_layout))
+}
+
+fn accumulate_stts(entries: &mut Vec<SttsEntry>, duration: u32) {
+    if let Some(last) = entries.last_mut().filter(|e| e.sample_delta == duration) {
+        last.sample_count += 1;
     } else {
-        Err(Error::new(ErrorKind::InvalidFormat).with_message("Missing stsz or stz2 box"))
+        entries.push(SttsEntry {
+            sample_count: 1,
+            sample_delta: duration,
+        });
     }
-}
-
-fn parse_samples_per_chunk(stbl: &StblBoxView<'_>, chunk_count: usize) -> Result<Vec<u32>> {
-    let stsc = stbl.stsc()?;
-    Ok(stsc.chunk_sample_counts(chunk_count).collect())
-}
-
-fn parse_sample_defaults(trex: &TrexBox) -> Result<FragmentDefaults> {
-    let track_id = TrackId::new(trex.track_id).ok_or(
-        Error::new(ErrorKind::InvalidFormat)
-            .with_message(format!("Invalid track ID in trex box: {}", trex.track_id)),
-    )?;
-
-    Ok(FragmentDefaults::new(track_id)
-        .with_sample_description_index(trex.default_sample_description_index)
-        .with_sample_duration(trex.default_sample_duration)
-        .with_sample_size(trex.default_sample_size)
-        .with_sample_flags(trex.default_sample_flags))
-}
-
-fn extend_layout(layout: &mut DataLayout, track_id: TrackId, stbl: &StblBoxView<'_>) -> Result<()> {
-    // layout (stsc + stco/co64 + stsz/stz2)
-    let chunk_offsets = parse_chunk_offsets(stbl)?;
-    let sample_sizes = parse_sample_sizes(stbl)?;
-    let samples_per_chunk = parse_samples_per_chunk(stbl, chunk_offsets.len())?;
-
-    let mut cursor = 0usize;
-    for (&offset, count) in chunk_offsets.iter().zip(samples_per_chunk) {
-        let count = count as usize;
-        let sizes = sample_sizes[cursor..cursor + count].to_vec();
-        layout.add_chunk(track_id, offset, sizes)?;
-        cursor += count;
-    }
-
-    Ok(())
 }
