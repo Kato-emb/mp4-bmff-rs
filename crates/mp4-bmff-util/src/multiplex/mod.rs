@@ -6,7 +6,7 @@ pub mod layout;
 mod compose;
 mod decompose;
 
-pub use decompose::parse_movie;
+pub use decompose::{decompose_moov, decompose_traf};
 
 mod demux;
 mod mux;

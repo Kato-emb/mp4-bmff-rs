@@ -10,39 +10,25 @@ use crate::multiplex::container::{
     TrackId, VisualSampleDescription,
 };
 
-pub fn parse_movie(moov: &MoovBoxView<'_>) -> Result<Movie> {
+pub fn decompose_moov(moov: &MoovBoxView<'_>) -> Result<Movie> {
     let mvhd = moov.mvhd()?;
     let timescale = Timescale::new(mvhd.timescale).ok_or(
         Error::new(ErrorKind::InvalidFormat)
             .with_message("Movie timescale must be a non-zero value"),
     )?;
 
-    let mvex = moov.mvex()?;
-
     let tracks = moov
         .traks()
         .map(|trak| {
             let trak = trak?;
-            let track_id = trak.tkhd()?.track_id;
-
-            let trex = mvex.as_ref().and_then(|mvex| {
-                mvex.trexs().find_map(|trex| {
-                    if trex.as_ref().is_ok_and(|trex| trex.track_id == track_id) {
-                        trex.ok()
-                    } else {
-                        None
-                    }
-                })
-            });
-
-            parse_track(&trak, trex.as_ref())
+            decompose_trak(&trak)
         })
         .collect::<Result<Vec<Track>>>()?;
 
     Ok(Movie { timescale, tracks })
 }
 
-fn parse_track(trak: &TrakBoxView<'_>, trex: Option<&TrexBox>) -> Result<Track> {
+fn decompose_trak(trak: &TrakBoxView<'_>) -> Result<Track> {
     let tkhd = trak.tkhd()?;
     let track_id = TrackId::new(tkhd.track_id)
         .ok_or(Error::new(ErrorKind::InvalidFormat).with_message("Invalid track ID"))?;
@@ -57,26 +43,34 @@ fn parse_track(trak: &TrakBoxView<'_>, trex: Option<&TrexBox>) -> Result<Track> 
     let hdlr = mdia.hdlr()?;
     let stbl = minf.stbl()?;
 
+    // Parse sample descriptions
     let stsd = stbl.stsd()?;
     let descriptions = parse_sample_descriptions(hdlr.handler_type, &stsd)?;
 
-    let timeline = parse_timeline(&stbl)?;
-
-    let data_layouts = if trex.is_none() {
-        alloc::vec![parse_data_layout(&stbl)?]
+    // Parse timeline information
+    let stts = stbl.stts()?;
+    let timeline = if stts.entry_count > 0 {
+        let ctts = stbl.ctts()?;
+        let stss = stbl.stss()?;
+        let sdtp = stbl.sdtp()?;
+        parse_timeline(&stts, ctts.as_ref(), stss.as_ref(), sdtp.as_ref())?
     } else {
-        Vec::new()
+        Timeline::default() // No samples, so empty timeline
     };
 
+    // Parse data layout
+    let sample_size = stbl.sample_size()?;
+    let data_layout = if sample_size.sample_count() != 0 {
+        let stsc = stbl.stsc()?;
+        let chunk_offset = stbl.chunk_offset()?;
+        parse_data_layout(&sample_size, &stsc, &chunk_offset)?
+    } else {
+        DataLayout::default() // No samples, so no data layout needed
+    };
+
+    // Parse edit list if present
     let edit_list = match trak.edts()? {
-        Some(edts) => {
-            if let Some(elst) = edts.elst()? {
-                let entries = elst.entries()?;
-                Some(entries.collect())
-            } else {
-                None
-            }
-        }
+        Some(edts) => parse_edit_list(&edts)?,
         None => None,
     };
 
@@ -88,7 +82,7 @@ fn parse_track(trak: &TrakBoxView<'_>, trex: Option<&TrexBox>) -> Result<Track> 
         alternate_group: tkhd.alternate_group,
         descriptions,
         timeline,
-        data_layouts,
+        data_layout,
         edit_list,
     })
 }
@@ -100,10 +94,9 @@ fn parse_sample_descriptions(
     match handler_type.as_ascii() {
         Some("vide") => parse_visual_descriptions(stsd),
         Some("soun") => parse_audio_descriptions(stsd),
-        _ => Err(Error::new(ErrorKind::Unsupported).with_message(format!(
-            "Unsupported handler type: {:?}",
-            handler_type.as_ascii()
-        ))),
+        Some(_) => Ok(vec![SampleDescription::Other(handler_type)]),
+        None => Err(Error::new(ErrorKind::InvalidFormat)
+            .with_message("Handler type is not a valid ASCII FourCC")),
     }
 }
 
@@ -201,11 +194,16 @@ fn parse_audio_descriptions(stsd: &StsdBoxView<'_>) -> Result<Vec<SampleDescript
     Ok(descriptions)
 }
 
-fn parse_timeline(stbl: &StblBoxView<'_>) -> Result<Timeline> {
-    let stts_entries = stbl.stts()?.entries().collect();
-    let ctts_entries = stbl.ctts()?.map(|ctts| ctts.entries().collect());
-    let stss_entries = stbl.stss()?.map(|stss| stss.entries().collect());
-    let sdtp_entries = stbl.sdtp()?.map(|sdtp| sdtp.entries().collect());
+fn parse_timeline(
+    stts: &SttsBoxView<'_>,
+    ctts: Option<&CttsBoxView<'_>>,
+    stss: Option<&StssBoxView<'_>>,
+    sdtp: Option<&SdtpBoxView<'_>>,
+) -> Result<Timeline> {
+    let stts_entries = stts.entries().collect();
+    let ctts_entries = ctts.map(|ctts| ctts.entries().collect());
+    let stss_entries = stss.map(|stss| stss.entries().collect());
+    let sdtp_entries = sdtp.map(|sdtp| sdtp.entries().collect());
 
     Ok(Timeline {
         stts_entries,
@@ -215,25 +213,21 @@ fn parse_timeline(stbl: &StblBoxView<'_>) -> Result<Timeline> {
     })
 }
 
-fn parse_data_layout(stbl: &StblBoxView<'_>) -> Result<DataLayout> {
-    let sample_sizes = if let Some(stsz) = stbl.stsz()? {
-        stsz.entries().map(|e| e.entry_size).collect()
-    } else if let Some(stz2) = stbl.stz2()? {
-        stz2.entries().map(|e| u32::from(e.entry_size)).collect()
-    } else {
-        return Err(Error::new(ErrorKind::InvalidFormat)
-            .with_message("Track must contain either stsz or stz2 box for sample sizes"));
+fn parse_data_layout(
+    sample_size: &SampleSizeView<'_>,
+    stsc: &StscBoxView<'_>,
+    chunk_offset: &ChunkOffsetView<'_>,
+) -> Result<DataLayout> {
+    let sample_sizes = match sample_size {
+        SampleSizeView::Stsz(stsz) => stsz.entries().map(|e| e.entry_size).collect(),
+        SampleSizeView::Stz2(stz2) => stz2.entries().map(|e| u32::from(e.entry_size)).collect(),
     };
 
-    let stsc_entries = stbl.stsc()?.entries().collect();
+    let stsc_entries = stsc.entries().collect();
 
-    let chunk_offsets = if let Some(stco) = stbl.stco()? {
-        stco.entries().map(|e| u64::from(e.chunk_offset)).collect()
-    } else if let Some(co64) = stbl.co64()? {
-        co64.entries().map(|e| e.chunk_offset).collect()
-    } else {
-        return Err(Error::new(ErrorKind::InvalidFormat)
-            .with_message("Track must contain either stco or co64 box for chunk offsets"));
+    let chunk_offsets = match chunk_offset {
+        ChunkOffsetView::Stco(stco) => stco.entries().map(|e| u64::from(e.chunk_offset)).collect(),
+        ChunkOffsetView::Co64(co64) => co64.entries().map(|e| e.chunk_offset).collect(),
     };
 
     Ok(DataLayout {
@@ -243,7 +237,16 @@ fn parse_data_layout(stbl: &StblBoxView<'_>) -> Result<DataLayout> {
     })
 }
 
-fn parse_fragment(
+fn parse_edit_list(edts: &EdtsBoxView<'_>) -> Result<Option<Vec<ElstEntry>>> {
+    if let Some(elst) = edts.elst()? {
+        let entries = elst.entries()?;
+        Ok(Some(entries.collect()))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn decompose_traf(
     traf: &TrafBoxView<'_>,
     moof_offset: u64,
     trexs: &[TrexBox],
@@ -253,21 +256,6 @@ fn parse_fragment(
     let track_id = TrackId::new(tfhd.track_id)
         .ok_or(Error::new(ErrorKind::InvalidFormat).with_message("Invalid track ID in tfhd"))?;
 
-    let trex = trexs
-        .iter()
-        .find(|trex| trex.track_id == tfhd.track_id)
-        .ok_or(Error::new(ErrorKind::InvalidFormat).with_message(format!(
-            "No matching trex box found for track ID {}",
-            tfhd.track_id
-        )))?;
-
-    let tfdt = traf.tfdt()?;
-
-    let _base_media_decode_time = tfdt
-        .as_ref()
-        .map(|tfdt| tfdt.base_media_decode_time)
-        .unwrap_or(0);
-
     let base_data_offset = if tfhd.flags.contains(TfhdFlags::DEFAULT_BASE_IS_MOOF) {
         moof_offset
     } else {
@@ -276,6 +264,21 @@ fn parse_fragment(
                 "tfhd must contain base_data_offset if default_base_is_moof flag is not set",
             ))?
     };
+
+    // parse tfdt
+    let tfdt = traf.tfdt()?;
+    let _base_media_decode_time = tfdt
+        .as_ref()
+        .map(|tfdt| tfdt.base_media_decode_time)
+        .unwrap_or(0);
+
+    let trex = trexs
+        .iter()
+        .find(|trex| trex.track_id == tfhd.track_id)
+        .ok_or(Error::new(ErrorKind::InvalidFormat).with_message(format!(
+            "No matching trex box found for track ID {}",
+            tfhd.track_id
+        )))?;
 
     let mut all_stts: Vec<SttsEntry> = Vec::new();
     let mut all_ctts: Option<Vec<CttsEntry>> = None;

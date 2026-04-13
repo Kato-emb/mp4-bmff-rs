@@ -1,21 +1,10 @@
-use alloc::vec::Vec;
-
 use mp4_bmff::boxes::bmff::{CttsEntry, SdtpEntry, StssEntry, StszEntry, SttsEntry};
 
 #[derive(Debug, Clone, Default)]
-pub struct Timeline {
+pub struct MediaSpec {
     pub(crate) stts_entries: Vec<SttsEntry>,
-    pub(crate) sample_sizes: Vec<StszEntry>,
+    pub(crate) stsz_entries: Vec<StszEntry>,
     pub(crate) ctts_entries: Option<Vec<CttsEntry>>,
     pub(crate) stss_entries: Option<Vec<StssEntry>>,
     pub(crate) sdtp_entries: Option<Vec<SdtpEntry>>,
-}
-
-impl Timeline {
-    pub(crate) fn media_duration(&self) -> u64 {
-        self.stts_entries
-            .iter()
-            .map(|entry| u64::from(entry.sample_count) * u64::from(entry.sample_delta))
-            .sum::<u64>()
-    }
 }

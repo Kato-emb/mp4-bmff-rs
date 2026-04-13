@@ -213,7 +213,7 @@ pub use minf::MinfBoxView;
 pub use moof::MoofBoxView;
 pub use moov::MoovBoxView;
 pub use mvex::MvexBoxView;
-pub use stbl::StblBoxView;
+pub use stbl::{ChunkOffsetView, SampleSizeView, StblBoxView};
 pub use traf::TrafBoxView;
 pub use trak::TrakBoxView;
 pub use tref::TrefBoxView;

@@ -4,6 +4,7 @@ use core::time::Duration;
 mod data_layout;
 mod description;
 mod movie;
+mod spec;
 mod timeline;
 mod track;
 

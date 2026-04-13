@@ -1,10 +1,5 @@
-use mp4_bmff::boxes::bmff::MoovBoxView;
-
 use super::Timescale;
 use super::Track;
-
-use crate::multiplex::Result;
-use crate::multiplex::decompose;
 
 #[derive(Debug, Clone)]
 pub struct Movie {
@@ -13,8 +8,8 @@ pub struct Movie {
 }
 
 impl Movie {
-    pub fn from_moov(moov: &MoovBoxView<'_>) -> Result<Self> {
-        let movie = decompose::parse_movie(moov)?;
-        Ok(movie)
+    /// Returns the tracks contained in this movie.
+    pub fn tracks(&self) -> &[Track] {
+        &self.tracks
     }
 }

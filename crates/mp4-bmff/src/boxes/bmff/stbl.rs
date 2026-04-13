@@ -325,6 +325,38 @@ impl<'a> StblBoxView<'a> {
             Err(e) => Some(Err(e)),
         })
     }
+
+    /// Returns a reference to the sample size information for this sample table, which may be either a `stsz` or `stz2` box.
+    pub fn sample_size(&self) -> Result<SampleSizeView<'a>> {
+        if let Some(stsz) = self.stsz()? {
+            Ok(SampleSizeView::Stsz(stsz))
+        } else if let Some(stz2) = self.stz2()? {
+            Ok(SampleSizeView::Stz2(stz2))
+        } else {
+            Err(Error::in_box(
+                ErrorKind::BoxMissing {
+                    required: BoxType::STSZ, // stsz or stz2
+                },
+                BoxType::STBL,
+            ))
+        }
+    }
+
+    /// Returns a reference to the chunk offset information for this sample table, which may be either a `stco` or `co64` box.
+    pub fn chunk_offset(&self) -> Result<ChunkOffsetView<'a>> {
+        if let Some(stco) = self.stco()? {
+            Ok(ChunkOffsetView::Stco(stco))
+        } else if let Some(co64) = self.co64()? {
+            Ok(ChunkOffsetView::Co64(co64))
+        } else {
+            Err(Error::in_box(
+                ErrorKind::BoxMissing {
+                    required: BoxType::STCO, // stco or co64
+                },
+                BoxType::STBL,
+            ))
+        }
+    }
 }
 
 impl BoxCodec for StblBoxView<'_> {
@@ -336,6 +368,44 @@ impl BoxCodec for StblBoxView<'_> {
 impl<'a> BoxDecode<'a> for StblBoxView<'a> {
     fn decode(bytes: &'a [u8]) -> Result<Self> {
         Ok(StblBoxView { content: bytes })
+    }
+}
+
+/// A reference to a sample size box, which can be either `stsz` or `stz2`.
+#[derive(Debug)]
+pub enum SampleSizeView<'a> {
+    /// Sample Size Box (`stsz`) - stores sizes for each sample, or a default size if all samples are the same size.
+    Stsz(StszBoxView<'a>),
+    /// Compact Sample Size Box (`stz2`) - stores sizes for each sample using a compact representation.
+    Stz2(Stz2BoxView<'a>),
+}
+
+impl SampleSizeView<'_> {
+    /// Returns the total number of samples described by this `SampleSizeView`, which is determined by the `sample_count` field in the underlying `stsz` or `stz2` box.
+    pub fn sample_count(&self) -> u32 {
+        match self {
+            SampleSizeView::Stsz(stsz) => stsz.sample_count,
+            SampleSizeView::Stz2(stz2) => stz2.sample_count,
+        }
+    }
+}
+
+/// A reference to a chunk offset box, which can be either `stco` or `co64`.
+#[derive(Debug)]
+pub enum ChunkOffsetView<'a> {
+    /// Chunk Offset Box (`stco`) - stores 32-bit file offsets for each chunk.
+    Stco(StcoBoxView<'a>),
+    /// Chunk Large Offset Box (`co64`) - stores 64-bit file offsets for each chunk, used for files larger than 4GB.
+    Co64(Co64BoxView<'a>),
+}
+
+impl ChunkOffsetView<'_> {
+    /// Returns the number of chunk offsets stored in this `ChunkOffsetView`, which is determined by the `entry_count` field in the underlying `stco` or `co64` box.
+    pub fn entry_count(&self) -> u32 {
+        match self {
+            ChunkOffsetView::Stco(stco) => stco.entry_count,
+            ChunkOffsetView::Co64(co64) => co64.entry_count,
+        }
     }
 }
 

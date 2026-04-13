@@ -20,6 +20,32 @@ pub struct Track {
     pub(crate) alternate_group: i16,
     pub(crate) descriptions: Vec<SampleDescription>,
     pub(crate) timeline: Timeline,
-    pub(crate) data_layouts: Vec<DataLayout>,
+    pub(crate) data_layout: DataLayout,
     pub(crate) edit_list: Option<Vec<ElstEntry>>,
+}
+
+impl Track {
+    /// Returns the sample descriptions for this track.
+    pub fn descriptions(&self) -> &[SampleDescription] {
+        &self.descriptions
+    }
+
+    /// Returns the timeline for this track.
+    pub fn timeline(&self) -> &Timeline {
+        &self.timeline
+    }
+
+    /// Returns the data layout for this track.
+    pub fn data_layout(&self) -> &DataLayout {
+        &self.data_layout
+    }
+
+    pub(crate) fn edit_duration(&self) -> Option<u64> {
+        self.edit_list.as_ref().and_then(|edits| {
+            edits
+                .iter()
+                .find(|edit| edit.media_time != -1)
+                .map(|edit| edit.segment_duration)
+        })
+    }
 }

@@ -176,7 +176,7 @@ mod owned {
     ///
     /// This is the owned variant of [`ElstBoxView`] that stores edit entries
     /// in a heap-allocated vector.
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct ElstBox {
         /// Box version (0 or 1). Version 1 uses 64-bit time fields.
         pub version: u8,
