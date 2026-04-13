@@ -41,6 +41,8 @@ fn compose_mvhd(movie: &Movie) -> Result<MvhdBox> {
         timescale: movie.timescale.as_u32(),
         duration,
         next_track_id: next_track_id.as_u32(),
+        creation_time: movie.creation_time,
+        modification_time: movie.modification_time,
         ..Default::default()
     })
 }
@@ -64,6 +66,8 @@ fn compose_tkhd(track: &Track) -> Result<TkhdBox> {
         .unwrap_or(track.sample_spec.media_duration());
 
     let mut tkhd = TkhdBox::new(track.track_id.as_nonzero(), duration);
+    tkhd.creation_time = track.creation_time;
+    tkhd.modification_time = track.modification_time;
     tkhd.alternate_group = track.alternate_group;
     tkhd.matrix = track.matrix;
 
@@ -95,6 +99,8 @@ fn compose_mdhd(track: &Track) -> MdhdBox {
         timescale: track.timescale.as_u32(),
         duration: media_duration,
         language: track.language,
+        creation_time: track.creation_time,
+        modification_time: track.modification_time,
         ..Default::default()
     }
 }

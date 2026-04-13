@@ -26,7 +26,12 @@ pub fn decompose_moov(moov: &MoovBoxView<'_>) -> Result<Movie> {
         })
         .collect::<Result<Vec<Track>>>()?;
 
-    Ok(Movie { timescale, tracks })
+    Ok(Movie {
+        timescale,
+        creation_time: mvhd.creation_time,
+        modification_time: mvhd.modification_time,
+        tracks,
+    })
 }
 
 fn decompose_trak(trak: &TrakBoxView<'_>) -> Result<Track> {
@@ -80,6 +85,8 @@ fn decompose_trak(trak: &TrakBoxView<'_>) -> Result<Track> {
     Ok(Track {
         track_id,
         timescale,
+        creation_time: tkhd.creation_time,
+        modification_time: tkhd.modification_time,
         language: mdhd.language,
         matrix: tkhd.matrix,
         alternate_group: tkhd.alternate_group,
@@ -258,8 +265,22 @@ fn parse_edit_list(edts: &EdtsBoxView<'_>) -> Result<Option<Vec<ElstEntry>>> {
     }
 }
 
+/// Decomposes every `traf` in a `moof` into its per-track [`SampleSpec`] / [`ChunkLayout`] increments. The returned vector preserves the original `traf` order; each entry corresponds to the `track_id` referenced by the `traf`'s `tfhd`. `moof_offset` must be the absolute byte position of the `moof` in the destination stream so that emitted `chunk_offsets` are correct.
+pub fn decompose_moof(
+    moof: &MoofBoxView<'_>,
+    moof_offset: u64,
+    trexs: &[TrexBox],
+) -> Result<Vec<(TrackId, SampleSpec, ChunkLayout)>> {
+    let mut out = Vec::new();
+    for traf in moof.trafs() {
+        let traf = traf?;
+        out.push(decompose_traf(&traf, moof_offset, trexs)?);
+    }
+    Ok(out)
+}
+
 /// Decomposes a `TrafBox` into track-specific information including `TrackId`, `SampleSpec`, and `ChunkLayout`.
-pub fn decompose_traf(
+fn decompose_traf(
     traf: &TrafBoxView<'_>,
     moof_offset: u64,
     trexs: &[TrexBox],

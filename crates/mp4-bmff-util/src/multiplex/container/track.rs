@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use mp4_bmff::boxes::bmff::ElstEntry;
 use mp4_bmff::types::LanguageCode;
 use mp4_bmff::types::Matrix;
+use mp4_bmff::types::QuickTimeDateTime;
 
 use crate::multiplex::Result;
 use crate::multiplex::error::Error;
@@ -20,6 +21,8 @@ use super::SampleSpec;
 pub struct Track {
     pub(crate) track_id: TrackId,
     pub(crate) timescale: Timescale,
+    pub(crate) creation_time: QuickTimeDateTime,
+    pub(crate) modification_time: QuickTimeDateTime,
     pub(crate) language: LanguageCode,
     pub(crate) matrix: Matrix,
     pub(crate) alternate_group: i16,
@@ -45,6 +48,8 @@ impl Track {
         Ok(Self {
             track_id,
             timescale,
+            creation_time: QuickTimeDateTime::default(),
+            modification_time: QuickTimeDateTime::default(),
             language: LanguageCode::default(),
             matrix: Matrix::default(),
             alternate_group: 0,
@@ -63,6 +68,26 @@ impl Track {
     /// Returns this track's timescale (units per second).
     pub fn timescale(&self) -> u32 {
         self.timescale.as_u32()
+    }
+
+    /// Returns the track creation time as recorded in `tkhd` / `mdhd`.
+    pub fn creation_time(&self) -> QuickTimeDateTime {
+        self.creation_time
+    }
+
+    /// Returns the track modification time as recorded in `tkhd` / `mdhd`.
+    pub fn modification_time(&self) -> QuickTimeDateTime {
+        self.modification_time
+    }
+
+    /// Sets the track creation time written into the resulting `tkhd` / `mdhd`.
+    pub fn set_creation_time(&mut self, t: QuickTimeDateTime) {
+        self.creation_time = t;
+    }
+
+    /// Sets the track modification time written into the resulting `tkhd` / `mdhd`.
+    pub fn set_modification_time(&mut self, t: QuickTimeDateTime) {
+        self.modification_time = t;
     }
 
     /// Sets the language code (ISO-639-2/T) of this track.

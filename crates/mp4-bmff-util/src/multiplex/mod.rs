@@ -9,8 +9,8 @@
 //! - [`decompose_moov`]: Convert a parsed `moov` view into the intermediate
 //!   [`Movie`](container::Movie) representation for further inspection or
 //!   transformation.
-//! - [`decompose_traf`]: Convert a single `traf` view (from an `moof`) into
-//!   per-track [`SampleSpec`](container::SampleSpec) /
+//! - [`decompose_moof`]: Convert every `traf` of a `moof` view into per-track
+//!   [`SampleSpec`](container::SampleSpec) /
 //!   [`ChunkLayout`](container::ChunkLayout) increments. Used to remux fMP4
 //!   fragments into a non-fragmented MP4.
 //!
@@ -30,7 +30,7 @@ mod compose;
 mod decompose;
 
 pub use compose::compose_moov;
-pub use decompose::{decompose_moov, decompose_traf};
+pub use decompose::{decompose_moof, decompose_moov};
 
 /// A type alias for the result type used in multiplexing operations, where the error type is `MuxError`.
 pub type MuxError = error::Error;

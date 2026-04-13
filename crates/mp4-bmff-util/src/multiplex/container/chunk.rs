@@ -37,6 +37,36 @@ impl ChunkLayout {
         })
     }
 
+    /// Concatenates this layout with another, returning a new layout whose chunks are `self`'s chunks followed by `other`'s chunks. The `stsc` entries of `other` are renumbered so their `first_chunk` indices continue after `self`'s chunks; an entry whose run is identical (same `samples_per_chunk` and `sample_description_index`) to the previous one is omitted to keep the run-length encoding compact.
+    pub fn concat(&self, other: &ChunkLayout) -> ChunkLayout {
+        let chunk_offset_shift = self.chunk_offsets.len() as u32;
+
+        let mut stsc_entries = self.stsc_entries.clone();
+        for entry in other.stsc_entries.iter() {
+            let renumbered = StscEntry {
+                first_chunk: entry.first_chunk + chunk_offset_shift,
+                samples_per_chunk: entry.samples_per_chunk,
+                sample_description_index: entry.sample_description_index,
+            };
+            if let Some(last) = stsc_entries.last() {
+                if last.samples_per_chunk == renumbered.samples_per_chunk
+                    && last.sample_description_index == renumbered.sample_description_index
+                {
+                    continue;
+                }
+            }
+            stsc_entries.push(renumbered);
+        }
+
+        let mut chunk_offsets = self.chunk_offsets.clone();
+        chunk_offsets.extend_from_slice(&other.chunk_offsets);
+
+        ChunkLayout {
+            stsc_entries,
+            chunk_offsets,
+        }
+    }
+
     /// Returns the chunk layout shifted by the given delta. This method creates a new `ChunkLayout` with the same sample-to-chunk mapping but with all chunk offsets shifted by the specified delta value. Returns an error if any resulting offset would overflow or underflow `u64`.
     pub fn shift_offsets(&self, delta: i64) -> Result<ChunkLayout> {
         let chunk_offsets = self
@@ -135,6 +165,43 @@ mod tests {
         assert_eq!(layout.stsc_entries[2].first_chunk, 6);
         assert_eq!(layout.stsc_entries[2].samples_per_chunk, 1);
         assert_eq!(layout.chunk_offsets, vec![10, 20, 30, 40, 50, 60]);
+    }
+
+    #[test]
+    fn concat_renumbers_stsc_first_chunk() {
+        let a = ChunkLayout {
+            stsc_entries: vec![stsc(1, 2)],
+            chunk_offsets: vec![100, 200],
+        };
+        let b = ChunkLayout {
+            stsc_entries: vec![stsc(1, 3)],
+            chunk_offsets: vec![300, 400],
+        };
+        let c = a.concat(&b);
+        assert_eq!(c.chunk_offsets, vec![100, 200, 300, 400]);
+        assert_eq!(c.stsc_entries.len(), 2);
+        assert_eq!(c.stsc_entries[0].first_chunk, 1);
+        assert_eq!(c.stsc_entries[0].samples_per_chunk, 2);
+        assert_eq!(c.stsc_entries[1].first_chunk, 3);
+        assert_eq!(c.stsc_entries[1].samples_per_chunk, 3);
+    }
+
+    #[test]
+    fn concat_merges_adjacent_identical_runs() {
+        let a = ChunkLayout {
+            stsc_entries: vec![stsc(1, 2)],
+            chunk_offsets: vec![100, 200],
+        };
+        let b = ChunkLayout {
+            stsc_entries: vec![stsc(1, 2)],
+            chunk_offsets: vec![300],
+        };
+        let c = a.concat(&b);
+        assert_eq!(c.chunk_offsets, vec![100, 200, 300]);
+        // The duplicate stsc entry from `b` should be merged into `a`'s tail
+        assert_eq!(c.stsc_entries.len(), 1);
+        assert_eq!(c.stsc_entries[0].samples_per_chunk, 2);
+        assert_eq!(c.sample_count(), 6);
     }
 
     #[test]

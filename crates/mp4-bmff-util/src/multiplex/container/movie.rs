@@ -1,3 +1,5 @@
+use mp4_bmff::types::QuickTimeDateTime;
+
 use crate::multiplex::Result;
 use crate::multiplex::error::{Error, ErrorKind};
 
@@ -9,6 +11,8 @@ use super::TrackId;
 #[derive(Debug, Clone)]
 pub struct Movie {
     pub(crate) timescale: Timescale,
+    pub(crate) creation_time: QuickTimeDateTime,
+    pub(crate) modification_time: QuickTimeDateTime,
     pub(crate) tracks: Vec<Track>,
 }
 
@@ -20,6 +24,8 @@ impl Movie {
         })?;
         Ok(Self {
             timescale,
+            creation_time: QuickTimeDateTime::default(),
+            modification_time: QuickTimeDateTime::default(),
             tracks: Vec::new(),
         })
     }
@@ -27,6 +33,26 @@ impl Movie {
     /// Returns the movie timescale (units per second) used by `mvhd`.
     pub fn timescale(&self) -> u32 {
         self.timescale.as_u32()
+    }
+
+    /// Returns the movie creation time as recorded in `mvhd`.
+    pub fn creation_time(&self) -> QuickTimeDateTime {
+        self.creation_time
+    }
+
+    /// Returns the movie modification time as recorded in `mvhd`.
+    pub fn modification_time(&self) -> QuickTimeDateTime {
+        self.modification_time
+    }
+
+    /// Sets the movie creation time written into the resulting `mvhd`.
+    pub fn set_creation_time(&mut self, t: QuickTimeDateTime) {
+        self.creation_time = t;
+    }
+
+    /// Sets the movie modification time written into the resulting `mvhd`.
+    pub fn set_modification_time(&mut self, t: QuickTimeDateTime) {
+        self.modification_time = t;
     }
 
     /// Appends a track to this movie, returning `&mut self` for chaining.
