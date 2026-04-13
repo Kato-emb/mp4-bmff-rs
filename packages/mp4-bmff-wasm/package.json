@@ -1,0 +1,75 @@
+{
+  "name": "@kato-emb/mp4-bmff-wasm",
+  "version": "0.1.0",
+  "description": "WASM bindings for mp4-bmff: fMP4 → MP4 assembly (and other use cases) powered by Rust, with OPFS-backed streaming I/O.",
+  "type": "module",
+  "main": "dist/mp4_bmff_wasm.js",
+  "module": "dist/mp4_bmff_wasm.js",
+  "types": "dist/mp4_bmff_wasm.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/mp4_bmff_wasm.d.ts",
+      "import": "./dist/mp4_bmff_wasm.js",
+      "default": "./dist/mp4_bmff_wasm.js"
+    },
+    "./web": {
+      "types": "./dist-web/mp4_bmff_wasm.d.ts",
+      "import": "./dist-web/mp4_bmff_wasm.js",
+      "default": "./dist-web/mp4_bmff_wasm.js"
+    },
+    "./wasm": "./dist/mp4_bmff_wasm_bg.wasm",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/mp4_bmff_wasm.js",
+    "dist/mp4_bmff_wasm.d.ts",
+    "dist/mp4_bmff_wasm_bg.js",
+    "dist/mp4_bmff_wasm_bg.wasm",
+    "dist/mp4_bmff_wasm_bg.wasm.d.ts",
+    "dist-web/mp4_bmff_wasm.js",
+    "dist-web/mp4_bmff_wasm.d.ts",
+    "dist-web/mp4_bmff_wasm_bg.wasm",
+    "dist-web/mp4_bmff_wasm_bg.wasm.d.ts",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
+  ],
+  "sideEffects": [
+    "*.wasm"
+  ],
+  "scripts": {
+    "build": "./build.sh release",
+    "build:debug": "./build.sh debug",
+    "clean": "rm -rf dist dist-web",
+    "prepublishOnly": "test -f dist/mp4_bmff_wasm_bg.wasm || (echo 'dist/ missing; run npm run build first' && exit 1)"
+  },
+  "keywords": [
+    "mp4",
+    "fmp4",
+    "cmaf",
+    "isobmff",
+    "remux",
+    "wasm",
+    "webassembly",
+    "opfs",
+    "rust"
+  ],
+  "author": "Ryohei Kato <r-kato@musen.co.jp>",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kato-emb/mp4-bmff-rs.git",
+    "directory": "packages/mp4-bmff-wasm"
+  },
+  "bugs": {
+    "url": "https://github.com/Kato-emb/mp4-bmff-rs/issues"
+  },
+  "homepage": "https://github.com/Kato-emb/mp4-bmff-rs#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  }
+}

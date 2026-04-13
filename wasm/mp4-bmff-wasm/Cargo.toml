@@ -1,0 +1,38 @@
+[package]
+name = "mp4-bmff-wasm"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["fmp4-asm"]
+
+# Use-case modules. Each guards a `#[wasm_bindgen]` namespace on the JS side;
+# disabling unused ones trims the wasm binary.
+fmp4-asm = ["opfs"]
+
+# OPFS sink is shared infrastructure consumed by every use-case that writes
+# to disk. Pulled in transitively by features that need it.
+opfs = [
+    "dep:web-sys",
+    "web-sys/FileSystemSyncAccessHandle",
+    "web-sys/FileSystemReadWriteOptions",
+    "web-sys/DomException",
+]
+
+[dependencies]
+mp4-bmff = { workspace = true, features = ["alloc"] }
+mp4-bmff-util = { workspace = true, features = ["alloc", "multiplex", "avc", "mp4"] }
+
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+web-sys = { workspace = true, default-features = false, optional = true }
+
+[lints]
+workspace = true

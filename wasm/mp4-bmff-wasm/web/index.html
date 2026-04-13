@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>fmp4-asm: fMP4 → MP4 (OPFS demo)</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+      }
+      body {
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      header {
+        margin-bottom: 1.5rem;
+      }
+      h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.5rem;
+      }
+      p.lead {
+        margin: 0;
+        color: #777;
+      }
+      fieldset {
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 1rem 1.25rem;
+        margin: 1rem 0;
+      }
+      legend {
+        font-weight: 600;
+        padding: 0 0.5rem;
+      }
+      button {
+        font: inherit;
+        padding: 0.4rem 1rem;
+        border-radius: 4px;
+        border: 1px solid #888;
+        background: #f6f6f6;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      ul.files {
+        max-height: 14rem;
+        overflow: auto;
+        margin: 0.5rem 0 0;
+        padding-left: 1.25rem;
+      }
+      ul.files li {
+        font-family: ui-monospace, monospace;
+        font-size: 0.85rem;
+      }
+      ul.files li.init {
+        font-weight: 600;
+        color: #0a7;
+      }
+      pre.log {
+        background: #111;
+        color: #eee;
+        padding: 0.75rem 1rem;
+        border-radius: 4px;
+        overflow: auto;
+        max-height: 18rem;
+        white-space: pre-wrap;
+        font-size: 0.85rem;
+      }
+      .row {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .stat {
+        display: inline-block;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        background: #eef;
+        color: #335;
+        font-size: 0.8rem;
+      }
+      a.download {
+        display: inline-block;
+        margin-top: 0.5rem;
+        padding: 0.4rem 1rem;
+        background: #07c;
+        color: #fff;
+        text-decoration: none;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>fMP4 → MP4 アセンブラ (OPFS demo)</h1>
+      <p class="lead">
+        ディレクトリ内の <code>init.*</code> + フラグメントを 1
+        つの非フラグメント MP4 に結合し、OPFS 経由で結果をダウンロードします。
+      </p>
+    </header>
+
+    <fieldset>
+      <legend>1. ディレクトリ選択</legend>
+      <div class="row">
+        <input id="dir" type="file" webkitdirectory multiple />
+        <span id="count" class="stat" hidden></span>
+      </div>
+      <ul class="files" id="filelist"></ul>
+    </fieldset>
+
+    <fieldset>
+      <legend>2. 結合実行</legend>
+      <div class="row">
+        <button id="run" disabled>結合を実行</button>
+        <span id="status"></span>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>3. 結果</legend>
+      <div id="result">未実行</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>ログ</legend>
+      <pre class="log" id="log"></pre>
+    </fieldset>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

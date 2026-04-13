@@ -5,6 +5,7 @@ members = [
     "crates/mp4-bmff-util",
     "examples",
     "benches",
+    "wasm/mp4-bmff-wasm",
 ]
 
 [workspace.package]
@@ -20,6 +21,13 @@ mp4-bmff = { version = "0.1.0", path = "crates/mp4-bmff", default-features = fal
 mp4-bmff-util = { version = "0.1.0", path = "crates/mp4-bmff-util", default-features = false }
 
 clap = { version = "4", default-features = false, features = ["std", "derive"] }
+
+### ============================================================
+### WASM dependencies
+### ============================================================
+wasm-bindgen = { version = "0.2" }
+web-sys = { version = "0.3", default-features = false }
+js-sys = { version = "0.3", default-features = false }
 
 ### ============================================================
 ### rustc lints

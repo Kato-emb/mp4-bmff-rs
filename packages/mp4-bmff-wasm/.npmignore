@@ -1,0 +1,5 @@
+# `files` field of package.json is the source of truth for what gets
+# published. This .npmignore exists only to keep `npm pack --dry-run`
+# output predictable.
+build.sh
+.gitignore
