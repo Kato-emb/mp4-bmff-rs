@@ -1,0 +1,136 @@
+name: Publish WASM packages
+
+# Runs when a tag matching `wasm-vX.Y.Z` is pushed (e.g. `wasm-v0.1.0`).
+# Manually triggerable via "Run workflow" with an optional `dry_run` toggle
+# that builds and packs but does not publish.
+on:
+  push:
+    tags:
+      - "wasm-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build & pack only; skip npm publish"
+        type: boolean
+        default: true
+
+# `packages: write` lets the auto-provisioned GITHUB_TOKEN publish to GitHub
+# Packages (npm.pkg.github.com). `id-token: write` is kept for the day we
+# additionally publish to npmjs.com with `--provenance`.
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  group: publish-wasm-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Build & publish ${{ matrix.package }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: true
+      matrix:
+        # Add new packages here as they are introduced under packages/.
+        include:
+          - package: mp4-bmff-wasm
+            crate: mp4-bmff-wasm
+            dir: packages/mp4-bmff-wasm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # The published wasm size matters, so cache the release profile.
+          cache-targets: true
+          key: wasm-publish-${{ matrix.crate }}
+
+      # Pin wasm-bindgen-cli to the exact version used by the crate so that
+      # the JS glue stays in sync with the wasm-bindgen runtime.
+      - name: Resolve wasm-bindgen version
+        id: wbg
+        run: |
+          ver=$(cargo metadata --format-version 1 --locked \
+            | jq -r '.packages[] | select(.name=="wasm-bindgen") | .version' \
+            | sort -u | head -n 1)
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "wasm-bindgen pinned to $ver"
+
+      - name: Install wasm-bindgen-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@${{ steps.wbg.outputs.version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          # GitHub Packages npm registry. The scope must match the
+          # owning user/org (here `@kato-emb`) for publish to succeed.
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@kato-emb"
+          # Required so that `npm publish` picks up NODE_AUTH_TOKEN.
+          always-auth: true
+
+      - name: Build WASM (release) + bundler/web glue
+        working-directory: ${{ matrix.dir }}
+        run: ./build.sh release
+
+      - name: Verify version matches tag
+        if: startsWith(github.ref, 'refs/tags/wasm-v')
+        working-directory: ${{ matrix.dir }}
+        run: |
+          tag="${GITHUB_REF_NAME#wasm-v}"
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::Tag version ($tag) does not match package.json version ($pkg)"
+            exit 1
+          fi
+          echo "Publishing $(node -p "require('./package.json').name") @ $pkg"
+
+      # Pack first so we can both inspect the contents and have an artifact
+      # available regardless of whether we publish.
+      - name: npm pack
+        id: pack
+        working-directory: ${{ matrix.dir }}
+        run: |
+          npm pack
+          tgz=$(ls *.tgz | head -n 1)
+          echo "tarball=$tgz" >> "$GITHUB_OUTPUT"
+          echo "--- contents of $tgz ---"
+          tar -tzf "$tgz" | sort
+
+      - name: Upload tarball as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}-${{ github.run_id }}
+          path: ${{ matrix.dir }}/*.tgz
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: npm publish (GitHub Packages)
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
+        working-directory: ${{ matrix.dir }}
+        env:
+          # GITHUB_TOKEN is auto-provisioned per workflow run; no manual
+          # secret setup is needed as long as `permissions.packages: write`
+          # is granted above.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm publish ${{ steps.pack.outputs.tarball }}
