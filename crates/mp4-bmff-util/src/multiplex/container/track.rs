@@ -229,7 +229,9 @@ mod tests {
             .unwrap()
             .with_alternate_group(2)
             .with_edit_list(vec![elst(0, 100)])
-            .with_sample_spec(SampleSpec::from_samples(&[10; 4], &[1; 4], None, None, None));
+            .with_sample_spec(SampleSpec::from_samples(
+                &[10; 4], &[1; 4], None, None, None,
+            ));
 
         assert_eq!(track.alternate_group, 2);
         assert!(track.edit_list.is_some());
@@ -240,7 +242,9 @@ mod tests {
     fn set_chunk_layout_rejects_count_mismatch() {
         let mut track = Track::new(1, 48_000, dummy_descriptions())
             .unwrap()
-            .with_sample_spec(SampleSpec::from_samples(&[10; 4], &[1; 4], None, None, None));
+            .with_sample_spec(SampleSpec::from_samples(
+                &[10; 4], &[1; 4], None, None, None,
+            ));
         // layout that resolves to 6 samples vs spec's 4
         let layout = ChunkLayout::new(&[2, 2, 2], vec![100, 200, 300]).unwrap();
         let err = track.set_chunk_layout(layout).unwrap_err();
@@ -257,7 +261,9 @@ mod tests {
     fn set_chunk_layout_accepts_matching_count() {
         let mut track = Track::new(1, 48_000, dummy_descriptions())
             .unwrap()
-            .with_sample_spec(SampleSpec::from_samples(&[10; 4], &[1; 4], None, None, None));
+            .with_sample_spec(SampleSpec::from_samples(
+                &[10; 4], &[1; 4], None, None, None,
+            ));
         let layout = ChunkLayout::new(&[2, 2], vec![100, 200]).unwrap();
         assert!(track.set_chunk_layout(layout).is_ok());
         assert_eq!(track.chunk_layout().chunk_offsets, vec![100, 200]);
@@ -268,7 +274,9 @@ mod tests {
         // 4 samples of size 10, 2 per chunk at offsets [100, 200]
         let mut track = Track::new(1, 48_000, dummy_descriptions())
             .unwrap()
-            .with_sample_spec(SampleSpec::from_samples(&[1; 4], &[10; 4], None, None, None));
+            .with_sample_spec(SampleSpec::from_samples(
+                &[1; 4], &[10; 4], None, None, None,
+            ));
         track
             .set_chunk_layout(ChunkLayout::new(&[2, 2], vec![100, 200]).unwrap())
             .unwrap();

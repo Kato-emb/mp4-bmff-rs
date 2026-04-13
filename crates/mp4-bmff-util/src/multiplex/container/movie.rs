@@ -109,10 +109,7 @@ mod tests {
 
     #[test]
     fn new_rejects_zero_timescale() {
-        assert_eq!(
-            Movie::new(0).unwrap_err().kind(),
-            ErrorKind::InvalidInput
-        );
+        assert_eq!(Movie::new(0).unwrap_err().kind(), ErrorKind::InvalidInput);
     }
 
     #[test]
@@ -159,19 +156,11 @@ mod tests {
 
         let mut t1 = dummy_track(1, 1000);
         t1.set_sample_spec(super::super::SampleSpec::from_samples(
-            &[100; 5],
-            &[1; 5],
-            None,
-            None,
-            None,
+            &[100; 5], &[1; 5], None, None, None,
         ));
         let mut t2 = dummy_track(2, 1000);
         t2.set_sample_spec(super::super::SampleSpec::from_samples(
-            &[100; 3],
-            &[1; 3],
-            None,
-            None,
-            None,
+            &[100; 3], &[1; 3], None, None, None,
         ));
         movie.add_track(t1);
         movie.add_track(t2);

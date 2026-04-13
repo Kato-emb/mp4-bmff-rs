@@ -101,8 +101,7 @@ fn run(input_dir: &Path, output_path: &Path) -> Result<Stats, String> {
 
     let init_bytes = fs::read(&init_path).map_err(|e| format!("read {init_path:?}: {e}"))?;
 
-    let file = fs::File::create(output_path)
-        .map_err(|e| format!("create {output_path:?}: {e}"))?;
+    let file = fs::File::create(output_path).map_err(|e| format!("create {output_path:?}: {e}"))?;
     let mut output = BufWriter::new(file);
 
     // 1) Copy ftyp from init, build Movie template + collect trex defaults.
@@ -260,9 +259,7 @@ fn process_fragment_file<W: Write + Seek>(
         // Peek base header (8 bytes). `Read::read` is allowed to return less,
         // so use read_exact-with-eof to detect end-of-file cleanly.
         let mut base = [0u8; 8];
-        match read_exact_or_eof(&mut reader, &mut base)
-            .map_err(|e| format!("read header: {e}"))?
-        {
+        match read_exact_or_eof(&mut reader, &mut base).map_err(|e| format!("read header: {e}"))? {
             ReadResult::Eof => break,
             ReadResult::Partial => {
                 return Err("trailing bytes after last box (truncated header)".to_string());
@@ -309,8 +306,8 @@ fn process_fragment_file<W: Write + Seek>(
                 .write_all(&moof_payload)
                 .map_err(|e| format!("write moof: {e}"))?;
 
-            let moof = MoofBoxView::decode(&moof_payload)
-                .map_err(|e| format!("moof decode: {e}"))?;
+            let moof =
+                MoofBoxView::decode(&moof_payload).map_err(|e| format!("moof decode: {e}"))?;
             let entries = decompose_moof(&moof, box_pos_in_output, trexs)
                 .map_err(|e| format!("decompose_moof: {e}"))?;
 
@@ -350,7 +347,9 @@ fn apply_accumulated_tables(
     }
     if !accum.is_empty() {
         let extras: Vec<u32> = accum.keys().map(|id| id.as_u32()).collect();
-        return Err(format!("fragments referenced unknown track IDs: {extras:?}"));
+        return Err(format!(
+            "fragments referenced unknown track IDs: {extras:?}"
+        ));
     }
     Ok(applied)
 }
