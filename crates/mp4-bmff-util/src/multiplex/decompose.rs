@@ -6,10 +6,11 @@ use super::Result;
 use crate::multiplex::error::{Error, ErrorKind};
 
 use crate::multiplex::container::{
-    AudioSampleDescription, DataLayout, Movie, SampleDescription, Timeline, Timescale, Track,
+    AudioSampleDescription, ChunkLayout, Movie, SampleDescription, SampleSpec, Timescale, Track,
     TrackId, VisualSampleDescription,
 };
 
+/// Decomposes a `MoovBox` into a `Movie` structure.
 pub fn decompose_moov(moov: &MoovBoxView<'_>) -> Result<Movie> {
     let mvhd = moov.mvhd()?;
     let timescale = Timescale::new(mvhd.timescale).ok_or(
@@ -49,23 +50,25 @@ fn decompose_trak(trak: &TrakBoxView<'_>) -> Result<Track> {
 
     // Parse timeline information
     let stts = stbl.stts()?;
-    let timeline = if stts.entry_count > 0 {
+    let (spec, layout) = if stts.entry_count > 0 {
         let ctts = stbl.ctts()?;
+        let sample_size = stbl.sample_size()?;
         let stss = stbl.stss()?;
         let sdtp = stbl.sdtp()?;
-        parse_timeline(&stts, ctts.as_ref(), stss.as_ref(), sdtp.as_ref())?
-    } else {
-        Timeline::default() // No samples, so empty timeline
-    };
+        let spec = decompose_sample_spec(
+            &stts,
+            &sample_size,
+            ctts.as_ref(),
+            stss.as_ref(),
+            sdtp.as_ref(),
+        )?;
 
-    // Parse data layout
-    let sample_size = stbl.sample_size()?;
-    let data_layout = if sample_size.sample_count() != 0 {
         let stsc = stbl.stsc()?;
         let chunk_offset = stbl.chunk_offset()?;
-        parse_data_layout(&sample_size, &stsc, &chunk_offset)?
+        let layout = decompose_sample_layout(&stsc, &chunk_offset)?;
+        (spec, layout)
     } else {
-        DataLayout::default() // No samples, so no data layout needed
+        (SampleSpec::default(), ChunkLayout::default()) // No samples, so empty timeline
     };
 
     // Parse edit list if present
@@ -81,8 +84,8 @@ fn decompose_trak(trak: &TrakBoxView<'_>) -> Result<Track> {
         matrix: tkhd.matrix,
         alternate_group: tkhd.alternate_group,
         descriptions,
-        timeline,
-        data_layout,
+        sample_spec: spec,
+        chunk_layout: layout,
         edit_list,
     })
 }
@@ -194,35 +197,45 @@ fn parse_audio_descriptions(stsd: &StsdBoxView<'_>) -> Result<Vec<SampleDescript
     Ok(descriptions)
 }
 
-fn parse_timeline(
+fn decompose_sample_spec(
     stts: &SttsBoxView<'_>,
+    sample_size: &SampleSizeView<'_>,
     ctts: Option<&CttsBoxView<'_>>,
     stss: Option<&StssBoxView<'_>>,
     sdtp: Option<&SdtpBoxView<'_>>,
-) -> Result<Timeline> {
+) -> Result<SampleSpec> {
     let stts_entries = stts.entries().collect();
+    let stsz_entries = match sample_size {
+        SampleSizeView::Stsz(stsz) => stsz
+            .entries()
+            .map(|e| StszEntry {
+                entry_size: e.entry_size,
+            })
+            .collect(),
+        SampleSizeView::Stz2(stz2) => stz2
+            .entries()
+            .map(|e| StszEntry {
+                entry_size: u32::from(e.entry_size),
+            })
+            .collect(),
+    };
     let ctts_entries = ctts.map(|ctts| ctts.entries().collect());
     let stss_entries = stss.map(|stss| stss.entries().collect());
     let sdtp_entries = sdtp.map(|sdtp| sdtp.entries().collect());
 
-    Ok(Timeline {
+    Ok(SampleSpec {
         stts_entries,
+        stsz_entries,
         ctts_entries,
         stss_entries,
         sdtp_entries,
     })
 }
 
-fn parse_data_layout(
-    sample_size: &SampleSizeView<'_>,
+fn decompose_sample_layout(
     stsc: &StscBoxView<'_>,
     chunk_offset: &ChunkOffsetView<'_>,
-) -> Result<DataLayout> {
-    let sample_sizes = match sample_size {
-        SampleSizeView::Stsz(stsz) => stsz.entries().map(|e| e.entry_size).collect(),
-        SampleSizeView::Stz2(stz2) => stz2.entries().map(|e| u32::from(e.entry_size)).collect(),
-    };
-
+) -> Result<ChunkLayout> {
     let stsc_entries = stsc.entries().collect();
 
     let chunk_offsets = match chunk_offset {
@@ -230,8 +243,7 @@ fn parse_data_layout(
         ChunkOffsetView::Co64(co64) => co64.entries().map(|e| e.chunk_offset).collect(),
     };
 
-    Ok(DataLayout {
-        sample_sizes,
+    Ok(ChunkLayout {
         stsc_entries,
         chunk_offsets,
     })
@@ -246,11 +258,12 @@ fn parse_edit_list(edts: &EdtsBoxView<'_>) -> Result<Option<Vec<ElstEntry>>> {
     }
 }
 
+/// Decomposes a `TrafBox` into track-specific information including `TrackId`, `SampleSpec`, and `ChunkLayout`.
 pub fn decompose_traf(
     traf: &TrafBoxView<'_>,
     moof_offset: u64,
     trexs: &[TrexBox],
-) -> Result<(TrackId, Timeline, DataLayout)> {
+) -> Result<(TrackId, SampleSpec, ChunkLayout)> {
     let tfhd = traf.tfhd()?;
 
     let track_id = TrackId::new(tfhd.track_id)
@@ -383,7 +396,9 @@ pub fn decompose_traf(
 
             // TODO: sdtp flags parsing
 
-            sample_sizes.push(sample_size);
+            sample_sizes.push(StszEntry {
+                entry_size: sample_size,
+            });
             chunk_byte_size = chunk_byte_size.checked_add(u64::from(sample_size)).ok_or(
                 Error::new(ErrorKind::Overflow).with_message("Chunk byte size exceeds u64 maximum"),
             )?;
@@ -406,20 +421,20 @@ pub fn decompose_traf(
         all_stss = None;
     }
 
-    let timeline = Timeline {
+    let spec = SampleSpec {
         stts_entries: all_stts,
+        stsz_entries: sample_sizes,
         ctts_entries: all_ctts,
         stss_entries: all_stss,
         sdtp_entries: None, // TODO
     };
 
-    let data_layout = DataLayout {
-        sample_sizes,
+    let layout = ChunkLayout {
         stsc_entries,
         chunk_offsets,
     };
 
-    Ok((track_id, timeline, data_layout))
+    Ok((track_id, spec, layout))
 }
 
 fn accumulate_stts(entries: &mut Vec<SttsEntry>, duration: u32) {

@@ -24,8 +24,13 @@ pub enum ErrorKind {
     Unsupported,
     /// An error occurred in the BMFF (ISO Base Media File Format) processing. This can occur when the muxer encounters an issue specific to BMFF structures.
     Bmff,
-    /// Unknown error kind, used as a fallback for non-exhaustive matching. This variant should not be constructed directly and is intended to allow for future expansion of error kinds without breaking existing code.
-    __Unknown,
+    /// The number of samples in the chunk layout does not match the number of samples in the sample specification. This error indicates a mismatch between the expected sample count based on the sample descriptions and the actual sample count provided in the chunk layout, which can lead to incorrect multiplexing results.
+    SampleCountMismatch {
+        /// The expected number of samples based on the sample descriptions.
+        expected: u32,
+        /// The actual number of samples provided.
+        actual: u32,
+    },
 }
 
 impl fmt::Display for ErrorKind {
@@ -36,7 +41,11 @@ impl fmt::Display for ErrorKind {
             ErrorKind::Overflow => write!(f, "Overflow error"),
             ErrorKind::Unsupported => write!(f, "Unsupported operation error"),
             ErrorKind::Bmff => write!(f, "BMFF processing error"),
-            _ => write!(f, "Unknown error"),
+            ErrorKind::SampleCountMismatch { expected, actual } => write!(
+                f,
+                "Sample count mismatch: expected {} samples, but got {}",
+                expected, actual
+            ),
         }
     }
 }

@@ -7,22 +7,61 @@ use super::container::Movie;
 use super::container::Track;
 use super::container::{AudioSampleDescription, SampleDescription, VisualSampleDescription};
 use crate::multiplex::Result;
-use crate::multiplex::container::DataLayout;
-use crate::multiplex::container::Timeline;
+use crate::multiplex::container::ChunkLayout;
+use crate::multiplex::container::SampleSpec;
 use crate::multiplex::error::{Error, ErrorKind};
 
-fn compose_moov(movie: &Movie) -> Result<MoovBox> {
-    todo!()
+/// Composes a `MoovBox` from a `Movie` structure.
+pub fn compose_moov(movie: &Movie) -> Result<MoovBox> {
+    let mvhd = compose_mvhd(movie)?;
+
+    let traks = movie
+        .tracks()
+        .iter()
+        .map(|tr| compose_trak(tr))
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(MoovBox {
+        mvhd,
+        traks,
+        mvex: None,
+    })
+}
+
+fn compose_mvhd(movie: &Movie) -> Result<MvhdBox> {
+    let duration = movie
+        .movie_duration()
+        .ok_or(Error::new(ErrorKind::Overflow).with_message("Movie duration overflow"))?;
+
+    let next_track_id = movie
+        .next_track_id()
+        .ok_or(Error::new(ErrorKind::Overflow).with_message("Track ID overflow"))?;
+
+    Ok(MvhdBox {
+        timescale: movie.timescale.as_u32(),
+        duration,
+        next_track_id: next_track_id.as_u32(),
+        ..Default::default()
+    })
 }
 
 fn compose_trak(track: &Track) -> Result<TrakBox> {
-    todo!()
+    Ok(TrakBox {
+        tkhd: compose_tkhd(track)?,
+        mdia: compose_mdia(track)?,
+        edts: track
+            .edit_list
+            .as_ref()
+            .and_then(|edit_list| compose_edit_list(edit_list.clone())),
+        tref: None,
+        trgr: None,
+    })
 }
 
 fn compose_tkhd(track: &Track) -> Result<TkhdBox> {
     let duration = track
         .edit_duration()
-        .unwrap_or(track.timeline.media_duration());
+        .unwrap_or(track.sample_spec.media_duration());
 
     let mut tkhd = TkhdBox::new(track.track_id.as_nonzero(), duration);
     tkhd.alternate_group = track.alternate_group;
@@ -50,7 +89,7 @@ fn compose_mdia(track: &Track) -> Result<MdiaBox> {
 }
 
 fn compose_mdhd(track: &Track) -> MdhdBox {
-    let media_duration = track.timeline.media_duration();
+    let media_duration = track.sample_spec.media_duration();
 
     MdhdBox {
         timescale: track.timescale.as_u32(),
@@ -72,7 +111,11 @@ fn compose_hdlr(descs: &[SampleDescription]) -> Result<HdlrBox> {
 fn compose_minf(track: &Track) -> Result<MinfBox> {
     let stsd = compose_stsd(&track.descriptions)?;
 
-    todo!()
+    Ok(MinfBox {
+        media_header: compose_media_header(&track.descriptions),
+        stbl: compose_stbl(track.sample_spec.clone(), track.chunk_layout.clone(), stsd),
+        dinf: DinfBox::self_contained(),
+    })
 }
 
 fn compose_media_header(descs: &[SampleDescription]) -> MediaHeaderBox {
@@ -193,9 +236,9 @@ fn build_audio_sample_entry(
     }
 }
 
-fn compose_stbl(timeline: Timeline, data_layout: DataLayout, stsd: StsdBox) -> StblBox {
-    let (stts, sample_size, ctts, stss, sdtp) = compose_timeline(timeline);
-    let (stsc, chunk_offset) = compose_data_layout(data_layout);
+fn compose_stbl(sample_spec: SampleSpec, chunk_layout: ChunkLayout, stsd: StsdBox) -> StblBox {
+    let (stts, sample_size, ctts, stss, sdtp) = compose_sample_spec(sample_spec);
+    let (stsc, chunk_offset) = compose_chunk_layout(chunk_layout);
 
     StblBox {
         stsd,
@@ -214,8 +257,8 @@ fn compose_stbl(timeline: Timeline, data_layout: DataLayout, stsd: StsdBox) -> S
     }
 }
 
-fn compose_timeline(
-    timeline: Timeline,
+fn compose_sample_spec(
+    sample_spec: SampleSpec,
 ) -> (
     SttsBox,
     SampleSize,
@@ -224,13 +267,13 @@ fn compose_timeline(
     Option<SdtpBox>,
 ) {
     let stts = SttsBox {
-        entries: timeline.stts_entries,
+        entries: sample_spec.stts_entries,
         ..Default::default()
     };
 
-    let sample_size = compress_stsz(timeline.sample_sizes);
+    let sample_size = compress_stsz(sample_spec.stsz_entries);
 
-    let ctts = if let Some(ctts_entries) = timeline.ctts_entries {
+    let ctts = if let Some(ctts_entries) = sample_spec.ctts_entries {
         Some(CttsBox {
             entries: ctts_entries,
             ..Default::default()
@@ -239,7 +282,7 @@ fn compose_timeline(
         None
     };
 
-    let stss = if let Some(stss_entries) = timeline.stss_entries {
+    let stss = if let Some(stss_entries) = sample_spec.stss_entries {
         Some(StssBox {
             entries: stss_entries,
             ..Default::default()
@@ -248,7 +291,7 @@ fn compose_timeline(
         None
     };
 
-    let sdtp = if let Some(sdtp_entries) = timeline.sdtp_entries {
+    let sdtp = if let Some(sdtp_entries) = sample_spec.sdtp_entries {
         Some(SdtpBox {
             entries: sdtp_entries,
             ..Default::default()
@@ -260,12 +303,12 @@ fn compose_timeline(
     (stts, sample_size, ctts, stss, sdtp)
 }
 
-fn compose_data_layout(data_layout: DataLayout) -> (StscBox, ChunkOffset) {
+fn compose_chunk_layout(chunk_layout: ChunkLayout) -> (StscBox, ChunkOffset) {
     let stsc = StscBox {
-        entries: data_layout.stsc_entries,
+        entries: chunk_layout.stsc_entries,
         ..Default::default()
     };
-    let chunk_offset = compress_chunk_offset(data_layout.chunk_offsets);
+    let chunk_offset = compress_chunk_offset(chunk_layout.chunk_offsets);
 
     (stsc, chunk_offset)
 }
