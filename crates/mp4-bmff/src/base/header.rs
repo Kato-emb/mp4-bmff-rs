@@ -85,7 +85,7 @@ impl BoxHeader {
     /// Maximum size of a box header including extended size and UUID.
     pub const MAX_HEADER_SIZE: usize = Self::BASE_SIZE + 8 + 16; // Max header size with extended size and UUID
 
-    /// Creates a new box header.
+    /// Creates a new box header. The encoding (compact 32-bit vs extended 64-bit `largesize`) is chosen automatically based on the total box size.
     ///
     /// # Panics
     ///
@@ -102,6 +102,25 @@ impl BoxHeader {
         };
 
         let size = BoxSize::new(total_len);
+        Self { size, type_ }
+    }
+
+    /// Creates a new box header that always uses the extended (64-bit `largesize`) size encoding, regardless of the payload length. This produces a fixed header length of 16 bytes (24 bytes for `uuid` boxes) and is useful when a placeholder box must be reserved with a known header size that will not change after the payload is written.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the total box size (header + payload) overflows `u64`.
+    pub fn new_extended(type_: BoxType, payload_len: u64) -> Self {
+        let mut header_len = Self::BASE_SIZE as u64 + 8; // base + largesize field
+        if type_.is_uuid() {
+            header_len += 16;
+        }
+
+        let Some(total_len) = header_len.checked_add(payload_len) else {
+            panic!("Box size overflow when creating BoxHeader");
+        };
+
+        let size = BoxSize::new_extended(total_len);
         Self { size, type_ }
     }
 
