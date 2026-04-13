@@ -8,8 +8,14 @@ license.workspace = true
 
 [dependencies]
 mp4-bmff = { workspace = true, features = ["alloc"] }
+mp4-bmff-util = { workspace = true, features = ["multiplex", "avc", "mp4"] }
 
 [[example]]
 name = "dump"
 path = "./src/dump.rs"
+harness = false
+
+[[example]]
+name = "fmp4-asm"
+path = "./src/fmp4_asm.rs"
 harness = false
