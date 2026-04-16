@@ -1,0 +1,27 @@
+[package]
+name = "mp4-bmff"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "A pure Rust, zero-copy implementation of ISO Base Media File Format (ISOBMFF/MP4)"
+keywords = ["no_std", "isobmff", "mp4", "parser", "multimedia"]
+categories = ["multimedia", "parser-implementations"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = []
+
+std = ["alloc"]
+alloc = ["mp4-bmff-core/alloc"]
+
+[dependencies]
+mp4-bmff-core = { workspace = true, default-features = false }
+
+[lints]
+workspace = true

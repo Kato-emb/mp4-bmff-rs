@@ -1,0 +1,44 @@
+
+[package]
+name = "mp4-bmff-core"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core types and traits for ISO Base Media File Format (ISOBMFF/MP4) — no_std, zero-copy"
+keywords = ["no_std", "isobmff", "mp4", "parser", "multimedia"]
+categories = ["data-structures", "no-std", "parser-implementations"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = ["alloc", "avc", "mp4"]
+
+# Enables heap allocation for owned box types (`*Box`) and `encode_to_vec`.
+# Without this feature, only zero-copy view types (`*BoxView`) are available.
+alloc = []
+
+# ISO/IEC 14496-1: MPEG-4 Systems (Elementary Stream Descriptors).
+systems = []
+
+# ISO/IEC 14496-14: MP4 file format (MP4 audio/video/systems sample entries).
+# Implies `systems`.
+mp4 = ["systems"]
+
+# ISO/IEC 14496-15: AVC (H.264) configuration box support.
+# Implies `systems`.
+avc = ["systems"]
+
+# ISO/IEC 14496-15: HEVC (H.265) configuration box support.
+# Implies `systems`.
+hevc = ["systems"]
+
+[dependencies]
+
+[dev-dependencies]
+
+[lints]
+workspace = true

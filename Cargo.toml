@@ -1,42 +1,98 @@
-[package]
-name = "mp4-bmff"
-version = "0.1.0"
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+default-members = ["crates/mp4-bmff"]
+
+[workspace.package]
 authors = ["Ryohei Kato <r-kato@musen.co.jp>"]
 edition = "2024"
 rust-version = "1.87"
-description = "A pure Rust, zero-copy implementation of ISO Base Media File Format (ISOBMFF/MP4)"
-readme = "README.md"
 repository = "https://github.com/Kato-emb/mp4-bmff-rs"
 license = "MIT OR Apache-2.0"
-keywords = ["no_std", "isobmff", "mp4", "parser", "multimedia"]
-categories = ["data-structures", "no-std"]
 exclude = ["examples/", "benches/", ".github/"]
 
-[package.metadata.docs.rs]
-all-features = true
+[workspace.dependencies]
+mp4-bmff-core = { path = "crates/mp4-bmff-core", default-features = false }
 
-[features]
-default = ["std", "avc", "mp4"]
-
-alloc = []
-std = ["alloc"]
-
-# ISO/IEC 14496-1
-systems = []
-
-# ISO/IEC 14496-14
-mp4 = ["systems"]
-
-# ISO/IEC 14496-15
-avc = ["systems"]
-hevc = ["systems"]
-
-[dependencies]
-
-[dev-dependencies]
 clap = { version = "4", default-features = false, features = ["std", "derive"] }
-criterion = { version = "0.8", features = ["html_reports"] }
 
-[[bench]]
-name = "codec"
-harness = false
+### ============================================================
+### rustc lints
+### ============================================================
+[workspace.lints.rust]
+
+# --- 公開APIの衛生 ---
+# 外部から到達不能な`pub`や不要な修飾を検出し、APIの表面積を最小限に保つ
+unreachable_pub = "warn"
+unused_import_braces = "warn"
+unused_qualifications = "warn"
+
+# --- ドキュメント ---
+# 公開APIのドキュメント漏れを検出（clippy lintではなくrustc lint）
+missing_docs = "warn"
+
+# --- 型・ライフタイムの明示性 ---
+# 隠れたライフタイムパラメータや無意味なキャストを検出し、意図を明確にする
+elided_lifetimes_in_paths = "warn"
+trivial_numeric_casts = "warn"
+single_use_lifetimes = "warn"
+
+# --- 依存クレートの衛生 ---
+# 未使用のextern crateを検出
+unused_extern_crates = "warn"
+
+# --- Debug実装の衛生 ---
+# 公開型にDebug実装が欠落している場合を検出
+missing_debug_implementations = "warn"
+
+### ============================================================
+### Clippy lints
+### ============================================================
+[workspace.lints.clippy]
+
+# --- no_std対応 ---
+# std/allocの不要な使用を防ぎ、no_std環境での互換性を維持する
+std_instead_of_core = "warn"
+alloc_instead_of_core = "warn"
+std_instead_of_alloc = "warn"
+
+# --- 数値キャストの安全性 ---
+# BMFFは32/64bitサイズが混在するため、暗黙の切り捨て・符号消失・ラップを検出する
+# cast_losslessは拡大キャストでもFrom/Intoを強制し、意図を明確にする
+cast_possible_truncation = "warn"
+cast_possible_wrap = "warn"
+cast_sign_loss = "warn"
+cast_lossless = "warn"
+
+# --- ライブラリ衛生: デバッグ出力の混入防止 ---
+# ライブラリクレートからのデバッグ出力をコンパイル時に検出する
+print_stdout = "warn"
+print_stderr = "warn"
+dbg_macro = "warn"
+
+# --- ライブラリ衛生: API品質 ---
+# 戻り値を無視すべきでない関数に#[must_use]が欠落している場合を検出する
+# must_use_candidate = "warn"
+return_self_not_must_use = "warn"
+
+# --- ドキュメント品質 ---
+# 公開APIのError/Panic条件の記載漏れ、unsafeブロックの説明漏れを検出する
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+undocumented_unsafe_blocks = "warn"
+
+# --- インポート衛生 ---
+# glob importを防止し、依存関係を明示的に保つ
+# wildcard_imports = "warn"
+
+# --- ポインタ安全性 ---
+# `as`によるポインタキャストより型安全な代替（pointer::cast等）を促進する
+ptr_as_ptr = "warn"
+
+# --- コード品質 ---
+# より慣用的なRustコードを促進する
+cloned_instead_of_copied = "warn"
+redundant_clone = "warn"
+manual_let_else = "warn"
+implicit_clone = "warn"
+semicolon_if_nothing_returned = "warn"
