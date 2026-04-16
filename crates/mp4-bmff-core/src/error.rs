@@ -41,6 +41,9 @@
 use core::error;
 use core::fmt;
 
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
+
 use crate::types::FourCC;
 
 use crate::BoxType;
@@ -156,12 +159,6 @@ pub enum ErrorKind {
         duplicate: BoxType,
     },
 
-    /// An I/O error occurred during reading or writing.
-    ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
-    Io,
-
     /// An error that doesn't fit other categories.
     Other {
         /// Description of the error.
@@ -216,8 +213,6 @@ impl fmt::Display for ErrorKind {
             ErrorKind::BoxDuplicate { duplicate } => {
                 write!(f, "duplicate box '{duplicate}' found")
             }
-            #[cfg(feature = "std")]
-            ErrorKind::Io => write!(f, "I/O error"),
             ErrorKind::Other { description } => write!(f, "error: {description}"),
         }
     }
@@ -260,7 +255,7 @@ pub struct Error {
     kind: ErrorKind,
     offset: Option<u64>,
     box_type: Option<BoxType>,
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     source: Option<Box<dyn error::Error + Send + Sync + 'static>>,
 }
 
@@ -275,7 +270,7 @@ impl Error {
             kind,
             offset: None,
             box_type: None,
-            #[cfg(feature = "std")]
+            #[cfg(feature = "alloc")]
             source: None,
         }
     }
@@ -286,7 +281,7 @@ impl Error {
             kind,
             offset: Some(offset),
             box_type: None,
-            #[cfg(feature = "std")]
+            #[cfg(feature = "alloc")]
             source: None,
         }
     }
@@ -297,7 +292,7 @@ impl Error {
             kind,
             offset: None,
             box_type: Some(box_type),
-            #[cfg(feature = "std")]
+            #[cfg(feature = "alloc")]
             source: None,
         }
     }
@@ -308,7 +303,7 @@ impl Error {
             kind,
             offset: Some(offset),
             box_type: Some(box_type),
-            #[cfg(feature = "std")]
+            #[cfg(feature = "alloc")]
             source: None,
         }
     }
@@ -333,7 +328,7 @@ impl Error {
     }
 
     /// Adds an underlying source error to this error.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[must_use]
     pub fn with_source<E>(mut self, source: E) -> Self
     where
@@ -386,7 +381,7 @@ impl fmt::Display for Error {
             write!(f, " at offset {offset}")?;
         }
 
-        #[cfg(feature = "std")]
+        #[cfg(feature = "alloc")]
         if let Some(source) = &self.source {
             write!(f, ": {}", source)?;
         }
@@ -396,7 +391,7 @@ impl fmt::Display for Error {
 }
 
 impl error::Error for Error {
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         self.source
             .as_ref()
@@ -431,12 +426,5 @@ impl From<CursorError> for Error {
         };
 
         Self::at(kind, value.offset as u64)
-    }
-}
-
-#[cfg(feature = "std")]
-impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self {
-        Error::new(ErrorKind::Io).with_source(value)
     }
 }
