@@ -114,6 +114,8 @@ impl AsRef<[u8; 4]> for FourCC {
 
 #[cfg(test)]
 mod tests {
+    use alloc::format;
+
     use super::*;
 
     #[test]

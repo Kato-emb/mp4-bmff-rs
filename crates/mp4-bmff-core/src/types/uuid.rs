@@ -108,6 +108,8 @@ impl AsRef<[u8; 16]> for Uuid {
 
 #[cfg(test)]
 mod tests {
+    use alloc::format;
+
     use super::*;
 
     #[test]

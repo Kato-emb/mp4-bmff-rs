@@ -291,7 +291,6 @@ where
     }
 
     /// Construct from `f64`, saturating to the representable range.
-    #[cfg(any(feature = "std", test))]
     pub fn from_f64(value: f64) -> Self {
         if value.is_nan() {
             return Fixed::from_raw_value(0);
@@ -306,13 +305,18 @@ where
         }
 
         let scale = scaling_factor(FRACTIONAL) as f64;
-        let scaled = (value * scale).round();
-        let limited = scaled.clamp(i128::MIN as f64, i128::MAX as f64);
-        Fixed::from_raw_value(limited as i128)
+        let scaled = value * scale;
+        // Round half away from zero (equivalent to f64::round()) without std.
+        // `f64 as i128` truncates toward zero, so offset by 0.5 first.
+        let raw = if scaled >= 0.0 {
+            (scaled + 0.5) as i128
+        } else {
+            (scaled - 0.5) as i128
+        };
+        Fixed::from_raw_value(raw)
     }
 
     /// Construct from `f32`, saturating on overflow/underflow.
-    #[cfg(any(feature = "std", test))]
     #[inline]
     pub fn from_f32(value: f32) -> Self {
         Fixed::from_f64(value as f64)
@@ -389,7 +393,6 @@ where
     }
 }
 
-#[cfg(any(feature = "std", test))]
 impl<Storage, const FRACTIONAL: u32> From<f32> for Fixed<Storage, FRACTIONAL>
 where
     Storage: FixedStorage,
@@ -399,7 +402,6 @@ where
     }
 }
 
-#[cfg(feature = "std")]
 impl<Storage, const FRACTIONAL: u32> From<f64> for Fixed<Storage, FRACTIONAL>
 where
     Storage: FixedStorage,
